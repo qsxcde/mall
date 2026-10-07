@@ -13,7 +13,7 @@ Spring Boot 3.3 + JDK 21 + MyBatis-Plus + MySQL 8 + Redis 7 的后端脚手架�
 | 持久层 | MyBatis-Plus 3.5.7 + MySQL 8 + Flyway（自动建表 + 种子数据） |
 | 缓存 | Redis 7（验证码 / 登录会话 / 秒杀库存预留） |
 | 文档 | springdoc-openapi（Swagger UI） |
-| 可观测性 | Actuator + Micrometer/Prometheus + TraceId 日志链路 |
+| 可观测性 | Actuator + Micrometer/Prometheus + 结构化 JSON 日志 + TraceId 全链路（跨线程 / 跨队列） |
 
 ## 快速开始
 
@@ -84,7 +84,7 @@ backend/
         ├── application.yml          # 公共配置
         ├── application-dev.yml      # 本地环境
         ├── application-prod.yml     # 生产环境
-        ├── logback-spring.xml       # 日志（含 traceId）
+        ├── logback-spring.xml       # 日志：控制台文本 + JSON 文件（含 traceId，见 docs/日志规范.md）
         └── db/migration/
             ├── V1__init.sql         # 建表脚本（20 张表）
             ├── V2__seed.sql         # 演示数据
@@ -167,7 +167,9 @@ backend/
 
 - `code = 0` 表示成功，其余为业务错误码（见 `ResultCode`）。
 - 未登录返回 `code = 401`（HTTP 状态仍为 200），前端拦截器据此跳转登录页。
-- 每个响应头都带 `X-Trace-Id`，与日志中的 `[traceId]` 对应，便于排障。
+- 每个响应头都带 `X-Trace-Id`，与日志中的 `traceId` 字段对应。日志以 JSON 落盘（`logs/geek-mall.json.log`），
+  在 Loki 中用 `{job="geek-mall-server"} | traceId="<值>"` 可精确串出整条调用链（含秒杀异步段）。
+  级别语义、字段字典与脱敏规则见 `docs/日志规范.md`。
 
 ## 配置说明
 
@@ -182,6 +184,11 @@ backend/
 | `mall.storage.type` | 文件存储实现：`minio` 对象存储 / `local` 本地磁盘 | minio |
 | `mall.storage.local-dir` | local 模式的落盘目录 | ./uploads |
 | `MINIO_ENDPOINT/ACCESS_KEY/SECRET_KEY/BUCKET` | 对象存储连接信息 | localhost:9000 |
+| `mall.logging.slow-sql-threshold-ms` | 慢 SQL 阈值，超过才打 WARN 并计入 `mall_slow_sql_total` | 200 |
+| `mall.logging.repeat-log-window-seconds` | 重复异常节流窗口，窗口内只打一次完整堆栈 | 60 |
+| `mall.logging.repeat-log-max-keys` | 节流指纹的容量上限 | 10000 |
+| `LOG_HOME` | 日志目录（环境变量） | logs |
+| `APP_ENV` | JSON 日志中的环境标识（环境变量） | dev |
 
 ## 后续待实现（骨架已建好包边界）
 

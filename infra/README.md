@@ -46,7 +46,7 @@ docker compose -f infra/docker-compose.yml down -v
 | Prometheus | 9090 | 指标采集 | observability |
 | Grafana | 3000 | 可视化（`admin/admin`） | observability |
 | Loki | 3100 | 日志聚合 | observability |
-| Promtail | 9080 | 采集 `backend/logs/*.log` | observability |
+| Promtail | 9080 | 采集 `backend/logs/*.json.log`（按字段解析） | observability |
 
 ## 数据库说明
 
@@ -57,7 +57,7 @@ docker compose -f infra/docker-compose.yml down -v
 
 ## 可观测性使用
 
-1. 先启动后端（`mvn spring-boot:run`），确保 `backend/logs/geek-mall.log` 已生成。
+1. 先启动后端（`mvn spring-boot:run`），确保 `backend/logs/geek-mall.json.log` 已生成（一行一条 JSON）。
 2. 启动 observability profile，等待 Prometheus 抓取到 `geek-mall-server` 目标（State = UP）。
 3. **Grafana 接入数据源**：
    - Prometheus：`http://prometheus:9090`
@@ -66,7 +66,25 @@ docker compose -f infra/docker-compose.yml down -v
    - 接口 QPS：`rate(http_server_requests_seconds_count{application="geek-mall-server"}[1m])`
    - P99 延迟：`histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket[5m])) by (le))`
    - JVM 堆使用：`jvm_memory_used_bytes{area="heap"}`
-   - 日志按链路聚合（Loki）：`{job="geek-mall-server"} |= "traceId"`
+   - 日志按**链路**定位（用 traceId 精确过滤，而非全文检索）：
+     `{job="geek-mall-server"} | traceId="<响应头 X-Trace-Id 的值>"`
+   - 只看错误：`{job="geek-mall-server", level="ERROR"}`
+   - 只看某个类：`{job="geek-mall-server", logger="com.geekmall.modules.trade.service.impl.TradeServiceImpl"}`
+
+**日志字段**（由 `logback-spring.xml` 输出，经 Promtail 解析后可检索）：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `@timestamp` / `level` / `logger` / `thread` / `message` | 基础 | 每条日志都有 |
+| `traceId` | structured metadata | 链路 ID（响应头 `X-Trace-Id`），跨线程池与消息队列传递 |
+| `userId` | structured metadata | 登录用户，支持「按用户排查」 |
+| `app` / `env` | 静态字段 | 多环境日志在同一个 Loki 里可区分 |
+
+> **标签策略**：`level` / `logger` / `env` 作为 Loki **label**（低基数）；`traceId` / `userId`
+> 作为 **structured metadata**（高基数）。把 traceId 设成 label 会让 stream 数量随请求量膨胀，
+> 是 Loki 最常见的踩坑方式。
+>
+> 日志目录可用环境变量 `LOG_HOME` 覆盖（默认 `logs/`）；环境标识用 `APP_ENV`（默认 `dev`）。
 
 > Promtail 通过 `../backend/logs` 挂载读取宿主机日志；若后端跑在容器中，请改用共享卷。
 
