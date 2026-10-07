@@ -1,0 +1,21 @@
+# Promtail：采集 backend/logs 下的后端日志并推送到 Loki
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: geek-mall-server
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: geek-mall-server
+          application: geek-mall-server
+          # 挂载自 ../backend/logs
+          __path__: /var/log/geek-mall/*.log

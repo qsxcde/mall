@@ -1,0 +1,285 @@
+/* ==========================================================================
+   全局基础样式：reset、画布质感、排版工具类、通用布局原语
+   ========================================================================== */
+@import "./tokens.css";
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-ui);
+  background: var(--canvas);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* --- 全站噪点覆盖：消除纯色的「塑料感」 --- */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* --- 滚动条 --- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #cfc9bc;
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b6af9f;
+  background-clip: content-box;
+  border: 3px solid transparent;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ==========================================================================
+   排版工具类
+   ========================================================================== */
+
+/* 财务报表气质的衬线数字：关键金额、指标一律用它 */
+.num {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.01em;
+}
+
+/* 单号、时间、编码等等宽场景 */
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  color: var(--text-3);
+}
+.text-2 {
+  color: var(--text-2);
+}
+
+/* ==========================================================================
+   通用布局原语（mz- 前缀避免与业务样式冲突）
+   ========================================================================== */
+
+/* 卡片 */
+.mz-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  box-shadow: var(--shadow-s);
+  overflow: hidden;
+}
+.mz-card--flush {
+  overflow: visible;
+}
+
+/* 卡片头部（标题 + 右侧操作） */
+.mz-card__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 17px 18px 0;
+}
+.mz-card__head h3 {
+  font-size: 14.5px;
+  font-weight: 800;
+}
+.mz-card__head .sub {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.mz-card__head .spacer {
+  margin-left: auto;
+}
+
+/* 画布 */
+.mz-canvas {
+  padding: var(--canvas-pad);
+  /* 24px 点阵网格：给暖白画布一点「工程蓝图」的秩序感 */
+  background-image: radial-gradient(circle, rgba(23, 31, 46, 0.05) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: -12px -12px;
+}
+
+/* 指标条：桌面端 5 列 */
+.mz-stat-strip {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+  margin-top: 18px;
+}
+
+/* 筛选工具条 */
+.mz-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+  background: #fdfcfa;
+}
+.mz-toolbar__label {
+  font-size: 12px;
+  color: var(--text-3);
+  font-weight: 600;
+}
+.mz-toolbar .spacer {
+  margin-left: auto;
+}
+
+/* 表格容器：横向滚动保护 */
+.mz-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+/* 分页条 */
+.mz-pager {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 16px;
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.mz-pager .info {
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.mz-pager .info b {
+  font-family: var(--font-mono);
+  color: var(--text-2);
+}
+.mz-pager .spacer {
+  margin-left: auto;
+}
+
+/* 页头 */
+.mz-page-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.mz-page-head__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--brand);
+  font-weight: 700;
+}
+.mz-page-head__eyebrow::before {
+  content: "";
+  width: 22px;
+  height: 1.5px;
+  background: var(--brand);
+  border-radius: 2px;
+}
+.mz-page-head__title {
+  font-size: 26px;
+  font-weight: 800;
+  margin-top: 9px;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+}
+.mz-page-head__title em {
+  font-style: normal;
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--brand);
+}
+.mz-page-head__desc {
+  font-size: 12.5px;
+  color: var(--text-3);
+  margin-top: 6px;
+}
+.mz-page-head__desc b {
+  font-family: var(--font-mono);
+  color: var(--text-2);
+}
+.mz-page-head__acts {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ==========================================================================
+   入场动画：错峰上浮
+   ========================================================================== */
+.rise {
+  opacity: 0;
+  transform: translateY(14px);
+  animation: mz-rise 0.62s cubic-bezier(0.22, 0.8, 0.2, 1) forwards;
+}
+@keyframes mz-rise {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 尊重系统「减少动态效果」偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .rise {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   桌面端适配（本工程按需求只适配桌面，最低按 1280 设计）
+   ========================================================================== */
+@media (max-width: 1440px) {
+  :root {
+    --canvas-pad: 20px 22px 34px;
+  }
+  .mz-stat-strip {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (max-width: 1280px) {
+  .mz-stat-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

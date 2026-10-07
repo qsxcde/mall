@@ -1,0 +1,1367 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>订单管理 · 极客商家中心</title>
+<meta name="description" content="极客数码商城 商家中心 — 订单管理" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+/* ==========================================================================
+   极客商家中心 — 设计令牌（与经营概览共用同一套视觉体系）
+   ========================================================================== */
+:root {
+  --rail:#0c1322; --rail-2:#131c30; --rail-line:rgba(255,255,255,.07);
+  --canvas:#f3f0e9; --card:#fff; --line:#e6e1d6; --line-soft:#efece4;
+  --text:#171f2e; --text-2:#5b6472; --text-3:#98a0ac;
+  --brand:#1a6dff; --brand-deep:#0a4fd6; --brand-soft:#eaf1ff;
+  --coral:#ff5a2e; --coral-soft:#ffece6;
+  --green:#109150; --green-soft:#e6f6ec;
+  --teal:#0d9488; --teal-soft:#e2f6f3;
+  --amber:#e08b1a; --amber-soft:#fdf1dc;
+  --gold:#c8922f;
+  --shadow-s:0 1px 2px rgba(20,26,40,.04), 0 1px 3px rgba(20,26,40,.05);
+  --shadow-m:0 2px 6px rgba(20,26,40,.05), 0 10px 26px -12px rgba(20,26,40,.18);
+  --shadow-l:0 18px 48px -20px rgba(16,24,40,.35);
+  --r-m:14px; --r-l:20px;
+  --ui:"Manrope","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --display:"Fraunces","Songti SC",Georgia,"Times New Roman",serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+html { -webkit-text-size-adjust:100%; }
+body {
+  font-family:var(--ui); background:var(--canvas); color:var(--text);
+  font-size:14px; line-height:1.55; -webkit-font-smoothing:antialiased;
+}
+body::after {
+  content:""; position:fixed; inset:0; z-index:9000; pointer-events:none; opacity:.05;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+a { text-decoration:none; color:inherit; }
+button { font-family:inherit; cursor:pointer; border:none; background:none; color:inherit; }
+input, select, textarea { font-family:inherit; color:inherit; }
+svg { display:block; }
+::-webkit-scrollbar { width:10px; height:10px; }
+::-webkit-scrollbar-thumb { background:#cfc9bc; border-radius:10px; border:3px solid transparent; background-clip:content-box; }
+::-webkit-scrollbar-thumb:hover { background:#b6af9f; background-clip:content-box; border:3px solid transparent; }
+::-webkit-scrollbar-track { background:transparent; }
+.num { font-family:var(--display); font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1; letter-spacing:-.01em; }
+.mono { font-family:var(--mono); font-size:12px; font-variant-numeric:tabular-nums; }
+
+/* ============================ 骨架 ============================ */
+.app { display:flex; min-height:100vh; }
+
+.rail {
+  width:244px; flex-shrink:0; background:var(--rail); color:#cfd6e4;
+  display:flex; flex-direction:column; position:sticky; top:0; height:100vh; z-index:40;
+  background-image:
+    radial-gradient(120% 90% at 0% 0%, rgba(26,109,255,.22), transparent 55%),
+    radial-gradient(90% 70% at 100% 100%, rgba(255,90,46,.1), transparent 60%);
+  transition:transform .32s cubic-bezier(.22,.8,.2,1);
+}
+.brand { display:flex; align-items:center; gap:11px; padding:22px 20px 20px; }
+.brand-mark {
+  width:38px; height:38px; border-radius:11px; flex-shrink:0;
+  background:linear-gradient(140deg,#4da3ff,var(--brand) 60%,var(--brand-deep));
+  display:grid; place-items:center; font-family:var(--display); font-weight:700; font-size:19px; color:#fff;
+  box-shadow:0 8px 20px -8px rgba(26,109,255,.9), inset 0 1px 0 rgba(255,255,255,.4);
+}
+.brand-txt b { display:block; color:#fff; font-size:15px; font-weight:800; letter-spacing:.02em; line-height:1.2; }
+.brand-txt span { font-size:11px; color:#7b869c; letter-spacing:.14em; text-transform:uppercase; }
+
+.nav { flex:1; overflow-y:auto; padding:6px 12px 16px; }
+.nav::-webkit-scrollbar { width:0; }
+.nav-group { margin-top:16px; }
+.nav-group:first-child { margin-top:4px; }
+.nav-label { font-size:10.5px; letter-spacing:.18em; text-transform:uppercase; color:#5c6880; padding:0 10px 9px; font-weight:700; }
+.nav-item {
+  position:relative; display:flex; align-items:center; gap:11px; padding:10px 12px; border-radius:10px;
+  font-size:13.5px; font-weight:600; color:#a9b4c8; transition:background .18s, color .18s;
+}
+.nav-item svg { width:18px; height:18px; flex-shrink:0; opacity:.9; }
+.nav-item:hover { background:rgba(255,255,255,.06); color:#fff; }
+.nav-item.active {
+  color:#fff; background:linear-gradient(100deg, rgba(26,109,255,.95), rgba(26,109,255,.55));
+  box-shadow:0 10px 24px -12px rgba(26,109,255,.95);
+}
+.nav-item.active::before {
+  content:""; position:absolute; left:-12px; top:50%; transform:translateY(-50%);
+  width:3px; height:20px; border-radius:0 3px 3px 0; background:#7fbaff;
+}
+.nav-item .pill {
+  margin-left:auto; background:var(--coral); color:#fff; font-family:var(--mono);
+  font-size:10px; font-weight:600; border-radius:20px; padding:1.5px 7px; line-height:1.5;
+}
+.nav-item.active .pill { background:rgba(255,255,255,.28); }
+
+.rail-foot { padding:14px; border-top:1px solid var(--rail-line); }
+.store-chip { display:flex; align-items:center; gap:10px; background:var(--rail-2); border:1px solid var(--rail-line); border-radius:12px; padding:11px; }
+.store-logo {
+  width:34px; height:34px; border-radius:9px; flex-shrink:0;
+  background:linear-gradient(135deg,#ffd88a,var(--gold)); display:grid; place-items:center;
+  font-size:13px; font-weight:800; color:#4a3208;
+}
+.store-chip .s-txt { min-width:0; }
+.store-chip .s-txt b { display:block; font-size:12.5px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.store-chip .s-txt span { font-size:11px; color:#7b869c; display:flex; align-items:center; gap:5px; }
+.dot-ok { width:6px; height:6px; border-radius:50%; background:#35d07f; box-shadow:0 0 0 3px rgba(53,208,127,.18); }
+
+/* ============================ 顶栏 ============================ */
+.main { flex:1; min-width:0; display:flex; flex-direction:column; }
+.topbar {
+  position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:16px; padding:13px 28px;
+  background:rgba(243,240,233,.82); backdrop-filter:saturate(1.6) blur(14px);
+  -webkit-backdrop-filter:saturate(1.6) blur(14px); border-bottom:1px solid var(--line);
+}
+.burger { display:none; width:38px; height:38px; border-radius:10px; border:1px solid var(--line); background:#fff; place-items:center; }
+.crumb { font-size:12.5px; color:var(--text-3); display:flex; align-items:center; gap:7px; }
+.crumb b { color:var(--text); font-weight:700; }
+.search {
+  margin-left:auto; display:flex; align-items:center; gap:9px; background:#fff;
+  border:1px solid var(--line); border-radius:11px; padding:0 13px; height:38px; width:268px;
+  transition:border-color .18s, box-shadow .18s;
+}
+.search:focus-within { border-color:var(--brand); box-shadow:0 0 0 3px rgba(26,109,255,.12); }
+.search svg { width:16px; height:16px; color:var(--text-3); }
+.search input { border:none; outline:none; background:none; font-size:13px; width:100%; }
+.search kbd { font-family:var(--mono); font-size:10.5px; color:var(--text-3); border:1px solid var(--line); border-radius:5px; padding:1px 5px; background:#faf8f4; }
+
+.icon-btn {
+  position:relative; width:38px; height:38px; border-radius:11px; border:1px solid var(--line);
+  background:#fff; display:grid; place-items:center; color:var(--text-2); transition:all .18s; flex-shrink:0;
+}
+.icon-btn:hover { color:var(--brand); border-color:#c9dcff; background:var(--brand-soft); }
+.icon-btn svg { width:18px; height:18px; }
+.badge-dot {
+  position:absolute; top:6px; right:6px; min-width:16px; height:16px; padding:0 4px; border-radius:9px;
+  background:var(--coral); color:#fff; font-family:var(--mono); font-size:10px; font-weight:600;
+  display:grid; place-items:center; border:2px solid var(--canvas);
+}
+.btn-primary, .btn-ghost {
+  display:inline-flex; align-items:center; gap:7px; height:38px; padding:0 16px; border-radius:11px;
+  font-weight:700; font-size:13px; transition:all .18s; white-space:nowrap;
+}
+.btn-primary { background:linear-gradient(135deg,#4da3ff,var(--brand)); color:#fff; box-shadow:0 10px 22px -12px rgba(26,109,255,.95); }
+.btn-primary:hover { filter:brightness(1.06); transform:translateY(-1px); }
+.btn-ghost { border:1px solid var(--line); background:#fff; color:var(--text-2); }
+.btn-ghost:hover { border-color:#c9dcff; color:var(--brand); background:var(--brand-soft); }
+.btn-primary svg, .btn-ghost svg { width:16px; height:16px; }
+
+.me { display:flex; align-items:center; gap:9px; padding-left:15px; border-left:1px solid var(--line); }
+.me-av { width:34px; height:34px; border-radius:10px; background:linear-gradient(135deg,#2b3a67,var(--brand)); color:#fff; display:grid; place-items:center; font-size:13px; font-weight:800; }
+.me b { font-size:13px; display:block; line-height:1.2; }
+.me span { font-size:11px; color:var(--text-3); }
+
+.pop {
+  position:absolute; top:54px; right:28px; width:320px; background:#fff; border:1px solid var(--line);
+  border-radius:var(--r-m); box-shadow:var(--shadow-l); padding:8px; z-index:50;
+  opacity:0; visibility:hidden; transform:translateY(-8px); transition:all .2s cubic-bezier(.2,.8,.2,1);
+}
+.pop.open { opacity:1; visibility:visible; transform:translateY(0); }
+.pop h4 { font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-3); padding:8px 10px 6px; }
+.pop-item { display:flex; gap:10px; padding:10px; border-radius:10px; transition:background .18s; }
+.pop-item:hover { background:#faf8f4; }
+.pop-item .pi { width:30px; height:30px; border-radius:9px; display:grid; place-items:center; flex-shrink:0; font-size:14px; }
+.pop-item p { font-size:12.5px; line-height:1.5; }
+.pop-item time { font-size:11px; color:var(--text-3); }
+
+/* ============================ 画布 ============================ */
+.canvas {
+  padding:24px 28px 40px;
+  background-image:radial-gradient(circle, rgba(23,31,46,.05) 1px, transparent 1px);
+  background-size:24px 24px; background-position:-12px -12px;
+}
+.rise { opacity:0; transform:translateY(14px); animation:rise .62s cubic-bezier(.22,.8,.2,1) forwards; }
+@keyframes rise { to { opacity:1; transform:none; } }
+
+.page-head { display:flex; align-items:flex-end; gap:20px; flex-wrap:wrap; }
+.page-head .eyebrow { display:inline-flex; align-items:center; gap:8px; font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--brand); font-weight:700; }
+.page-head .eyebrow::before { content:""; width:22px; height:1.5px; background:var(--brand); border-radius:2px; }
+.page-head h1 { font-size:26px; font-weight:800; margin-top:9px; letter-spacing:.01em; }
+.page-head h1 em { font-style:normal; font-family:var(--display); font-weight:600; color:var(--brand); }
+.page-head .desc { font-size:12.5px; color:var(--text-3); margin-top:6px; }
+.page-head .desc b { font-family:var(--mono); color:var(--text-2); }
+.page-head .acts { margin-left:auto; display:flex; gap:10px; flex-wrap:wrap; }
+
+/* 统计条 */
+.stat-strip { display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-top:18px; }
+.stat {
+  background:var(--card); border:1px solid var(--line); border-radius:var(--r-m); padding:14px 16px;
+  transition:transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s;
+}
+.stat:hover { transform:translateY(-3px); box-shadow:var(--shadow-m); }
+.stat .k { font-size:12px; color:var(--text-2); font-weight:600; display:flex; align-items:center; gap:7px; }
+.stat .k i { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.stat .v { font-family:var(--display); font-size:25px; font-weight:600; margin-top:8px; line-height:1.1; }
+.stat .v small { font-size:13px; font-weight:600; opacity:.6; margin-right:2px; }
+.stat .v small.u { margin:0; opacity:.5; }
+.stat .d { font-size:11.5px; color:var(--text-3); margin-top:4px; }
+.stat .d b { font-family:var(--mono); color:var(--text-2); }
+
+/* 卡片 */
+.card { background:var(--card); border:1px solid var(--line); border-radius:var(--r-m); box-shadow:var(--shadow-s); margin-top:16px; overflow:hidden; }
+
+/* 状态 Tab */
+.tabs { display:flex; gap:4px; padding:6px 14px 0; overflow-x:auto; border-bottom:1px solid var(--line); }
+.tabs::-webkit-scrollbar { height:0; }
+.tab { position:relative; display:flex; align-items:center; gap:7px; white-space:nowrap; padding:12px 14px 14px; font-size:13.5px; font-weight:700; color:var(--text-2); transition:color .18s; }
+.tab:hover { color:var(--brand); }
+.tab.on { color:var(--brand); }
+.tab.on::after { content:""; position:absolute; left:10px; right:10px; bottom:-1px; height:2.5px; border-radius:3px 3px 0 0; background:var(--brand); }
+.tab .cnt { font-family:var(--mono); font-size:10.5px; font-weight:600; background:#f1eee6; color:var(--text-2); border-radius:20px; padding:1px 7px; line-height:1.6; }
+.tab.on .cnt { background:var(--brand-soft); color:var(--brand); }
+
+/* 筛选条 */
+.toolbar { display:flex; align-items:center; gap:10px; padding:14px 16px; flex-wrap:wrap; border-bottom:1px solid var(--line); background:#fdfcfa; }
+.sel {
+  height:34px; border:1px solid var(--line); border-radius:9px; background:#fff; padding:0 30px 0 11px;
+  font-size:12.5px; font-weight:600; color:var(--text-2); outline:none; cursor:pointer;
+  appearance:none; -webkit-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2398a0ac' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 10px center;
+  transition:border-color .18s, box-shadow .18s;
+}
+.sel:focus { border-color:var(--brand); box-shadow:0 0 0 3px rgba(26,109,255,.12); }
+.tb-label { font-size:12px; color:var(--text-3); font-weight:600; }
+.toolbar .spacer { margin-left:auto; }
+.tb-reset { font-size:12.5px; font-weight:700; color:var(--text-3); padding:8px 6px; }
+.tb-reset:hover { color:var(--brand); }
+.result-hint { font-size:12px; color:var(--text-3); }
+.result-hint b { color:var(--brand); font-family:var(--mono); }
+
+/* 批量条 */
+.bulk {
+  display:flex; align-items:center; gap:12px; padding:0 16px; max-height:0; overflow:hidden;
+  background:linear-gradient(100deg,#0c1322,#17233d); color:#fff;
+  transition:max-height .28s cubic-bezier(.22,.8,.2,1), padding .28s;
+}
+.bulk.on { max-height:64px; padding:13px 16px; }
+.bulk .txt { font-size:13px; font-weight:600; }
+.bulk .txt b { font-family:var(--display); font-size:16px; color:#ffd88a; margin:0 3px; }
+.bulk .spacer { margin-left:auto; }
+.bulk-btn {
+  display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 13px; border-radius:9px;
+  background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.16); color:#e6ecf7;
+  font-size:12.5px; font-weight:700; transition:all .18s; white-space:nowrap;
+}
+.bulk-btn:hover { background:rgba(255,255,255,.2); }
+.bulk-btn.solid { background:linear-gradient(135deg,#4da3ff,var(--brand)); border-color:transparent; color:#fff; }
+.bulk-btn.solid:hover { filter:brightness(1.08); }
+
+/* 订单列表 */
+.o-scroll { overflow-x:auto; }
+.o-head, .o-row {
+  display:grid; grid-template-columns:46px 186px minmax(250px,1fr) 124px 150px 112px 178px;
+  align-items:center; min-width:1090px;
+}
+.o-head {
+  padding:11px 16px; background:#faf8f4; border-bottom:1px solid var(--line);
+  font-size:11.5px; font-weight:800; letter-spacing:.06em; color:var(--text-3); text-transform:uppercase;
+}
+.o-row { padding:15px 16px; border-bottom:1px solid var(--line-soft); transition:background .2s; position:relative; }
+.o-row:last-child { border-bottom:none; }
+.o-row:hover { background:#fbfaf7; }
+.o-row.open { background:#faf8f4; }
+.o-row.open::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--brand); border-radius:0 3px 3px 0; }
+.o-check { display:flex; align-items:center; }
+.o-check input { width:16px; height:16px; accent-color:var(--brand); cursor:pointer; }
+
+.o-id .no { font-family:var(--mono); font-size:12px; font-weight:600; }
+.o-id .t { font-size:11.5px; color:var(--text-3); margin-top:4px; }
+.o-id .pay { font-size:11px; color:var(--text-3); margin-top:3px; }
+
+.o-prod { display:flex; align-items:center; gap:11px; min-width:0; padding-right:14px; }
+.thumb {
+  width:46px; height:46px; border-radius:10px; flex-shrink:0; display:grid; place-items:center;
+  font-family:var(--mono); font-size:10px; font-weight:600; color:rgba(23,31,46,.5);
+}
+.th1 { background:linear-gradient(135deg,#d9e8ff,#a9ccff); }
+.th2 { background:linear-gradient(135deg,#ffe3d6,#ffc0a3); }
+.th3 { background:linear-gradient(135deg,#d8f4ea,#a8e6d3); }
+.th4 { background:linear-gradient(135deg,#ffeec9,#ffdb96); }
+.th5 { background:linear-gradient(135deg,#e6dcff,#cbb9ff); }
+.th6 { background:linear-gradient(135deg,#d9f0ff,#a8dcf7); }
+.o-prod .pn { font-size:13px; font-weight:600; line-height:1.45; display:-webkit-box; -webkit-line-clamp:2; line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.o-prod .ps { font-size:11.5px; color:var(--text-3); margin-top:4px; }
+
+.o-amt .v { font-family:var(--display); font-size:17px; font-weight:600; }
+.o-amt .v small { font-size:11px; }
+.o-amt .q { font-size:11.5px; color:var(--text-3); margin-top:4px; font-family:var(--mono); }
+
+.o-buyer { display:flex; align-items:center; gap:8px; min-width:0; }
+.b-av { width:27px; height:27px; border-radius:8px; flex-shrink:0; display:grid; place-items:center; font-size:11.5px; font-weight:800; color:#fff; }
+.o-buyer .bn { min-width:0; }
+.o-buyer .bn b { font-size:12.5px; font-weight:600; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.o-buyer .bn span { font-size:10.5px; color:var(--text-3); font-family:var(--mono); }
+
+.st { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; padding:3.5px 10px; border-radius:20px; white-space:nowrap; }
+.st::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+.s-waitpay { color:var(--amber); background:var(--amber-soft); }
+.s-waitship { color:var(--brand); background:var(--brand-soft); }
+.s-shipped { color:var(--teal); background:var(--teal-soft); }
+.s-waitreview { color:var(--green); background:var(--green-soft); }
+.s-done { color:var(--text-2); background:#f1eee6; }
+.s-closed { color:var(--text-3); background:#f4f1ea; }
+.s-after { color:var(--coral); background:var(--coral-soft); }
+
+.o-ops { display:flex; align-items:center; gap:4px; flex-wrap:wrap; justify-content:flex-end; }
+.op { font-size:12.5px; font-weight:700; color:var(--brand); padding:5px 8px; border-radius:7px; transition:background .18s, color .18s; white-space:nowrap; }
+.op:hover { background:var(--brand-soft); }
+.op.muted { color:var(--text-2); }
+.op.muted:hover { background:#f1eee6; }
+.op.danger { color:var(--coral); }
+.op.danger:hover { background:var(--coral-soft); }
+.op.strong { background:var(--brand); color:#fff; padding:6px 13px; border-radius:8px; box-shadow:0 8px 18px -10px rgba(26,109,255,.95); }
+.op.strong:hover { filter:brightness(1.07); }
+
+/* 展开详情 */
+.o-detail { background:#faf8f4; border-bottom:1px solid var(--line-soft); padding:0 16px 18px 62px; }
+.o-detail-in { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px 30px; padding-top:16px; border-top:1px dashed var(--line); }
+.dh { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-3); font-weight:800; margin-bottom:9px; }
+.dl { font-size:12.5px; color:var(--text-2); line-height:2; display:flex; gap:8px; }
+.dl .k { color:var(--text-3); flex-shrink:0; min-width:56px; }
+.dl b { color:var(--text); font-weight:600; }
+.d-money { font-size:12.5px; }
+.o-detail-in .d-money { max-width:320px; }
+.d-money .mr { display:flex; justify-content:space-between; padding:3px 0; color:var(--text-2); }
+.d-money .mr b { font-family:var(--mono); font-weight:600; }
+.d-money .mr.total { border-top:1px dashed var(--line); margin-top:5px; padding-top:7px; color:var(--text); font-weight:700; }
+.d-money .mr.total b { font-family:var(--display); font-size:16px; color:var(--brand); }
+.d-money .mr.disc b { color:var(--coral); }
+.d-items { display:flex; flex-direction:column; gap:9px; }
+.d-item { display:flex; align-items:center; gap:10px; font-size:12.5px; }
+.d-item .thumb { width:34px; height:34px; border-radius:8px; font-size:9px; }
+.d-item .din { flex:1; min-width:0; }
+.d-item .din b { display:block; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.d-item .din span { color:var(--text-3); font-size:11.5px; }
+.d-item .dq { font-family:var(--mono); color:var(--text-2); }
+.d-item .dp { font-family:var(--mono); font-weight:600; }
+
+.tl { display:flex; flex-direction:column; }
+.tl-row { display:flex; gap:11px; position:relative; padding-bottom:15px; }
+.tl-row:last-child { padding-bottom:0; }
+.tl-row::before { content:""; position:absolute; left:6.5px; top:16px; bottom:0; width:1.5px; background:var(--line); }
+.tl-row:last-child::before { display:none; }
+.tl-dot { width:14px; height:14px; border-radius:50%; flex-shrink:0; margin-top:3px; border:2.5px solid var(--line); background:#fff; position:relative; z-index:1; }
+.tl-row.done .tl-dot { border-color:var(--brand); background:var(--brand); }
+.tl-row.done.now .tl-dot { box-shadow:0 0 0 5px rgba(26,109,255,.16); }
+.tl-txt b { font-size:12.5px; font-weight:700; display:block; }
+.tl-txt span { font-size:11.5px; color:var(--text-3); font-family:var(--mono); }
+
+/* 分页 */
+.pager { display:flex; align-items:center; gap:14px; padding:15px 16px; border-top:1px solid var(--line); flex-wrap:wrap; }
+.pager .info { font-size:12.5px; color:var(--text-3); }
+.pager .info b { font-family:var(--mono); color:var(--text-2); }
+.pager .spacer { margin-left:auto; }
+.pages { display:flex; gap:5px; }
+.pg {
+  min-width:32px; height:32px; padding:0 9px; border-radius:9px; border:1px solid var(--line); background:#fff;
+  font-size:12.5px; font-weight:700; color:var(--text-2); display:grid; place-items:center; transition:all .18s;
+}
+.pg:hover:not(:disabled) { border-color:#c9dcff; color:var(--brand); background:var(--brand-soft); }
+.pg.on { background:var(--brand); border-color:var(--brand); color:#fff; box-shadow:0 8px 18px -10px rgba(26,109,255,.95); }
+.pg:disabled { opacity:.45; cursor:not-allowed; }
+
+.empty { padding:66px 20px; text-align:center; }
+.empty .eic { width:62px; height:62px; border-radius:18px; margin:0 auto 16px; background:#f4f1ea; display:grid; place-items:center; color:var(--text-3); border:1px solid var(--line); }
+.empty .eic svg { width:28px; height:28px; }
+.empty h4 { font-size:15px; font-weight:800; }
+.empty p { font-size:12.5px; color:var(--text-3); margin-top:6px; }
+
+/* ============================ 抽屉 ============================ */
+.scrim {
+  position:fixed; inset:0; background:rgba(12,19,34,.5); z-index:60; opacity:0; visibility:hidden;
+  transition:all .3s; backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px);
+}
+.scrim.on { opacity:1; visibility:visible; }
+.drawer {
+  position:fixed; top:0; right:0; bottom:0; width:480px; max-width:100vw; background:var(--card);
+  z-index:61; display:flex; flex-direction:column; transform:translateX(100%);
+  transition:transform .34s cubic-bezier(.22,.8,.2,1); box-shadow:-24px 0 60px -30px rgba(12,19,34,.55);
+}
+.drawer.on { transform:none; }
+.dr-head { padding:18px 22px; border-bottom:1px solid var(--line); background:linear-gradient(120deg,#0c1322,#17233d); color:#fff; display:flex; align-items:center; gap:12px; }
+.dr-head .dht { flex:1; min-width:0; }
+.dr-head .dht span { font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:#8d9bb5; font-weight:700; }
+.dr-head .dht b { display:block; font-family:var(--mono); font-size:15px; font-weight:600; margin-top:4px; }
+.dr-close { width:32px; height:32px; border-radius:9px; background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.16); display:grid; place-items:center; color:#fff; transition:background .18s; flex-shrink:0; }
+.dr-close:hover { background:rgba(255,255,255,.22); }
+.dr-close svg { width:16px; height:16px; }
+.dr-body { flex:1; overflow-y:auto; padding:20px 22px; }
+.dr-sec { margin-bottom:22px; }
+.dr-sec:last-child { margin-bottom:0; }
+.dr-sec > h4 { font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-3); font-weight:800; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+.dr-sec > h4::after { content:""; flex:1; height:1px; background:var(--line-soft); }
+.dr-foot { padding:14px 22px; border-top:1px solid var(--line); display:flex; gap:10px; background:#fdfcfa; }
+.dr-foot .btn-primary, .dr-foot .btn-ghost { flex:1; justify-content:center; height:42px; }
+
+.banner { display:flex; align-items:center; gap:12px; padding:14px 16px; border-radius:12px; font-size:13px; margin-bottom:22px; }
+.banner .bic { width:36px; height:36px; border-radius:10px; background:rgba(255,255,255,.6); display:grid; place-items:center; flex-shrink:0; }
+.banner .bic svg { width:18px; height:18px; }
+.banner b { display:block; font-size:14px; }
+.banner span { font-size:12px; opacity:.85; }
+.banner.blue { background:var(--brand-soft); color:var(--brand); }
+.banner.amber { background:var(--amber-soft); color:var(--amber); }
+.banner.teal { background:var(--teal-soft); color:var(--teal); }
+.banner.green { background:var(--green-soft); color:var(--green); }
+.banner.coral { background:var(--coral-soft); color:var(--coral); }
+.banner.gray { background:#f1eee6; color:var(--text-2); }
+
+/* ============================ 弹窗 ============================ */
+.modal { position:fixed; inset:0; z-index:70; display:grid; place-items:center; padding:20px; opacity:0; visibility:hidden; transition:opacity .22s; }
+.modal.on { opacity:1; visibility:visible; }
+.modal-mask { position:absolute; inset:0; background:rgba(12,19,34,.55); backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px); }
+.modal-box {
+  position:relative; width:460px; max-width:100%; background:#fff; border-radius:var(--r-l);
+  box-shadow:var(--shadow-l); transform:translateY(14px) scale(.98); overflow:hidden;
+  transition:transform .28s cubic-bezier(.22,.8,.2,1);
+}
+.modal.on .modal-box { transform:none; }
+.modal-head { padding:20px 22px 14px; }
+.modal-head h3 { font-size:17px; font-weight:800; }
+.modal-head p { font-size:12.5px; color:var(--text-3); margin-top:5px; }
+.modal-body { padding:0 22px 4px; }
+.modal-foot { padding:16px 22px 20px; display:flex; gap:10px; justify-content:flex-end; }
+.field { margin-bottom:15px; }
+.field label { display:block; font-size:12.5px; font-weight:700; color:var(--text-2); margin-bottom:7px; }
+.field label i { color:var(--coral); font-style:normal; }
+.field input, .field select, .field textarea {
+  width:100%; height:40px; border:1px solid var(--line); border-radius:10px; padding:0 12px;
+  font-size:13px; outline:none; background:#fff; transition:border-color .18s, box-shadow .18s;
+}
+.field textarea { height:auto; padding:10px 12px; resize:vertical; line-height:1.6; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color:var(--brand); box-shadow:0 0 0 3px rgba(26,109,255,.12); }
+.field select {
+  appearance:none; -webkit-appearance:none; cursor:pointer; padding-right:32px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2398a0ac' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 12px center;
+}
+.field .hint { font-size:11.5px; color:var(--text-3); margin-top:6px; }
+.readonly { background:#faf8f4 !important; color:var(--text-2) !important; }
+.btn-plain { height:42px; padding:0 18px; border-radius:11px; border:1px solid var(--line); background:#fff; color:var(--text-2); font-weight:700; font-size:13px; transition:all .18s; }
+.btn-plain:hover { border-color:#cfc9bc; color:var(--text); }
+.btn-go { height:42px; padding:0 22px; border-radius:11px; background:linear-gradient(135deg,#4da3ff,var(--brand)); color:#fff; font-weight:700; font-size:13px; box-shadow:0 10px 22px -12px rgba(26,109,255,.95); transition:filter .18s; }
+.btn-go:hover { filter:brightness(1.06); }
+.btn-go.danger { background:linear-gradient(135deg,#ff8a5c,var(--coral)); box-shadow:0 10px 22px -12px rgba(255,90,46,.95); }
+
+/* ============================ 提示 ============================ */
+.toasts { position:fixed; top:18px; left:50%; transform:translateX(-50%); z-index:80; display:flex; flex-direction:column; gap:10px; align-items:center; }
+.toast {
+  display:flex; align-items:center; gap:10px; padding:11px 18px; border-radius:12px;
+  background:#0c1322; color:#fff; font-size:13px; font-weight:600; box-shadow:var(--shadow-l);
+  animation:toastIn .3s cubic-bezier(.22,.8,.2,1);
+}
+.toast.out { animation:toastOut .25s forwards; }
+.toast svg { width:16px; height:16px; flex-shrink:0; }
+.toast.ok svg { color:#7ef0b1; }
+.toast.warn svg { color:#ffd88a; }
+@keyframes toastIn { from { opacity:0; transform:translateY(-14px) scale(.96); } }
+@keyframes toastOut { to { opacity:0; transform:translateY(-10px) scale(.97); } }
+
+/* ============================ 响应式 ============================ */
+@media (max-width:1300px) {
+  .stat-strip { grid-template-columns:repeat(3,1fr); }
+  .search { width:190px; }
+  .o-detail-in { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width:980px) {
+  .rail { position:fixed; left:0; top:0; transform:translateX(-100%); box-shadow:var(--shadow-l); }
+  .rail.open { transform:none; }
+  .burger { display:grid; }
+  .crumb { display:none; }
+  .search { width:100%; max-width:100%; order:5; margin-left:0; }
+  .topbar { flex-wrap:wrap; }
+  .canvas { padding:18px 16px 32px; }
+  .pop { right:16px; width:calc(100vw - 32px); }
+  .o-detail { padding-left:16px; }
+}
+@media (max-width:760px) {
+  .stat-strip { grid-template-columns:repeat(2,1fr); }
+  .page-head .acts { margin-left:0; width:100%; }
+  .page-head .acts .btn-ghost, .page-head .acts .btn-primary { flex:1; justify-content:center; }
+  .o-head { display:none; }
+  .o-scroll { overflow-x:visible; }
+  .o-row {
+    min-width:0; grid-template-columns:26px 1fr auto; row-gap:11px; padding:14px; align-items:start;
+    grid-template-areas:"check order st" "check prod prod" "check amt ops";
+  }
+  .o-check { grid-area:check; padding-top:2px; }
+  .o-id { grid-area:order; }
+  .o-st { grid-area:st; justify-self:end; }
+  .o-prod { grid-area:prod; padding-right:0; }
+  .o-amt { grid-area:amt; }
+  .o-ops { grid-area:ops; justify-content:flex-end; }
+  .o-buyer { grid-area:buyer; display:none; }
+  .o-detail { padding:0 14px 16px; }
+  .o-detail-in { grid-template-columns:1fr; }
+  .drawer { width:100vw; }
+  .me { border-left:none; padding-left:0; }
+  .btn-primary span { display:none; }
+  .btn-primary { padding:0 13px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  * { animation:none !important; transition:none !important; }
+  .rise { opacity:1; transform:none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ============================ 侧栏 ============================ -->
+  <aside class="rail" id="rail">
+    <div class="brand">
+      <div class="brand-mark">极</div>
+      <div class="brand-txt"><b>极客商家中心</b><span>Merchant Hub</span></div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-group">
+        <div class="nav-label">经营</div>
+        <a class="nav-item" href="./index.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.8"/><rect x="13.5" y="3" width="7.5" height="4.5" rx="1.8"/><rect x="13.5" y="10.5" width="7.5" height="10.5" rx="1.8"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.8"/></svg>
+          <span>经营概览</span>
+        </a>
+        <a class="nav-item" href="./analytics.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-6M22 20H2"/></svg>
+          <span>数据看板</span>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">商品</div>
+        <a class="nav-item" href="./products.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5 12 12l9-4.5M12 12v9"/></svg>
+          <span>商品管理</span>
+          <em class="pill">4</em>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">交易</div>
+        <a class="nav-item active" href="./orders.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12v20l-3-1.8-3 1.8-3-1.8L6 22z"/><path d="M9.5 7.5h5M9.5 11.5h5"/></svg>
+          <span>订单管理</span>
+          <em class="pill" id="navShipCount">0</em>
+        </a>
+        <a class="nav-item" href="./shipping.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h11v9H3z"/><path d="M14 10h3.5l3.5 3.5V16h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>
+          <span>发货中心</span>
+          <em class="pill">3</em>
+        </a>
+        <a class="nav-item" href="./aftersale.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 9a9 9 0 1 1 2.6 8.2"/><path d="M3 4v5.2h5.2"/></svg>
+          <span>售后管理</span>
+          <em class="pill">6</em>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">财务</div>
+        <a class="nav-item" href="./finance.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2.4"/><path d="M3 10.5h18"/><circle cx="17" cy="14.6" r="1.3"/></svg>
+          <span>财务结算</span>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">增长</div>
+        <a class="nav-item" href="./marketing.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 20 4v15L3 12.5z"/><path d="M7.5 13.2V18a2 2 0 0 0 4 0v-3"/></svg>
+          <span>营销中心</span>
+          <em class="pill">3</em>
+        </a>
+        <a class="nav-item" href="./reviews.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.3L7 21.5l.9-3.2A8.3 8.3 0 1 1 21 11.5z"/><path d="M8.5 10.5h7M8.5 13.8h4.5"/></svg>
+          <span>评价管理</span>
+          <em class="pill">13</em>
+        </a>
+      </div>
+    </nav>
+
+    <div class="rail-foot">
+      <div class="store-chip">
+        <div class="store-logo">旗</div>
+        <div class="s-txt"><b>极客数码旗舰店</b><span><i class="dot-ok"></i> 已认证 · 金牌卖家</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============================ 主区域 ============================ -->
+  <div class="main">
+    <header class="topbar">
+      <button class="burger icon-btn" id="burger" aria-label="打开导航">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+
+      <div class="crumb">商家中心 <span>/</span> <b>订单管理</b></div>
+
+      <label class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="text" id="topSearch" placeholder="搜索订单号 / 买家 / 商品" />
+        <kbd>⌘K</kbd>
+      </label>
+
+      <button class="btn-ghost" id="exportBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        导出
+      </button>
+
+      <button class="icon-btn" id="bell" aria-label="通知">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8.5a6 6 0 1 0-12 0c0 6-2.2 7.5-2.2 7.5h16.4S18 14.5 18 8.5z"/><path d="M13.7 20a2 2 0 0 1-3.4 0"/></svg>
+        <em class="badge-dot" id="bellCount">5</em>
+      </button>
+
+      <div class="me">
+        <div class="me-av">陈</div>
+        <div><b>陈掌柜</b><span>超级管理员</span></div>
+      </div>
+    </header>
+
+    <div class="pop" id="pop">
+      <h4>通知 · 5 条未读</h4>
+      <div class="pop-item"><div class="pi" style="background:var(--brand-soft)">📦</div><div><p>有 <b id="popShipCount">0</b> 笔订单待发货，请及时处理</p><time>4 分钟前</time></div></div>
+      <div class="pop-item"><div class="pi" style="background:var(--amber-soft)">⚠️</div><div><p>「华为 MateBook X Pro」库存仅剩 3 件</p><time>26 分钟前</time></div></div>
+      <div class="pop-item"><div class="pi" style="background:var(--coral-soft)">↩️</div><div><p>收到 8 笔售后申请待响应</p><time>1 小时前</time></div></div>
+    </div>
+
+    <main class="canvas">
+      <section class="page-head rise" style="animation-delay:.02s">
+        <div>
+          <div class="eyebrow">Trade · Order Center</div>
+          <h1>订单<em>管理</em></h1>
+          <div class="desc">共 <b id="totalAll">0</b> 笔订单 · 数据每 5 分钟同步一次</div>
+        </div>
+        <div class="acts">
+          <button class="btn-ghost" id="printBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 17h10v4H7z"/></svg>
+            打印面单
+          </button>
+          <button class="btn-primary" id="batchShipTop">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5 12 12l9-4.5M12 12v9"/></svg>
+            <span>批量发货</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="stat-strip" id="statStrip"></section>
+
+      <section class="card rise" style="animation-delay:.14s">
+        <div class="tabs" id="tabs"></div>
+
+        <div class="toolbar">
+          <span class="tb-label">下单时间</span>
+          <select class="sel" id="fRange">
+            <option value="all">全部时间</option>
+            <option value="today">今天</option>
+            <option value="7">近 7 天</option>
+            <option value="30">近 30 天</option>
+          </select>
+          <span class="tb-label">支付方式</span>
+          <select class="sel" id="fPay">
+            <option value="all">全部方式</option>
+            <option>支付宝</option><option>微信支付</option><option>银行卡</option><option>余额支付</option>
+          </select>
+          <span class="tb-label">金额区间</span>
+          <select class="sel" id="fAmount">
+            <option value="all">不限金额</option>
+            <option value="0-1000">¥0 - 1,000</option>
+            <option value="1000-5000">¥1,000 - 5,000</option>
+            <option value="5000-10000">¥5,000 - 10,000</option>
+            <option value="10000-999999">¥10,000 以上</option>
+          </select>
+          <span class="tb-label">排序</span>
+          <select class="sel" id="fSort">
+            <option value="time_desc">下单时间 · 新→旧</option>
+            <option value="time_asc">下单时间 · 旧→新</option>
+            <option value="amount_desc">实付金额 · 高→低</option>
+            <option value="amount_asc">实付金额 · 低→高</option>
+          </select>
+          <button class="tb-reset" id="resetBtn">重置筛选</button>
+          <div class="spacer"></div>
+          <span class="result-hint">筛选结果 <b id="resultCount">0</b> 笔</span>
+        </div>
+
+        <div class="bulk" id="bulkBar">
+          <span class="txt">已选 <b id="selCount">0</b> 笔订单</span>
+          <div class="spacer"></div>
+          <button class="bulk-btn solid" id="bulkShip">批量发货</button>
+          <button class="bulk-btn" id="bulkNote">添加备注</button>
+          <button class="bulk-btn" id="bulkExport">导出所选</button>
+          <button class="bulk-btn" id="bulkClear">取消选择</button>
+        </div>
+
+        <div class="o-scroll">
+          <div class="o-head">
+            <div class="o-check"><input type="checkbox" id="checkAll" /></div>
+            <div>订单信息</div>
+            <div>商品</div>
+            <div>实付金额</div>
+            <div>买家</div>
+            <div>状态</div>
+            <div style="text-align:right">操作</div>
+          </div>
+          <div id="oBody"></div>
+        </div>
+
+        <div class="pager" id="pager"></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- ============================ 抽屉：订单详情 ============================ -->
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="dr-head">
+    <div class="dht"><span>Order Detail</span><b id="drNo">—</b></div>
+    <button class="dr-close" id="drClose" aria-label="关闭">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+  <div class="dr-body" id="drBody"></div>
+  <div class="dr-foot" id="drFoot"></div>
+</aside>
+
+<!-- ============================ 弹窗 ============================ -->
+<div class="modal" id="modal">
+  <div class="modal-mask" data-close="1"></div>
+  <div class="modal-box">
+    <div class="modal-head"><h3 id="mdTitle">标题</h3><p id="mdDesc"></p></div>
+    <div class="modal-body" id="mdBody"></div>
+    <div class="modal-foot" id="mdFoot"></div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<div class="toasts" id="toasts"></div>
+
+<script>
+/* ==========================================================================
+   极客商家中心 — 订单管理
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  /* ---------------------------- 工具 ---------------------------- */
+  var BASE = new Date(2026, 9, 5, 10, 20, 0);
+  var pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+  var money = function (n) { return n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
+  var fmt = function (d, sec) {
+    if (!d) return '待处理';
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' +
+      pad(d.getHours()) + ':' + pad(d.getMinutes()) + (sec ? ':' + pad(d.getSeconds()) : '');
+  };
+  var day0 = function (d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+  var esc = function (s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  };
+
+  /* ---------------------------- 字典 ---------------------------- */
+  var ST = {
+    wait_pay:    { t: '待付款', cls: 's-waitpay',    b: 'amber', hint: '等待买家付款，超时将自动关闭订单' },
+    wait_ship:   { t: '待发货', cls: 's-waitship',   b: 'blue',  hint: '买家已付款，请在 24 小时内完成发货' },
+    shipped:     { t: '待收货', cls: 's-shipped',    b: 'teal',  hint: '商家已发货，包裹运输途中' },
+    wait_review: { t: '待评价', cls: 's-waitreview', b: 'green', hint: '买家已签收，等待发表评价' },
+    done:        { t: '已完成', cls: 's-done',       b: 'gray',  hint: '交易已完成，货款已结算至账户余额' },
+    closed:      { t: '已取消', cls: 's-closed',     b: 'gray',  hint: '订单已关闭，占用库存已回滚' },
+    after:       { t: '售后中', cls: 's-after',      b: 'coral', hint: '买家发起售后申请，请在 48 小时内响应' }
+  };
+  var TABS = [
+    ['all', '全部订单'], ['wait_pay', '待付款'], ['wait_ship', '待发货'], ['shipped', '待收货'],
+    ['wait_review', '待评价'], ['done', '已完成'], ['closed', '已取消'], ['after', '售后中']
+  ];
+
+  /* ---------------------------- 数据 ---------------------------- */
+  var PRODUCTS = [
+    { n: 'Apple iPhone 17 Pro 256G 原色钛金属', s: '256G · 原色钛', p: 8999, th: 'th1', tag: 'iPhone' },
+    { n: '小米 15 Ultra 16+512G 徕卡影像旗舰', s: '16+512G · 黑色', p: 6499, th: 'th2', tag: 'MI' },
+    { n: '华为 MateBook X Pro 2026 超凡屏', s: 'i7 / 32G / 1T', p: 12999, th: 'th3', tag: 'Mate' },
+    { n: '索尼 WH-1000XM6 头戴降噪耳机', s: '铂金银', p: 2999, th: 'th5', tag: 'SONY' },
+    { n: '戴森 V16 无线手持吸尘器', s: '旗舰版', p: 4990, th: 'th4', tag: 'DYSON' },
+    { n: 'iPad Pro 13 英寸 M4 WiFi 512G', s: '512G · 深空黑', p: 9299, th: 'th6', tag: 'iPad' },
+    { n: '罗技 MX Master 4 无线鼠标', s: '石墨黑', p: 699, th: 'th1', tag: 'Logi' },
+    { n: '三星 990 PRO 2TB NVMe 固态硬盘', s: '2TB / PCIe 4.0', p: 1199, th: 'th3', tag: 'SSD' },
+    { n: '明基 PD3225U 4K 设计师显示器', s: '32 英寸 / 4K', p: 6999, th: 'th6', tag: 'BenQ' }
+  ];
+  var BUYERS = ['林清和', '苏若雪', '周天翊', '徐佳宁', '郑维安', '何知微', '孟星辰', '唐述白',
+                '谢澜舟', '邹予安', '冯听柔', '鲍慎行'];
+  var CITIES = ['浙江省 杭州市 西湖区', '广东省 深圳市 南山区', '北京市 海淀区', '上海市 浦东新区',
+                '江苏省 南京市 鼓楼区', '四川省 成都市 武侯区', '湖北省 武汉市 洪山区', '福建省 厦门市 思明区'];
+  var STREETS = ['文三路 199 号 云谷大厦 12F', '科苑南路 2588 号 万科云城 A 座', '中关村大街 27 号 4 号楼',
+                 '世纪大道 1568 号 世纪汇广场', '中山北路 88 号 华彩天地', '天府大道 1199 号 银泰中心'];
+  var EXPRESS = ['顺丰速运', '京东物流', '中通快递', '圆通速递', '德邦快递'];
+  var PAYS = ['支付宝', '微信支付', '银行卡', '余额支付'];
+  var AV = ['linear-gradient(135deg,#4da3ff,#1a6dff)', 'linear-gradient(135deg,#ffb37a,#ff7a45)',
+            'linear-gradient(135deg,#7fd6bf,#0d9488)', 'linear-gradient(135deg,#ffd88a,#c8922f)',
+            'linear-gradient(135deg,#b6a2ff,#7c5cff)'];
+  var PATTERN = [
+    'wait_ship', 'shipped', 'wait_review', 'done', 'wait_pay', 'shipped', 'done', 'wait_ship',
+    'after', 'wait_review', 'done', 'wait_ship', 'shipped', 'done', 'closed', 'wait_pay',
+    'wait_ship', 'wait_review', 'done', 'shipped', 'wait_ship', 'done', 'wait_review', 'closed',
+    'shipped', 'wait_ship', 'done', 'wait_pay', 'after', 'wait_review', 'done', 'shipped'
+  ];
+
+  var seed = 20261005;
+  var rnd = function () { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  var pick = function (a) { return a[Math.floor(rnd() * a.length) % a.length]; };
+
+  var orders = PATTERN.map(function (status, i) {
+    var pr = pick(PRODUCTS);
+    var qty = pr.p > 3000 ? 1 : 1 + Math.floor(rnd() * 3);
+    var goods = pr.p * qty;
+    var ship = goods > 99 ? 0 : 18;
+    var disc = rnd() > .55 ? Math.round(goods * (0.02 + rnd() * 0.06)) : 0;
+    var hoursAgo = i < 6 ? i * 1.6 : 9.6 + (i - 5) * 29;
+    var created = new Date(BASE.getTime() - hoursAgo * 3600000);
+    var o = {
+      idx: i,
+      id: 'GK' + (2026100500 + 312 - i * 7),
+      status: status,
+      product: pr, qty: qty, goods: goods, ship: ship, disc: disc,
+      pay: goods + ship - disc,
+      buyer: { n: BUYERS[i % BUYERS.length], lv: 'V' + (2 + (i % 5)) },
+      payWay: pick(PAYS), express: pick(EXPRESS),
+      waybill: 'SF' + (1000000000 + Math.floor(rnd() * 899999999)),
+      created: created, addr: pick(CITIES) + ' ' + pick(STREETS),
+      note: rnd() > .78 ? '买家要求工作日送达，放前台即可' : '',
+      av: AV[i % AV.length]
+    };
+    o.paidAt = (status === 'wait_pay' || status === 'closed') ? null : new Date(created.getTime() + 6 * 60000);
+    o.shipAt = ['shipped', 'wait_review', 'done', 'after'].indexOf(status) >= 0
+      ? new Date(created.getTime() + 4 * 3600000) : null;
+    o.recvAt = ['done', 'after'].indexOf(status) >= 0
+      ? new Date(created.getTime() + 52 * 3600000) : null;
+    return o;
+  });
+
+  /* ---------------------------- 状态 ---------------------------- */
+  var state = { tab: 'all', q: '', range: 'all', pay: 'all', amount: 'all', sort: 'time_desc', page: 1, size: 8 };
+  var selected = {};
+  var expanded = {};
+  var byId = function (id) {
+    for (var i = 0; i < orders.length; i++) if (orders[i].id === id) return orders[i];
+    return null;
+  };
+
+  /* ---------------------------- 过滤 ---------------------------- */
+  function inRange(o) {
+    if (state.range === 'all') return true;
+    if (state.range === 'today') return day0(o.created) === day0(BASE);
+    return (day0(BASE) - day0(o.created)) / 86400000 <= parseInt(state.range, 10);
+  }
+  function inAmount(o) {
+    if (state.amount === 'all') return true;
+    var p = state.amount.split('-');
+    return o.pay >= +p[0] && o.pay <= +p[1];
+  }
+  function matchQ(o) {
+    if (!state.q) return true;
+    var q = state.q.toLowerCase();
+    return o.id.toLowerCase().indexOf(q) >= 0 ||
+      o.product.n.toLowerCase().indexOf(q) >= 0 ||
+      o.buyer.n.toLowerCase().indexOf(q) >= 0;
+  }
+  function filtered() {
+    var list = orders.filter(function (o) {
+      return (state.tab === 'all' || o.status === state.tab) &&
+        inRange(o) && inAmount(o) && (state.pay === 'all' || o.payWay === state.pay) && matchQ(o);
+    });
+    list.sort(function (a, b) {
+      if (state.sort === 'time_desc') return b.created - a.created;
+      if (state.sort === 'time_asc') return a.created - b.created;
+      if (state.sort === 'amount_desc') return b.pay - a.pay;
+      return a.pay - b.pay;
+    });
+    return list;
+  }
+  function countOf(k) {
+    return k === 'all' ? orders.length : orders.filter(function (o) { return o.status === k; }).length;
+  }
+  function selectedIds() { return Object.keys(selected).filter(function (k) { return selected[k]; }); }
+
+  /* ---------------------------- 详情区块（复用） ---------------------------- */
+  function timeline(o) {
+    var steps = [
+      { k: '提交订单', t: o.created, done: true },
+      { k: '买家付款', t: o.paidAt, done: !!o.paidAt },
+      { k: '商家发货', t: o.shipAt, done: !!o.shipAt },
+      { k: '买家签收', t: o.recvAt, done: !!o.recvAt },
+      { k: o.status === 'closed' ? '订单关闭' : '交易完成',
+        t: o.status === 'done' ? o.recvAt : null, done: o.status === 'done' || o.status === 'closed' }
+    ];
+    var last = -1;
+    steps.forEach(function (s, i) { if (s.done) last = i; });
+    return '<div class="tl">' + steps.map(function (s, i) {
+      return '<div class="tl-row' + (s.done ? ' done' : '') + (i === last ? ' now' : '') + '">' +
+        '<div class="tl-dot"></div>' +
+        '<div class="tl-txt"><b>' + s.k + '</b><span>' + fmt(s.t, true) + '</span></div></div>';
+    }).join('') + '</div>';
+  }
+
+  function blocks(o) {
+    var phone = '138 0013 ' + (1000 + (o.idx * 617) % 9000);
+    return [
+      { h: '收货信息', c:
+        '<div class="dl"><span class="k">收货人</span><b>' + o.buyer.n + ' · ' + o.buyer.lv + '</b></div>' +
+        '<div class="dl"><span class="k">联系电话</span><b class="mono">' + phone + '</b></div>' +
+        '<div class="dl"><span class="k">收货地址</span><b>' + esc(o.addr) + '</b></div>' },
+      { h: '物流信息', c:
+        '<div class="dl"><span class="k">支付方式</span><b>' + o.payWay + '</b></div>' +
+        '<div class="dl"><span class="k">承运商</span><b>' + (o.shipAt ? o.express : '待发货') + '</b></div>' +
+        '<div class="dl"><span class="k">运单号</span><b class="mono">' + (o.shipAt ? o.waybill : '—') + '</b></div>' +
+        '<div class="dl"><span class="k">商家备注</span><b>' + (o.note ? esc(o.note) : '无') + '</b></div>' },
+      { h: '商品清单', c:
+        '<div class="d-items"><div class="d-item">' +
+          '<div class="thumb ' + o.product.th + '">' + o.product.tag + '</div>' +
+          '<div class="din"><b>' + esc(o.product.n) + '</b><span>' + esc(o.product.s) + '</span></div>' +
+          '<div class="dq">×' + o.qty + '</div>' +
+          '<div class="dp">¥' + money(o.goods) + '</div>' +
+        '</div></div>' },
+      { h: '金额明细', c:
+        '<div class="d-money">' +
+          '<div class="mr"><span>商品总额</span><b>¥' + money(o.goods) + '</b></div>' +
+          '<div class="mr"><span>运费</span><b>' + (o.ship ? '¥' + money(o.ship) : '包邮') + '</b></div>' +
+          '<div class="mr disc"><span>优惠抵扣</span><b>-' + (o.disc ? '¥' + money(o.disc) : '¥0.00') + '</b></div>' +
+          '<div class="mr total"><span>买家实付</span><b>¥' + money(o.pay) + '</b></div>' +
+        '</div>' },
+      { h: '订单进度', c: timeline(o) }
+    ];
+  }
+
+  /* ---------------------------- 渲染：统计条 ---------------------------- */
+  function renderStats() {
+    var today = orders.filter(function (o) { return day0(o.created) === day0(BASE); });
+    var todayAmt = today.reduce(function (s, o) { return s + o.pay; }, 0);
+    var total = orders.reduce(function (s, o) { return s + o.pay; }, 0);
+    var items = [
+      { k: '今日新增订单', v: String(today.length), u: '笔', d: '较昨日 <b>+12.6%</b>', c: 'var(--brand)' },
+      { k: '待发货', v: String(countOf('wait_ship')), u: '笔', d: '超 24h 将影响体验分', c: 'var(--coral)' },
+      { k: '待收货', v: String(countOf('shipped')), u: '笔', d: '包裹运输中', c: 'var(--teal)' },
+      { k: '售后处理中', v: String(countOf('after')), u: '笔', d: '需 48 小时内响应', c: 'var(--amber)' },
+      { k: '今日成交额', v: '<small>¥</small>' + money(todayAmt), u: '', d: '累计交易 <b>¥' + money(total) + '</b>', c: 'var(--green)' }
+    ];
+    document.getElementById('statStrip').innerHTML = items.map(function (it) {
+      return '<div class="stat"><div class="k"><i style="background:' + it.c + '"></i>' + it.k + '</div>' +
+        '<div class="v num">' + it.v + (it.u ? ' <small class="u">' + it.u + '</small>' : '') + '</div>' +
+        '<div class="d">' + it.d + '</div></div>';
+    }).join('');
+    document.getElementById('totalAll').textContent = orders.length;
+    document.getElementById('navShipCount').textContent = countOf('wait_ship');
+    document.getElementById('popShipCount').textContent = countOf('wait_ship');
+  }
+
+  function renderTabs() {
+    document.getElementById('tabs').innerHTML = TABS.map(function (t) {
+      return '<button class="tab' + (state.tab === t[0] ? ' on' : '') + '" data-tab="' + t[0] + '">' +
+        t[1] + '<span class="cnt">' + countOf(t[0]) + '</span></button>';
+    }).join('');
+  }
+
+  /* ---------------------------- 渲染：行 ---------------------------- */
+  function opsOf(o) {
+    var d = '<button class="op muted" data-act="detail" data-id="' + o.id + '">详情</button>';
+    switch (o.status) {
+      case 'wait_pay':
+        return '<button class="op" data-act="remind" data-id="' + o.id + '">催付款</button>' + d +
+               '<button class="op danger" data-act="close" data-id="' + o.id + '">关闭</button>';
+      case 'wait_ship':
+        return '<button class="op strong" data-act="ship" data-id="' + o.id + '">发货</button>' +
+               '<button class="op" data-act="note" data-id="' + o.id + '">备注</button>' + d;
+      case 'shipped':
+        return '<button class="op" data-act="trace" data-id="' + o.id + '">物流</button>' +
+               '<button class="op muted" data-act="remindrecv" data-id="' + o.id + '">提醒收货</button>' + d;
+      case 'wait_review':
+        return '<button class="op" data-act="urge" data-id="' + o.id + '">催评价</button>' + d;
+      case 'after':
+        return '<button class="op danger" data-act="after" data-id="' + o.id + '">处理售后</button>' + d;
+      default:
+        return d + '<button class="op muted" data-act="again" data-id="' + o.id + '">再来一单</button>';
+    }
+  }
+
+  function rowHTML(o) {
+    var st = ST[o.status];
+    var h = '<div class="o-row' + (expanded[o.id] ? ' open' : '') + '" data-id="' + o.id + '">' +
+      '<div class="o-check"><input type="checkbox" data-check="' + o.id + '"' + (selected[o.id] ? ' checked' : '') + ' /></div>' +
+      '<div class="o-id"><div class="no">' + o.id + '</div>' +
+        '<div class="t">' + fmt(o.created) + '</div>' +
+        '<div class="pay">' + o.payWay + '</div></div>' +
+      '<div class="o-prod"><div class="thumb ' + o.product.th + '">' + o.product.tag + '</div>' +
+        '<div><div class="pn">' + esc(o.product.n) + '</div>' +
+        '<div class="ps">' + esc(o.product.s) + ' · 数量 ' + o.qty + '</div></div></div>' +
+      '<div class="o-amt"><div class="v"><small>¥</small>' + money(o.pay) + '</div>' +
+        '<div class="q">共 ' + o.qty + ' 件</div></div>' +
+      '<div class="o-buyer"><div class="b-av" style="background:' + o.av + '">' + o.buyer.n.charAt(0) + '</div>' +
+        '<div class="bn"><b>' + o.buyer.n + '</b><span>' + o.buyer.lv + '</span></div></div>' +
+      '<div class="o-st"><span class="st ' + st.cls + '">' + st.t + '</span></div>' +
+      '<div class="o-ops">' + opsOf(o) + '</div></div>';
+
+    if (expanded[o.id]) {
+      h += '<div class="o-detail"><div class="o-detail-in">' +
+        blocks(o).map(function (b) {
+          return '<div class="d-block"><div class="dh">' + b.h + '</div>' + b.c + '</div>';
+        }).join('') + '</div></div>';
+    }
+    return h;
+  }
+
+  /* ---------------------------- 渲染：表格 / 分页 ---------------------------- */
+  function syncBulk() {
+    var n = selectedIds().length;
+    document.getElementById('selCount').textContent = n;
+    document.getElementById('bulkBar').classList.toggle('on', n > 0);
+  }
+  function syncCheckAll(list) {
+    var ids = list.map(function (o) { return o.id; });
+    var n = ids.filter(function (id) { return selected[id]; }).length;
+    var all = document.getElementById('checkAll');
+    all.checked = n > 0 && n === ids.length;
+    all.indeterminate = n > 0 && n < ids.length;
+  }
+  function clearSelection() {
+    selected = {};
+    document.querySelectorAll('[data-check]').forEach(function (cb) { cb.checked = false; });
+    syncBulk();
+  }
+
+  function renderTable() {
+    var list = filtered();
+    var body = document.getElementById('oBody');
+    document.getElementById('resultCount').textContent = list.length;
+
+    if (!list.length) {
+      body.innerHTML = '<div class="empty">' +
+        '<div class="eic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12v20l-3-1.8-3 1.8-3-1.8L6 22z"/><path d="M9.5 9h5M9.5 13h5"/></svg></div>' +
+        '<h4>没有找到匹配的订单</h4><p>试试调整筛选条件，或清空关键词重新搜索</p></div>';
+      document.getElementById('pager').innerHTML = '';
+      syncBulk();
+      return;
+    }
+
+    var pages = Math.ceil(list.length / state.size);
+    if (state.page > pages) state.page = pages;
+    var start = (state.page - 1) * state.size;
+    var slice = list.slice(start, start + state.size);
+    body.innerHTML = slice.map(rowHTML).join('');
+
+    var pg = '<span class="info">第 <b>' + (start + 1) + '-' + (start + slice.length) +
+      '</b> 条 / 共 <b>' + list.length + '</b> 条</span><span class="spacer"></span><div class="pages">' +
+      '<button class="pg" data-page="' + (state.page - 1) + '"' + (state.page === 1 ? ' disabled' : '') + '>‹</button>';
+    for (var i = 1; i <= pages; i++) {
+      pg += '<button class="pg' + (i === state.page ? ' on' : '') + '" data-page="' + i + '">' + i + '</button>';
+    }
+    pg += '<button class="pg" data-page="' + (state.page + 1) + '"' + (state.page === pages ? ' disabled' : '') + '>›</button></div>';
+    document.getElementById('pager').innerHTML = pg;
+
+    syncBulk();
+    syncCheckAll(list);
+  }
+
+  function render() { renderTabs(); renderTable(); }
+
+  /* ---------------------------- 提示 ---------------------------- */
+  var ICON = {
+    ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+    warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5h.01"/></svg>'
+  };
+  function toast(msg, type) {
+    var el = document.createElement('div');
+    el.className = 'toast ' + (type || 'ok');
+    el.innerHTML = (ICON[type] || ICON.ok) + '<span>' + msg + '</span>';
+    document.getElementById('toasts').appendChild(el);
+    setTimeout(function () {
+      el.classList.add('out');
+      setTimeout(function () { el.remove(); }, 260);
+    }, 2200);
+  }
+
+  /* ---------------------------- 弹窗 ---------------------------- */
+  var modal = document.getElementById('modal');
+  function closeModal() { modal.classList.remove('on'); }
+  function openModal(cfg) {
+    document.getElementById('mdTitle').textContent = cfg.title;
+    document.getElementById('mdDesc').textContent = cfg.desc || '';
+    document.getElementById('mdBody').innerHTML = cfg.body || '';
+    document.getElementById('mdFoot').innerHTML = cfg.foot || '';
+    modal.classList.add('on');
+    if (cfg.mount) cfg.mount();
+  }
+  modal.addEventListener('click', function (e) {
+    if (e.target.getAttribute && e.target.getAttribute('data-close')) closeModal();
+  });
+
+  function confirmModal(title, desc, okText, danger, onOk) {
+    openModal({
+      title: title, desc: desc, body: '',
+      foot: '<button class="btn-plain" data-close="1">取消</button>' +
+            '<button class="btn-go' + (danger ? ' danger' : '') + '" id="mdOk">' + okText + '</button>',
+      mount: function () {
+        document.getElementById('mdOk').onclick = function () { closeModal(); onOk(); };
+      }
+    });
+  }
+
+  function openShip(ids) {
+    var targets = orders.filter(function (o) {
+      return ids.indexOf(o.id) >= 0 && o.status === 'wait_ship';
+    });
+    if (!targets.length) { toast('所选订单中没有「待发货」的订单', 'warn'); return; }
+    openModal({
+      title: '批量发货 · ' + targets.length + ' 笔订单',
+      desc: '填写物流信息后，订单状态将更新为「待收货」',
+      body:
+        '<div class="field"><label>物流公司 <i>*</i></label><select id="mdExpress">' +
+          EXPRESS.map(function (e) { return '<option>' + e + '</option>'; }).join('') + '</select></div>' +
+        '<div class="field"><label>运单号 <i>*</i></label>' +
+          '<input id="mdWaybill" class="readonly" readonly value="' +
+          ('SF' + String(Date.now()).slice(-10)) + '" />' +
+          '<div class="hint">已自动获取电子面单号，支持手动修改</div></div>' +
+        '<div class="field"><label>发货备注</label>' +
+          '<textarea id="mdShipNote" rows="2" placeholder="选填，仅商家可见"></textarea></div>',
+      foot: '<button class="btn-plain" data-close="1">取消</button><button class="btn-go" id="mdShipOk">确认发货</button>',
+      mount: function () {
+        document.getElementById('mdShipOk').onclick = function () {
+          var exp = document.getElementById('mdExpress').value;
+          var wb = document.getElementById('mdWaybill').value;
+          var now = new Date();
+          targets.forEach(function (o) {
+            o.status = 'shipped'; o.shipAt = now; o.express = exp; o.waybill = wb;
+          });
+          closeModal();
+          toast('已发货 ' + targets.length + ' 笔订单 · ' + exp);
+          clearSelection();
+          renderStats(); render();
+        };
+      }
+    });
+  }
+
+  function openNote(id) {
+    var o = byId(id);
+    openModal({
+      title: '订单备注', desc: '订单号 ' + o.id,
+      body: '<div class="field"><label>商家备注</label>' +
+        '<textarea id="mdNote" rows="3" placeholder="例如：买家要求工作日送达">' + esc(o.note) + '</textarea>' +
+        '<div class="hint">备注仅商家与客服可见，买家不可见</div></div>',
+      foot: '<button class="btn-plain" data-close="1">取消</button><button class="btn-go" id="mdNoteOk">保存备注</button>',
+      mount: function () {
+        document.getElementById('mdNoteOk').onclick = function () {
+          o.note = document.getElementById('mdNote').value.trim();
+          closeModal(); toast('备注已保存'); render();
+        };
+      }
+    });
+  }
+
+  function closeOrder(id) {
+    var o = byId(id);
+    confirmModal('关闭订单', '关闭后订单将不可恢复，占用库存会自动回滚。订单号 ' + o.id, '确认关闭', true, function () {
+      o.status = 'closed'; o.paidAt = null;
+      toast('订单 ' + o.id + ' 已关闭');
+      renderStats(); render();
+    });
+  }
+
+  /* ---------------------------- 抽屉 ---------------------------- */
+  var drawer = document.getElementById('drawer');
+  var scrim = document.getElementById('scrim');
+  function openDrawer(id) {
+    var o = byId(id);
+    if (!o) return;
+    var st = ST[o.status];
+    document.getElementById('drNo').textContent = o.id;
+    document.getElementById('drBody').innerHTML =
+      '<div class="banner ' + st.b + '">' +
+        '<div class="bic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4.5l3 2"/></svg></div>' +
+        '<div><b>' + st.t + '</b><span>' + st.hint + '</span></div></div>' +
+      blocks(o).map(function (b) {
+        return '<div class="dr-sec"><h4>' + b.h + '</h4>' + b.c + '</div>';
+      }).join('');
+
+    var foot = '<button class="btn-ghost" data-dact="note">' + (o.note ? '修改备注' : '添加备注') + '</button>';
+    if (o.status === 'wait_ship') foot += '<button class="btn-primary" data-dact="ship">立即发货</button>';
+    else if (o.status === 'wait_pay') foot += '<button class="btn-primary" data-dact="close">关闭订单</button>';
+    else if (o.status === 'shipped') foot += '<button class="btn-primary" data-dact="trace">查看物流</button>';
+    else if (o.status === 'after') foot += '<button class="btn-primary" data-dact="after">处理售后</button>';
+    else foot += '<button class="btn-primary" data-dact="again">再来一单</button>';
+    var f = document.getElementById('drFoot');
+    f.innerHTML = foot;
+    f.dataset.id = o.id;
+
+    drawer.classList.add('on');
+    scrim.classList.add('on');
+    drawer.setAttribute('aria-hidden', 'false');
+  }
+  function closeDrawer() {
+    drawer.classList.remove('on');
+    scrim.classList.remove('on');
+    drawer.setAttribute('aria-hidden', 'true');
+  }
+  document.getElementById('drClose').addEventListener('click', closeDrawer);
+  scrim.addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { closeDrawer(); closeModal(); document.getElementById('pop').classList.remove('open'); }
+  });
+
+  /* ---------------------------- 动作分发 ---------------------------- */
+  function doAction(act, id) {
+    var o = byId(id);
+    switch (act) {
+      case 'detail': openDrawer(id); break;
+      case 'ship': openShip([id]); break;
+      case 'note': openNote(id); break;
+      case 'close': closeOrder(id); break;
+      case 'trace': openDrawer(id); toast('物流轨迹已更新至最新节点'); break;
+      case 'after': openDrawer(id); toast('已进入售后处理流程', 'warn'); break;
+      case 'remind': toast('已向买家发送付款提醒'); break;
+      case 'remindrecv': toast('已向 ' + o.buyer.n + ' 发送收货提醒'); break;
+      case 'urge': toast('已邀请买家发表评价'); break;
+      case 'again': toast('已为该买家生成复购推荐'); break;
+    }
+  }
+
+  document.getElementById('oBody').addEventListener('click', function (e) {
+    var op = e.target.closest('[data-act]');
+    if (op) {
+      e.stopPropagation();
+      doAction(op.getAttribute('data-act'), op.getAttribute('data-id'));
+      return;
+    }
+    var row = e.target.closest('.o-row');
+    if (row && !e.target.closest('[data-check]')) {
+      var id = row.getAttribute('data-id');
+      expanded[id] = !expanded[id];
+      renderTable();
+    }
+  });
+
+  document.getElementById('drFoot').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-dact]');
+    if (!b) return;
+    var id = this.dataset.id, act = b.getAttribute('data-dact');
+    if (act === 'ship') { closeDrawer(); openShip([id]); return; }
+    if (act === 'close') { closeDrawer(); closeOrder(id); return; }
+    if (act === 'note') { openNote(id); return; }
+    doAction(act, id);
+  });
+
+  /* ---------------------------- 事件 ---------------------------- */
+  document.getElementById('tabs').addEventListener('click', function (e) {
+    var t = e.target.closest('.tab');
+    if (!t) return;
+    state.tab = t.getAttribute('data-tab');
+    state.page = 1;
+    clearSelection();
+    render();
+  });
+
+  ['fRange', 'fPay', 'fAmount', 'fSort'].forEach(function (id) {
+    document.getElementById(id).addEventListener('change', function () {
+      state.range = document.getElementById('fRange').value;
+      state.pay = document.getElementById('fPay').value;
+      state.amount = document.getElementById('fAmount').value;
+      state.sort = document.getElementById('fSort').value;
+      state.page = 1;
+      render();
+    });
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', function () {
+    state.tab = 'all'; state.q = ''; state.range = 'all'; state.pay = 'all';
+    state.amount = 'all'; state.sort = 'time_desc'; state.page = 1;
+    document.getElementById('fRange').value = 'all';
+    document.getElementById('fPay').value = 'all';
+    document.getElementById('fAmount').value = 'all';
+    document.getElementById('fSort').value = 'time_desc';
+    document.getElementById('topSearch').value = '';
+    clearSelection();
+    render();
+    toast('筛选条件已重置');
+  });
+
+  document.getElementById('topSearch').addEventListener('input', function (e) {
+    state.q = e.target.value.trim();
+    state.page = 1;
+    renderTable();
+  });
+
+  document.getElementById('pager').addEventListener('click', function (e) {
+    var b = e.target.closest('.pg');
+    if (!b || b.disabled) return;
+    var p = parseInt(b.getAttribute('data-page'), 10);
+    if (p < 1 || p > Math.ceil(filtered().length / state.size)) return;
+    state.page = p;
+    renderTable();
+  });
+
+  document.getElementById('checkAll').addEventListener('change', function (e) {
+    var list = filtered();
+    var ids = list.slice((state.page - 1) * state.size, state.page * state.size).map(function (o) { return o.id; });
+    ids.forEach(function (id) { selected[id] = e.target.checked; });
+    document.querySelectorAll('[data-check]').forEach(function (cb) { cb.checked = e.target.checked; });
+    syncBulk();
+  });
+
+  document.getElementById('oBody').addEventListener('change', function (e) {
+    var cb = e.target.closest('[data-check]');
+    if (!cb) return;
+    selected[cb.getAttribute('data-check')] = cb.checked;
+    syncBulk();
+    syncCheckAll(filtered());
+  });
+
+  document.getElementById('bulkClear').addEventListener('click', clearSelection);
+
+  function bulkShip() {
+    var ids = selectedIds().length ? selectedIds()
+      : filtered().filter(function (o) { return o.status === 'wait_ship'; }).map(function (o) { return o.id; });
+    if (!ids.length) { toast('当前没有可发货的订单', 'warn'); return; }
+    openShip(ids);
+  }
+  document.getElementById('bulkShip').addEventListener('click', bulkShip);
+  document.getElementById('batchShipTop').addEventListener('click', bulkShip);
+
+  document.getElementById('bulkNote').addEventListener('click', function () {
+    var ids = selectedIds();
+    if (!ids.length) { toast('请先勾选订单', 'warn'); return; }
+    openNote(ids[0]);
+  });
+
+  document.getElementById('bulkExport').addEventListener('click', function () {
+    toast('已导出 ' + selectedIds().length + ' 笔订单明细');
+  });
+  document.getElementById('exportBtn').addEventListener('click', function () {
+    toast('导出任务已创建，完成后将通过站内信通知');
+  });
+  document.getElementById('printBtn').addEventListener('click', function () {
+    var n = countOf('wait_ship');
+    toast(n ? '已生成 ' + n + ' 张电子面单，前往打印' : '暂无待发货订单面单', n ? 'ok' : 'warn');
+  });
+
+  document.getElementById('bell').addEventListener('click', function (e) {
+    e.stopPropagation();
+    document.getElementById('pop').classList.toggle('open');
+  });
+  document.addEventListener('click', function (e) {
+    var pop = document.getElementById('pop');
+    if (!pop.contains(e.target)) pop.classList.remove('open');
+  });
+
+  document.getElementById('burger').addEventListener('click', function () {
+    document.getElementById('rail').classList.toggle('open');
+  });
+
+  /* ---------------------------- 启动 ---------------------------- */
+  document.addEventListener('DOMContentLoaded', function () {
+    renderStats();
+    render();
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,136 @@
+server:
+  port: 8080
+  shutdown: graceful
+  tomcat:
+    threads:
+      # P0-1：与数据库连接池形成合理比例，避免 200 线程抢 50 连接导致全站挂起
+      max: 120
+      min-spare: 20
+    # 连接队列：超出直接排队/拒绝，而不是无限堆积
+    accept-count: 200
+    max-connections: 8192
+
+spring:
+  application:
+    name: geek-mall-server
+  profiles:
+    active: dev
+  task:
+    scheduling:
+      pool:
+        # P2-9：默认单线程会让定时任务互相阻塞
+        size: 5
+  jackson:
+    time-zone: GMT+8
+    default-property-inclusion: non_null
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 20MB
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+mall:
+  jwt:
+    secret: ${MALL_JWT_SECRET:geek-mall-jwt-secret-key-please-change-in-production-2026}
+    expire-minutes: 120
+  merchant:
+    # 平台费率：与结算单口径一致，改这里即可联动重算
+    commission-rate: 0.05
+    service-rate: 0.006
+    # 提现手续费：按比例计，单笔封顶
+    withdraw-fee-rate: 0.001
+    withdraw-fee-cap: 500
+  sms:
+    # 是否在接口响应中回显验证码，仅供开发联调，生产必须为 false
+    expose-code: false
+  rate-limit:
+    # 全站接口限流总开关；规则集中在 common/ratelimit/RateLimitPolicies
+    enabled: true
+    # 本地限流窗口的容量上限，防止被大量伪造 IP 撑爆内存
+    local-max-keys: 200000
+  cache:
+    # ---------------- 缓存治理：穿透 / 击穿 / 雪崩 ----------------
+    # TTL 与 L1 白名单全部在此声明，改缓存行为不需要动代码
+    default-ttl: 5m
+    # 各缓存基础 TTL（实际写入时会叠加 jitter-ratio 的随机浮动）
+    ttl:
+      homeFloors: 5m
+      categoryTree: 30m
+      productDetail: 3m
+      productRecommend: 5m
+    # 【防雪崩】TTL 抖动比例：同一批 key 的失效时刻被打散，避免集中回源
+    jitter-ratio: 0.2
+    # 【防穿透】空值缓存时长：同一无效 id 只查库一次；取值要短，否则新上架商品会被挡住
+    null-ttl: 60s
+    # 【防击穿】热点 key 失效时跨实例互斥重建
+    lock:
+      enabled: true
+      # 锁自身 TTL：持锁进程崩溃后自动释放，避免死锁
+      ttl: 3s
+      # 未抢到锁的线程最长等待时间，超时即放行回源（可用性优先）
+      wait-timeout: 800ms
+      retry-interval: 50ms
+    # Redis 故障时熔断降级，避免每个请求都卡满 redis timeout
+    breaker:
+      enabled: true
+      failure-threshold: 5
+      open-duration: 10s
+    # 本地一级缓存（L1）：只给能容忍数秒陈旧的聚合类数据
+    local:
+      enabled: true
+      names:
+        - homeFloors
+        - categoryTree
+      ttl: 3s
+      max-size: 10000
+  mock:
+    # 是否注册联调用的模拟接口（如模拟发货），生产必须为 false
+    enabled: false
+  storage:
+    # minio：对象存储（生产推荐）；local：本地磁盘（不想起 MinIO 时的开发选项）
+    type: ${STORAGE_TYPE:minio}
+    local-dir: ${STORAGE_LOCAL_DIR:./uploads}
+    # 本地存储生成的文件 URL 前缀，需与 server.port 保持一致
+    local-public-base-url: ${STORAGE_LOCAL_PUBLIC_URL:http://localhost:8080}
+  minio:
+    # 对象存储：头像 / 评价图 / 售后凭证
+    enabled: true
+    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+    access-key: ${MINIO_ACCESS_KEY:minioadmin}
+    secret-key: ${MINIO_SECRET_KEY:minioadmin}
+    bucket: ${MINIO_BUCKET:geek-mall}
+    # 对外访问前缀，留空则直接用 endpoint 拼接
+    public-base-url: ${MINIO_PUBLIC_URL:}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    tags:
+      application: ${spring.application.name}
