@@ -120,6 +120,10 @@ public class RateLimitPolicies {
             // 用 LOCAL 避免在超热点路径上再加一次 Redis 往返。
             rate("seckill-grab", POST, RateLimitDimension.SUBJECT, 5, 1, RateLimitTier.LOCAL, RateLimitFallback.FAIL_OPEN,
                     "/api/v1/seckill/*/order"),
+            // 削峰模式下前端会高频轮询抢购结果，额度按「1 秒 1 次」的轮询节奏放宽。
+            // 必须排在下面 /api/v1/seckill/** 之前 —— 规则表是「首个匹配即生效」
+            rate("seckill-result", READ, RateLimitDimension.SUBJECT, 120, 10, RateLimitTier.LOCAL,
+                    RateLimitFallback.FAIL_OPEN, "/api/v1/seckill/result/*"),
             rate("seckill-read", READ, RateLimitDimension.IP, 60, 10, RateLimitTier.LOCAL, RateLimitFallback.FAIL_OPEN,
                     "/api/v1/seckill/**"),
 

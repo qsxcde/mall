@@ -47,10 +47,22 @@ public interface TradeService {
     /**
      * 按指定单价创建订单，供秒杀等特殊通道使用（单价由营销域校验后传入，不经购物车）。
      *
+     * @param requestId 幂等键。同一 {@code (userId, requestId)} 只会建出一单：
+     *                  秒杀异步落库时传入队列消息里的 requestId，重复消费会被
+     *                  {@code uk_user_request} 唯一索引拦下并返回已有订单号。
+     *                  传 {@code null} 表示不做幂等（同步秒杀路径由 Redis「一人一单」保证）。
      * @return 订单号
      */
     String createOrderWithFixedPrice(Long userId, Long addressId, Long productId,
-                                     java.math.BigDecimal unitPrice, int qty, String remark);
+                                     java.math.BigDecimal unitPrice, int qty, String remark, String requestId);
+
+    /**
+     * 按幂等键查已建订单号；不存在返回 {@code null}。
+     *
+     * <p>供秒杀异步落库做<b>扣减之前</b>的幂等前置检查：先扣库存再被唯一索引拦下，
+     * 会让库存被多扣一次（调用方的事务不会回滚，因为唯一键冲突在交易域内部就被消化了）。</p>
+     */
+    String findOrderNoByRequestId(Long userId, String requestId);
 
     /** 评价完成：待评价 → 已完成。供评价域调用。 */
     void markReviewed(Long userId, String orderNo);

@@ -23,6 +23,16 @@ public final class RedisKeys {
     /** 秒杀一人一单标记：mall:seckill:bought:{itemId}:{userId} */
     public static final String SECKILL_BOUGHT = "mall:seckill:bought:";
 
+    /** 秒杀待落库订单消息流（削峰队列）：mall:seckill:order:stream */
+    public static final String SECKILL_ORDER_STREAM = "mall:seckill:order:stream";
+
+    /** 秒杀抢购结果（供前端轮询）：mall:seckill:result:{requestId} */
+    public static final String SECKILL_RESULT = "mall:seckill:result:";
+
+    public static String seckillResult(String requestId) {
+        return SECKILL_RESULT + requestId;
+    }
+
     /** 下单幂等：mall:order:idempotent:{requestId} */
     public static final String ORDER_IDEMPOTENT = "mall:order:idempotent:";
 
