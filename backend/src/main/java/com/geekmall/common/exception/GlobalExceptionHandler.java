@@ -1,9 +1,11 @@
 package com.geekmall.common.exception;
 
+import com.geekmall.common.log.RepeatLogThrottler;
 import com.geekmall.common.ratelimit.RateLimitException;
 import com.geekmall.common.result.Result;
 import com.geekmall.common.result.ResultCode;
 import jakarta.validation.ConstraintViolationException;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,7 +28,11 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
+
+    /** 重复异常日志节流：见 {@link RepeatLogThrottler} 的说明。 */
+    private final RepeatLogThrottler repeatLogThrottler;
 
     /**
      * 接口限流：快速失败，返回 429，避免请求继续堆积。
@@ -108,10 +114,37 @@ public class GlobalExceptionHandler {
         return Result.fail(ResultCode.FORBIDDEN);
     }
 
-    /** 兜底：非预期异常，必须打完整堆栈。 */
+    /**
+     * 兜底：非预期异常。
+     *
+     * <p>这里是全项目最大的日志放大点——原本对<b>每一个</b>非预期异常都打完整堆栈，
+     * 接口被刷或下游持续抖断时，日志会被重复堆栈淹没，真正有用的那条反而找不到。
+     * 现在按「异常类型 + 崩溃点」节流：窗口内首次打完整堆栈，其后只记一行摘要 +
+     * 累计次数（堆栈本身在 JSON 输出里还会被截断）。</p>
+     */
     @ExceptionHandler(Exception.class)
     public Result<Void> handleException(Exception e) {
-        log.error("[系统异常] ", e);
+        RepeatLogThrottler.Decision decision = repeatLogThrottler.record(fingerprint(e));
+        if (decision.firstInWindow()) {
+            log.error("[系统异常] ", e);
+        } else {
+            log.warn("[系统异常-重复] count={} type={} message={}",
+                    decision.count(), e.getClass().getSimpleName(), e.getMessage());
+        }
         return Result.fail(ResultCode.SYSTEM_ERROR);
+    }
+
+    /**
+     * 错误指纹：异常类型 + 最上层业务栈帧。
+     *
+     * <p>不用异常 message 参与：message 里常带 id / 金额等易变内容，
+     * 会让每一次异常都变成「新的指纹」，节流直接失效。</p>
+     */
+    private static String fingerprint(Exception e) {
+        StackTraceElement[] stack = e.getStackTrace();
+        String origin = stack.length > 0
+                ? stack[0].getClassName() + "#" + stack[0].getMethodName()
+                : e.getClass().getName();
+        return e.getClass().getName() + "@" + origin;
     }
 }

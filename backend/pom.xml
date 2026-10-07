@@ -24,6 +24,11 @@
         <springdoc.version>2.6.0</springdoc.version>
         <shedlock.version>5.16.0</shedlock.version>
         <!--
+          结构化日志（JSON）。8.0 对应 logback 1.5.x，与 Spring Boot 3.3.5 自带的
+          logback 版本对齐；用 7.x 会在 logback 1.5 上引入兼容性风险。
+        -->
+        <logstash-encoder.version>8.0</logstash-encoder.version>
+        <!--
           覆盖 Spring Boot 3.3.5 默认的 Testcontainers 1.19.8。
           1.19.8 携带的 docker-java 使用过旧的 Docker API 版本（1.32），
           而较新的 Docker Engine / Docker Desktop 已不再支持 < 1.44 的接口，
@@ -114,6 +119,12 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+        <!-- 结构化日志：把日志行输出为 JSON，Promtail/Loki 才能按字段解析与过滤 -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>${logstash-encoder.version}</version>
         </dependency>
 
         <!-- 接口文档 -->

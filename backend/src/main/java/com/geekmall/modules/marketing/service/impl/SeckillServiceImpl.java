@@ -3,6 +3,7 @@ package com.geekmall.modules.marketing.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.geekmall.common.constant.RedisKeys;
 import com.geekmall.common.exception.BizException;
+import com.geekmall.common.log.TraceContext;
 import com.geekmall.common.resilience.ResilienceGuard;
 import com.geekmall.common.result.ResultCode;
 import com.geekmall.modules.marketing.entity.SeckillItem;
@@ -171,7 +172,9 @@ public class SeckillServiceImpl implements SeckillService {
         try {
             // 队列是新增的下游依赖：用熔断 + 并发上限保护，避免队列卡住时把调用线程拖满
             resilienceGuard.execute(QUEUE_RESOURCE, () -> {
-                seckillOrderQueue.enqueue(new SeckillOrderMessage(requestId, userId, itemId, addressId));
+                // 顺带把当前请求的链路 ID 写入消息体：MDC 跨不过队列，消费端只能靠它还原上下文
+                seckillOrderQueue.enqueue(new SeckillOrderMessage(requestId, userId, itemId, addressId,
+                        TraceContext.currentTraceId()));
                 return requestId;
             });
         } catch (RuntimeException ex) {

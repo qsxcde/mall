@@ -33,7 +33,7 @@
 | 持久层 | MyBatis-Plus + MySQL 8 + Flyway（9 个版本化迁移，代码与库结构同源） |
 | 缓存 | Redis 7（分级 TTL + 本地 Caffeine L1） |
 | 分布式 | Redis Stream（秒杀削峰队列）、ShedLock（定时任务互斥） |
-| 可观测性 | Actuator + Micrometer/Prometheus + TraceId 全链路日志 |
+| 可观测性 | Actuator + Micrometer/Prometheus + 结构化 JSON 日志 + TraceId 全链路（跨线程 / 跨队列） |
 | 接口文档 | springdoc-openapi（Swagger UI） |
 | 存储 | MinIO 对象存储，可切本地磁盘 |
 | 测试 | JUnit 5 + Testcontainers（真实 MySQL 8 / Redis 7 容器） |
@@ -247,6 +247,9 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
 
 `infra/` 里已经编排好 Prometheus + Grafana + Loki + Promtail，但只有配置、没有看板与告警。缓存命中率、限流触发次数、消费队列滞后、熔断状态这些指标已在代码里埋好（Micrometer），把它们画出来才能在日常就发现问题，而不是等压测。
 
+> **进展**：日志侧已先行落地——结构化 JSON、traceId 跨线程/跨队列贯通、慢 SQL 阈值化、重复异常收敛、敏感信息脱敏，
+> 并有自动化断言守住（见 `docs/日志规范.md`）。看板、告警与限流/秒杀队列指标仍未落地，详见 `docs/可观测性现状分析与改进方案.md`。
+
 ### 3.3 更远的想法
 
 - **业务补全**：真实支付渠道、真实物流轨迹、真实短信通道（当前均为 mock）
@@ -274,5 +277,7 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
 | `高并发功能模块全景分析.md` / `功能点分析报告.md` | 模块与功能全景 |
 | `后端脚手架搭建方案.md` | 后端分层与中间件选型设计 |
 | `死代码清理报告.md` | 死代码排查与复核结论 |
+| `可观测性现状分析与改进方案.md` | 观测能力盘点（日志/指标/追踪/告警）、盲区诊断、改进方向与分阶段落地计划 |
+| `日志规范.md` | 日志级别语义、字段字典、链路上下文三边界、脱敏规则与噪音治理 |
 
 各子工程另有自己的 README：`backend/README.md`（接口清单与配置项）、`infra/README.md`（编排与可观测性用法）、`frontend/README.md`、`frontendMerchant/README.md`。

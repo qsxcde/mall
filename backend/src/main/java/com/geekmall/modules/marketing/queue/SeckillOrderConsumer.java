@@ -1,6 +1,7 @@
 package com.geekmall.modules.marketing.queue;
 
 import com.geekmall.common.exception.BizException;
+import com.geekmall.common.log.TraceContext;
 import com.geekmall.modules.marketing.config.SeckillProperties;
 import com.geekmall.modules.marketing.service.impl.SeckillServiceImpl;
 import lombok.RequiredArgsConstructor;
@@ -150,6 +151,19 @@ public class SeckillOrderConsumer implements SmartLifecycle {
 
     private void handle(String consumer, SeckillOrderQueue.Delivery delivery) {
         SeckillOrderMessage message = delivery.message();
+        // 队列跨越了线程边界（甚至跨越进程与时间），MDC 不可能自动传递：
+        // 只能把生产端写进消息体的 traceId 恢复出来，否则「入队」与「落库」
+        // 会是两条互不相干的日志，用户报障时无法串联
+        TraceContext.bindTraceId(message.traceId());
+        try {
+            doHandle(consumer, delivery, message);
+        } finally {
+            // 消费线程会被复用，必须清理，避免上一条消息的链路 ID 串到下一条
+            TraceContext.clearTraceId();
+        }
+    }
+
+    private void doHandle(String consumer, SeckillOrderQueue.Delivery delivery, SeckillOrderMessage message) {
         String requestId = message.requestId();
 
         Optional<SeckillGrabResult> existing = resultStore.find(requestId);

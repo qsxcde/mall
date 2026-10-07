@@ -61,6 +61,15 @@ mall:
     enabled: true
     # 本地限流窗口的容量上限，防止被大量伪造 IP 撑爆内存
     local-max-keys: 200000
+  logging:
+    # 慢 SQL 阈值（毫秒）：超过才打 WARN，并计入 mall_slow_sql_total 指标。
+    # prod 用 NoLoggingImpl 关掉了全量 SQL 日志，这条阈值化通道是生产唯一的慢 SQL 观测入口
+    slow-sql-threshold-ms: 200
+    # 重复异常日志节流：同一「异常类型 + 崩溃点」在该窗口内只打一次完整堆栈，
+    # 其余只记一行摘要 + 累计次数。防止高频异常把日志刷爆、淹没真正有用的错误
+    repeat-log-window-seconds: 60
+    # 节流指纹的容量上限，防止被构造出大量互不相同的异常撑爆内存
+    repeat-log-max-keys: 10000
   cache:
     # ---------------- 缓存治理：穿透 / 击穿 / 雪崩 ----------------
     # TTL 与 L1 白名单全部在此声明，改缓存行为不需要动代码

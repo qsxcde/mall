@@ -1,4 +1,14 @@
 # Promtail：采集 backend/logs 下的后端日志并推送到 Loki
+#
+# 后端日志是「一行一条 JSON」（见 backend/src/main/resources/logback-spring.xml），
+# 所以这里用 json stage 做字段解析。纯文本日志只能靠正则或全文匹配，而正则一旦
+# 跟不上日志格式变化就会**静默失效**——字段化解析才是可检索性的前提。
+#
+# ── 标签基数红线（最容易把 Loki 搞挂的地方）──────────────────────────────────
+#   labels              → 会切分 Loki stream，只放低基数字段
+#   structured_metadata → 不切分 stream，放高基数字段（traceId / userId）
+# 把 traceId 设成 label，stream 数量会随请求量线性膨胀，直接打爆索引与内存。
+# ───────────────────────────────────────────────────────────────────────────
 server:
   http_listen_port: 9080
   grpc_listen_port: 0
@@ -18,4 +28,43 @@ scrape_configs:
           job: geek-mall-server
           application: geek-mall-server
           # 挂载自 ../backend/logs
-          __path__: /var/log/geek-mall/*.log
+          # 只采集 JSON 文件：旧的纯文本 geek-mall.log（若存在）会被排除，避免同一批日志重复摄入
+          __path__: /var/log/geek-mall/geek-mall*.json.log
+    pipeline_stages:
+      # 1) 解析 JSON：字段名与 logback 的 provider 一一对应
+      - json:
+          expressions:
+            level: level
+            logger: logger
+            traceId: traceId
+            userId: userId
+            env: env
+
+      # 2) 低基数字段提升为 label：可用来过滤与聚合，代价是切分 stream，务必克制
+      - labels:
+          level:
+          logger:
+          env:
+
+      # 3) 高基数字段走 structured metadata：支持精确过滤，但不切分 stream
+      #    这也是「按 traceId 串起整条调用链」的检索入口
+      - structured_metadata:
+          traceId:
+          userId:
+
+      # 4) 直接从日志行产出指标：不用改一行业务代码就能得到「错误日志速率」曲线
+      - metrics:
+          error_log_lines_total:
+            type: Counter
+            description: "ERROR 级日志行数"
+            source: level
+            config:
+              value: ERROR
+              action: inc
+          warn_log_lines_total:
+            type: Counter
+            description: "WARN 级日志行数"
+            source: level
+            config:
+              value: WARN
+              action: inc

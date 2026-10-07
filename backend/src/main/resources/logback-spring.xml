@@ -1,29 +1,108 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ============================================================================
+  日志输出策略：一份日志，两种视图
+  ============================================================================
+    CONSOLE    纯文本，给人看（本地开发、docker logs）
+    JSON_FILE  JSON 单行，给机器看（Promtail → Loki 按字段解析、过滤、聚合）
+
+  为什么文件必须是 JSON：纯文本只能做全文匹配（|= "xxx"），无法按 level / logger /
+  traceId 做精确过滤与统计——这正是「采集链路通了、但日志用不起来」的根因。
+
+  两点刻意取舍：
+  1. 不使用 Spring 专有的 <springProperty> / <springProfile>，保持「纯 logback 配置」。
+     这样可以用 JoranConfigurator 离线校验日志格式（见 StructuredLoggingTest），
+     不必为了验证一段日志格式而拉起 MySQL 与 Redis。环境标识走环境变量 APP_ENV。
+     profile 维度的级别控制仍由 Spring Boot 的 logging.level.* 生效，不受影响。
+  2. 不额外拆一份「仅 ERROR」文件：ERROR 行本就在主文件里，Loki 侧按 level 过滤即可；
+     多一个文件反而会被同一段采集规则重复摄入，付出双份存储却换不到新能力。
+  ============================================================================
+-->
 <configuration>
 
-    <!-- traceId 由 TraceIdFilter 写入 MDC，日志里带上它即可串起整条调用链 -->
-    <property name="LOG_PATTERN"
+    <property name="APP_NAME" value="geek-mall-server"/>
+    <property name="APP_ENV" value="${APP_ENV:-dev}"/>
+    <property name="LOG_HOME" value="${LOG_HOME:-logs}"/>
+
+    <!-- 文本视图：traceId 由 TraceIdFilter/TraceContext 写入 MDC。
+         注意 %X{traceId:-} 的缺省值是空串（:- 后面为空），缺失时方括号内为空 -->
+
+    <property name="TEXT_PATTERN"
               value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-}] %logger{36} - %msg%n"/>
-    <property name="LOG_HOME" value="logs"/>
 
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>${LOG_PATTERN}</pattern>
+            <pattern>${TEXT_PATTERN}</pattern>
             <charset>UTF-8</charset>
         </encoder>
     </appender>
 
-    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${LOG_HOME}/geek-mall.log</file>
+    <appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_HOME}/geek-mall.json.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-            <fileNamePattern>${LOG_HOME}/geek-mall.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <fileNamePattern>${LOG_HOME}/geek-mall.%d{yyyy-MM-dd}.%i.json.log</fileNamePattern>
             <maxFileSize>50MB</maxFileSize>
             <maxHistory>15</maxHistory>
             <totalSizeCap>2GB</totalSizeCap>
         </rollingPolicy>
-        <encoder>
-            <pattern>${LOG_PATTERN}</pattern>
-            <charset>UTF-8</charset>
+        <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+            <providers>
+                <timestamp>
+                    <fieldName>@timestamp</fieldName>
+                    <timeZone>Asia/Shanghai</timeZone>
+                    <pattern>yyyy-MM-dd'T'HH:mm:ss.SSSXXX</pattern>
+                </timestamp>
+                <logLevel>
+                    <fieldName>level</fieldName>
+                </logLevel>
+                <loggerName>
+                    <fieldName>logger</fieldName>
+                </loggerName>
+                <threadName>
+                    <fieldName>thread</fieldName>
+                </threadName>
+                <message>
+                    <fieldName>message</fieldName>
+                </message>
+                <!-- MDC 展开为顶层字段：traceId / userId / orderNo
+                     跨线程由 MdcTaskDecorator 保证，跨队列由消息体携带 traceId 保证 -->
+                <mdc/>
+                <!-- 静态字段：app / env，让多环境日志在同一个 Loki 里可区分 -->
+                <provider class="net.logstash.logback.composite.loggingevent.LoggingEventPatternJsonProvider">
+                    <pattern>{"app":"${APP_NAME}","env":"${APP_ENV}"}</pattern>
+                </provider>
+                <!-- 堆栈截断：兜底异常不再刷出上百行（同时保证一条日志仍是一行） -->
+                <stackTrace>
+                    <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+                        <maxDepthPerThrowable>20</maxDepthPerThrowable>
+                        <maxLength>4096</maxLength>
+                        <rootCauseFirst>true</rootCauseFirst>
+                        <inlineHash>true</inlineHash>
+                    </throwableConverter>
+                </stackTrace>
+            </providers>
+            <!--
+              敏感信息脱敏。两条通道各管一件事：
+              · <path>  按字段名脱敏：字段语义明确，零误伤（密码、令牌、证件号字段）
+              · <value> 按值脱敏：手机号常出现在自由文本消息里（如「用户 138xxxx 登录」），
+                        只能靠正则。用前后环视限定边界，避免误伤更长的数字串
+                        （例如 13 位毫秒时间戳内部就有 11 位数字，不加边界会被误判）。
+              注意：这里只兜住「格式确定」的敏感数据；地址、姓名等自由文本必须靠
+              代码评审纪律——不要往日志里打完整个人信息。
+              值级脱敏是「全字段生效」的：MDC 上下文里若存了手机号形态的值（如把手机号
+              直接当 userId），同样会被打码。这是隐私优先的有意取舍；用户级排查请用
+              数据库侧 id 或订单号关联，而不是手机号本身。
+            -->
+            <jsonGeneratorDecorator class="net.logstash.logback.mask.MaskingJsonGeneratorDecorator">
+                <defaultMask>******</defaultMask>
+                <path>password</path>
+                <path>phone</path>
+                <path>mobile</path>
+                <path>idCard</path>
+                <path>token</path>
+                <value>(?&lt;!\d)1[3-9]\d{9}(?!\d)</value>
+                <value>(?&lt;!\d)\d{17}[\dXx](?!\d)</value>
+            </jsonGeneratorDecorator>
         </encoder>
     </appender>
 
@@ -31,6 +110,6 @@
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
-        <appender-ref ref="FILE"/>
+        <appender-ref ref="JSON_FILE"/>
     </root>
 </configuration>
