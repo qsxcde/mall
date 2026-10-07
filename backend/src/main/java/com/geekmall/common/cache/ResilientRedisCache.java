@@ -1,6 +1,7 @@
 package com.geekmall.common.cache;
 
 import com.geekmall.common.constant.RedisKeys;
+import com.geekmall.common.resilience.CircuitBreaker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.Cache;
 import org.springframework.cache.support.NullValue;
@@ -12,6 +13,7 @@ import org.springframework.data.redis.cache.RedisCacheWriter;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -61,7 +63,8 @@ public class ResilientRedisCache extends RedisCache {
     private final CacheProperties properties;
     private final StringRedisTemplate redisTemplate;
     private final CacheGovernanceMetrics metrics;
-    private final CacheCircuitBreaker breaker;
+    /** 通用熔断器（与业务级共用同一套状态机），由 {@code ResilienceGuard} 按资源名创建。 */
+    private final CircuitBreaker breaker;
 
     /** 本地一级缓存；未启用时为 {@code null}。 */
     private final com.github.benmanes.caffeine.cache.Cache<String, Object> localCache;
@@ -71,15 +74,13 @@ public class ResilientRedisCache extends RedisCache {
                                   RedisCacheConfiguration cacheConfiguration,
                                   CacheProperties properties,
                                   StringRedisTemplate redisTemplate,
-                                  CacheGovernanceMetrics metrics) {
+                                  CacheGovernanceMetrics metrics,
+                                  CircuitBreaker breaker) {
         super(name, cacheWriter, cacheConfiguration);
         this.properties = properties;
         this.redisTemplate = redisTemplate;
         this.metrics = metrics;
-        this.breaker = properties.getBreaker().isEnabled()
-                ? new CacheCircuitBreaker(properties.getBreaker().getFailureThreshold(),
-                properties.getBreaker().getOpenDuration())
-                : null;
+        this.breaker = breaker;
         this.localCache = initLocalCache(name);
     }
 
@@ -146,20 +147,17 @@ public class ResilientRedisCache extends RedisCache {
      * 空值缓存命中会返回 {@code SimpleValueWrapper(null)}（非 null），两者语义不同。</p>
      */
     private ValueWrapper readRedis(Object key) {
-        if (breaker != null && !breaker.allowRequest()) {
+        if (!breaker.tryAcquire()) {
             metrics.recordBreakerOpen(getName());
             return null;
         }
+        long startNanos = System.nanoTime();
         try {
             ValueWrapper wrapper = super.get(key);
-            if (breaker != null) {
-                breaker.recordSuccess();
-            }
+            breaker.recordSuccess(Duration.ofNanos(System.nanoTime() - startNanos));
             return wrapper;
         } catch (DataAccessException ex) {
-            if (breaker != null) {
-                breaker.recordFailure();
-            }
+            breaker.recordFailure(Duration.ofNanos(System.nanoTime() - startNanos));
             metrics.recordRedisError(getName(), ex);
             log.warn("读取缓存失败，本次按未命中处理：cache={}, error={}", getName(), ex.getMessage());
             return null;
@@ -328,8 +326,8 @@ public class ResilientRedisCache extends RedisCache {
         }
     }
 
-    /** 供测试判断熔断状态。 */
-    CacheCircuitBreaker getBreaker() {
+    /** 供测试读取熔断状态。 */
+    CircuitBreaker getBreaker() {
         return breaker;
     }
 

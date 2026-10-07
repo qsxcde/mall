@@ -83,11 +83,6 @@ mall:
       # 未抢到锁的线程最长等待时间，超时即放行回源（可用性优先）
       wait-timeout: 800ms
       retry-interval: 50ms
-    # Redis 故障时熔断降级，避免每个请求都卡满 redis timeout
-    breaker:
-      enabled: true
-      failure-threshold: 5
-      open-duration: 10s
     # 本地一级缓存（L1）：只给能容忍数秒陈旧的聚合类数据
     local:
       enabled: true
@@ -96,6 +91,42 @@ mall:
         - categoryTree
       ttl: 3s
       max-size: 10000
+  # ---------------- 业务级熔断降级（穿透缓存层之外的所有下游依赖） ----------------
+  # 缓存层熔断保护的是「Redis ↔ 数据库」；这里是保护「应用 ↔ 外部依赖」，
+  # 目标是让某个非核心依赖变慢/不可用时，不要把它无关的业务一起拖垮。
+  resilience:
+    enabled: true
+    # 未单独声明的资源使用以下兜底参数
+    defaults:
+      # 滑动窗口内样本不足时不做判定，避免低峰期偶发异常把依赖熔断掉
+      minimum-calls: 10
+      failure-rate-threshold: 50
+      # 「慢调用」也算失败：下游不报错但很慢，同样会占满线程池
+      slow-call-duration: 3s
+      slow-call-rate-threshold: 80
+      sliding-window: 60s
+      wait-duration-in-open: 10s
+      permitted-calls-in-half-open: 3
+    resources:
+      # 缓存层：Redis 整体不可用时希望尽快熔断，因此最小样本数更低
+      cache:
+        minimum-calls: 5
+        failure-rate-threshold: 60
+        slow-call-duration: 3s
+        slow-call-rate-threshold: 80
+        sliding-window: 30s
+        wait-duration-in-open: 10s
+        permitted-calls-in-half-open: 2
+      # 对象存储：并发上限挡在熔断之前，避免慢上传先占满 Tomcat 线程
+      minio-upload:
+        minimum-calls: 10
+        failure-rate-threshold: 50
+        slow-call-duration: 3s
+        slow-call-rate-threshold: 60
+        sliding-window: 60s
+        wait-duration-in-open: 15s
+        permitted-calls-in-half-open: 2
+        max-concurrent-calls: 20
   mock:
     # 是否注册联调用的模拟接口（如模拟发货），生产必须为 false
     enabled: false

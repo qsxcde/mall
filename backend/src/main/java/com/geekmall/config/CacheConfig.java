@@ -12,6 +12,7 @@ import com.geekmall.common.cache.JitterTtlFunctionFactory;
 import com.geekmall.common.cache.RedisBloomFilter;
 import com.geekmall.common.cache.ResilientRedisCacheManager;
 import com.geekmall.common.constant.RedisKeys;
+import com.geekmall.common.resilience.ResilienceGuard;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
@@ -53,7 +54,8 @@ public class CacheConfig {
     @Bean
     public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory,
                                           StringRedisTemplate stringRedisTemplate,
-                                          CacheGovernanceMetrics metrics) {
+                                          CacheGovernanceMetrics metrics,
+                                          ResilienceGuard resilienceGuard) {
         // 注意：这里刻意不调用 disableCachingNullValues()。
         // RedisCacheConfiguration 默认允许缓存 null，这正是「空值缓存」的基础；
         // 空值的过期时间由 JitterTtlFunctionFactory 压到 mall.cache.null-ttl（默认 60s），
@@ -74,7 +76,7 @@ public class CacheConfig {
 
         RedisCacheWriter cacheWriter = RedisCacheWriter.nonLockingRedisCacheWriter(connectionFactory);
         return new ResilientRedisCacheManager(cacheWriter, base, perCache,
-                properties, stringRedisTemplate, metrics);
+                properties, stringRedisTemplate, metrics, resilienceGuard);
     }
 
     /**
