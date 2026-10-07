@@ -1,0 +1,18 @@
+# Prometheus 采集配置：抓取后端 Actuator 暴露的指标
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: geek-mall-server
+    metrics_path: /actuator/prometheus
+    static_configs:
+      # 后端跑在宿主机（IDEA / mvn spring-boot:run）时用 host.docker.internal
+      # 若后端也跑在容器里，改成容器服务名，如 geek-mall-server:8080
+      - targets: ["host.docker.internal:8080"]
+        labels:
+          application: geek-mall-server
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

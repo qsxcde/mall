@@ -1,0 +1,48 @@
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT:3306}/${MYSQL_DB}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+    username: ${MYSQL_USER}
+    password: ${MYSQL_PASSWORD}
+    hikari:
+      pool-name: GeekMallHikariCP
+      minimum-idle: 20
+      # P0-1：连接池按数据库可承受并发写反推，配合快速失败
+      maximum-pool-size: 100
+      # 3s 快速失败：宁可返回繁忙，也不要挂起 30s 拖垮线程池
+      connection-timeout: 3000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      # P2-8：连接泄漏检测，超过 10s 未归还打印告警
+      leak-detection-threshold: 10000
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 3s
+      # P1-2：prod 之前漏配连接池，Lettuce 走单连接共享，高并发下大面积 3s 超时
+      lettuce:
+        pool:
+          max-active: 64
+          max-idle: 16
+          min-idle: 8
+          max-wait: 1s
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    clean-disabled: true
+
+mall:
+  init-demo-user: false
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+logging:
+  level:
+    com.geekmall: info
+    root: info

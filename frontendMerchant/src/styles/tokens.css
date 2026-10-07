@@ -1,0 +1,58 @@
+/* ==========================================================================
+   设计令牌 —— 「精工数据台」
+   暖象牙画布 + 深墨蓝侧栏 + 品牌蓝点缀，与 C 端前台刻意区隔：
+   前台做生意（明亮、促销感），后台管生意（沉稳、报表感）。
+   ========================================================================== */
+:root {
+  /* --- 侧栏（深墨蓝） --- */
+  --rail: #0c1322;
+  --rail-2: #131c30;
+  --rail-line: rgba(255, 255, 255, 0.07);
+
+  /* --- 画布与描边（暖白） --- */
+  --canvas: #f3f0e9;
+  --card: #ffffff;
+  --line: #e6e1d6;
+  --line-soft: #efece4;
+
+  /* --- 文字层级 --- */
+  --text: #171f2e;
+  --text-2: #5b6472;
+  --text-3: #98a0ac;
+
+  /* --- 品牌与语义色 --- */
+  --brand: #1a6dff;
+  --brand-deep: #0a4fd6;
+  --brand-soft: #eaf1ff;
+  --coral: #ff5a2e;
+  --coral-soft: #ffece6;
+  --green: #109150;
+  --green-soft: #e6f6ec;
+  --teal: #0d9488;
+  --teal-soft: #e2f6f3;
+  --amber: #e08b1a;
+  --amber-soft: #fdf1dc;
+  --violet: #7c5cff;
+  --violet-soft: #efeaff;
+  --gold: #c8922f;
+
+  /* --- 阴影 --- */
+  --shadow-s: 0 1px 2px rgba(20, 26, 40, 0.04), 0 1px 3px rgba(20, 26, 40, 0.05);
+  --shadow-m: 0 2px 6px rgba(20, 26, 40, 0.05), 0 10px 26px -12px rgba(20, 26, 40, 0.18);
+  --shadow-l: 0 18px 48px -20px rgba(16, 24, 40, 0.35);
+
+  /* --- 圆角 --- */
+  --r-s: 9px;
+  --r-m: 14px;
+  --r-l: 20px;
+
+  /* --- 字体族 --- */
+  --font-ui: "Manrope", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-display: "Fraunces", "Songti SC", Georgia, "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* --- 布局尺寸 --- */
+  --rail-w: 244px;
+  --topbar-h: 64px;
+  --canvas-pad: 24px 28px 40px;
+}

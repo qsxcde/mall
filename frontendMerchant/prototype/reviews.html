@@ -1,0 +1,1162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>评价管理 · 极客商家中心</title>
+<meta name="description" content="极客数码商城 商家中心 — 评价管理" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+/* ==========================================================================
+   极客商家中心 — 设计令牌（全站共用视觉体系）
+   ========================================================================== */
+:root {
+  --rail:#0c1322; --rail-2:#131c30; --rail-line:rgba(255,255,255,.07);
+  --canvas:#f3f0e9; --card:#fff; --line:#e6e1d6; --line-soft:#efece4;
+  --text:#171f2e; --text-2:#5b6472; --text-3:#98a0ac;
+  --brand:#1a6dff; --brand-deep:#0a4fd6; --brand-soft:#eaf1ff;
+  --coral:#ff5a2e; --coral-soft:#ffece6;
+  --green:#109150; --green-soft:#e6f6ec;
+  --teal:#0d9488; --teal-soft:#e2f6f3;
+  --amber:#e08b1a; --amber-soft:#fdf1dc;
+  --violet:#7c5cff; --violet-soft:#efeaff;
+  --gold:#c8922f; --star:#f5a524;
+  --shadow-s:0 1px 2px rgba(20,26,40,.04), 0 1px 3px rgba(20,26,40,.05);
+  --shadow-m:0 2px 6px rgba(20,26,40,.05), 0 10px 26px -12px rgba(20,26,40,.18);
+  --shadow-l:0 18px 48px -20px rgba(16,24,40,.35);
+  --r-m:14px; --r-l:20px;
+  --ui:"Manrope","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --display:"Fraunces","Songti SC",Georgia,"Times New Roman",serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html { -webkit-text-size-adjust:100%; }
+body { font-family:var(--ui); background:var(--canvas); color:var(--text); font-size:14px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+body::after {
+  content:""; position:fixed; inset:0; z-index:9000; pointer-events:none; opacity:.05;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+a { text-decoration:none; color:inherit; }
+button { font-family:inherit; cursor:pointer; border:none; background:none; color:inherit; }
+input, select, textarea { font-family:inherit; color:inherit; }
+svg { display:block; }
+::-webkit-scrollbar { width:10px; height:10px; }
+::-webkit-scrollbar-thumb { background:#cfc9bc; border-radius:10px; border:3px solid transparent; background-clip:content-box; }
+::-webkit-scrollbar-thumb:hover { background:#b6af9f; background-clip:content-box; border:3px solid transparent; }
+::-webkit-scrollbar-track { background:transparent; }
+.num { font-family:var(--display); font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1; letter-spacing:-.01em; }
+.mono { font-family:var(--mono); font-size:12px; font-variant-numeric:tabular-nums; }
+
+/* ============================ 骨架 ============================ */
+.app { display:flex; min-height:100vh; }
+.rail {
+  width:244px; flex-shrink:0; background:var(--rail); color:#cfd6e4; display:flex; flex-direction:column;
+  position:sticky; top:0; height:100vh; z-index:40; transition:transform .32s cubic-bezier(.22,.8,.2,1);
+  background-image:
+    radial-gradient(120% 90% at 0% 0%, rgba(26,109,255,.22), transparent 55%),
+    radial-gradient(90% 70% at 100% 100%, rgba(255,90,46,.1), transparent 60%);
+}
+.brand { display:flex; align-items:center; gap:11px; padding:22px 20px 20px; }
+.brand-mark {
+  width:38px; height:38px; border-radius:11px; flex-shrink:0;
+  background:linear-gradient(140deg,#4da3ff,var(--brand) 60%,var(--brand-deep));
+  display:grid; place-items:center; font-family:var(--display); font-weight:700; font-size:19px; color:#fff;
+  box-shadow:0 8px 20px -8px rgba(26,109,255,.9), inset 0 1px 0 rgba(255,255,255,.4);
+}
+.brand-txt b { display:block; color:#fff; font-size:15px; font-weight:800; letter-spacing:.02em; line-height:1.2; }
+.brand-txt span { font-size:11px; color:#7b869c; letter-spacing:.14em; text-transform:uppercase; }
+.nav { flex:1; overflow-y:auto; padding:6px 12px 16px; }
+.nav::-webkit-scrollbar { width:0; }
+.nav-group { margin-top:16px; }
+.nav-group:first-child { margin-top:4px; }
+.nav-label { font-size:10.5px; letter-spacing:.18em; text-transform:uppercase; color:#5c6880; padding:0 10px 9px; font-weight:700; }
+.nav-item { position:relative; display:flex; align-items:center; gap:11px; padding:10px 12px; border-radius:10px; font-size:13.5px; font-weight:600; color:#a9b4c8; transition:background .18s, color .18s; }
+.nav-item svg { width:18px; height:18px; flex-shrink:0; opacity:.9; }
+.nav-item:hover { background:rgba(255,255,255,.06); color:#fff; }
+.nav-item.active { color:#fff; background:linear-gradient(100deg, rgba(26,109,255,.95), rgba(26,109,255,.55)); box-shadow:0 10px 24px -12px rgba(26,109,255,.95); }
+.nav-item.active::before { content:""; position:absolute; left:-12px; top:50%; transform:translateY(-50%); width:3px; height:20px; border-radius:0 3px 3px 0; background:#7fbaff; }
+.nav-item .pill { margin-left:auto; background:var(--coral); color:#fff; font-family:var(--mono); font-size:10px; font-weight:600; border-radius:20px; padding:1.5px 7px; line-height:1.5; }
+.nav-item.active .pill { background:rgba(255,255,255,.28); }
+.rail-foot { padding:14px; border-top:1px solid var(--rail-line); }
+.store-chip { display:flex; align-items:center; gap:10px; background:var(--rail-2); border:1px solid var(--rail-line); border-radius:12px; padding:11px; }
+.store-logo { width:34px; height:34px; border-radius:9px; flex-shrink:0; background:linear-gradient(135deg,#ffd88a,var(--gold)); display:grid; place-items:center; font-size:13px; font-weight:800; color:#4a3208; }
+.store-chip .s-txt { min-width:0; }
+.store-chip .s-txt b { display:block; font-size:12.5px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.store-chip .s-txt span { font-size:11px; color:#7b869c; display:flex; align-items:center; gap:5px; }
+.dot-ok { width:6px; height:6px; border-radius:50%; background:#35d07f; box-shadow:0 0 0 3px rgba(53,208,127,.18); }
+
+.main { flex:1; min-width:0; display:flex; flex-direction:column; }
+.topbar {
+  position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:16px; padding:13px 28px;
+  background:rgba(243,240,233,.82); backdrop-filter:saturate(1.6) blur(14px);
+  -webkit-backdrop-filter:saturate(1.6) blur(14px); border-bottom:1px solid var(--line);
+}
+.burger { display:none; width:38px; height:38px; border-radius:10px; border:1px solid var(--line); background:#fff; place-items:center; }
+.crumb { font-size:12.5px; color:var(--text-3); display:flex; align-items:center; gap:7px; }
+.crumb b { color:var(--text); font-weight:700; }
+.search { margin-left:auto; display:flex; align-items:center; gap:9px; background:#fff; border:1px solid var(--line); border-radius:11px; padding:0 13px; height:38px; width:268px; transition:border-color .18s, box-shadow .18s; }
+.search:focus-within { border-color:var(--brand); box-shadow:0 0 0 3px rgba(26,109,255,.12); }
+.search svg { width:16px; height:16px; color:var(--text-3); }
+.search input { border:none; outline:none; background:none; font-size:13px; width:100%; }
+.search kbd { font-family:var(--mono); font-size:10.5px; color:var(--text-3); border:1px solid var(--line); border-radius:5px; padding:1px 5px; background:#faf8f4; }
+.icon-btn { position:relative; width:38px; height:38px; border-radius:11px; border:1px solid var(--line); background:#fff; display:grid; place-items:center; color:var(--text-2); transition:all .18s; flex-shrink:0; }
+.icon-btn:hover { color:var(--brand); border-color:#c9dcff; background:var(--brand-soft); }
+.icon-btn svg { width:18px; height:18px; }
+.badge-dot { position:absolute; top:6px; right:6px; min-width:16px; height:16px; padding:0 4px; border-radius:9px; background:var(--coral); color:#fff; font-family:var(--mono); font-size:10px; font-weight:600; display:grid; place-items:center; border:2px solid var(--canvas); }
+.btn-primary, .btn-ghost { display:inline-flex; align-items:center; gap:7px; height:38px; padding:0 16px; border-radius:11px; font-weight:700; font-size:13px; transition:all .18s; white-space:nowrap; }
+.btn-primary { background:linear-gradient(135deg,#4da3ff,var(--brand)); color:#fff; box-shadow:0 10px 22px -12px rgba(26,109,255,.95); }
+.btn-primary:hover { filter:brightness(1.06); transform:translateY(-1px); }
+.btn-ghost { border:1px solid var(--line); background:#fff; color:var(--text-2); }
+.btn-ghost:hover { border-color:#c9dcff; color:var(--brand); background:var(--brand-soft); }
+.btn-primary svg, .btn-ghost svg { width:16px; height:16px; }
+.me { display:flex; align-items:center; gap:9px; padding-left:15px; border-left:1px solid var(--line); }
+.me-av { width:34px; height:34px; border-radius:10px; background:linear-gradient(135deg,#2b3a67,var(--brand)); color:#fff; display:grid; place-items:center; font-size:13px; font-weight:800; }
+.me b { font-size:13px; display:block; line-height:1.2; }
+.me span { font-size:11px; color:var(--text-3); }
+.pop { position:absolute; top:54px; right:28px; width:320px; background:#fff; border:1px solid var(--line); border-radius:var(--r-m); box-shadow:var(--shadow-l); padding:8px; z-index:50; opacity:0; visibility:hidden; transform:translateY(-8px); transition:all .2s cubic-bezier(.2,.8,.2,1); }
+.pop.open { opacity:1; visibility:visible; transform:translateY(0); }
+.pop h4 { font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-3); padding:8px 10px 6px; }
+.pop-item { display:flex; gap:10px; padding:10px; border-radius:10px; transition:background .18s; }
+.pop-item:hover { background:#faf8f4; }
+.pop-item .pi { width:30px; height:30px; border-radius:9px; display:grid; place-items:center; flex-shrink:0; font-size:14px; }
+.pop-item p { font-size:12.5px; line-height:1.5; }
+.pop-item time { font-size:11px; color:var(--text-3); }
+
+/* ============================ 画布 / 页头 ============================ */
+.canvas { padding:24px 28px 40px; background-image:radial-gradient(circle, rgba(23,31,46,.05) 1px, transparent 1px); background-size:24px 24px; background-position:-12px -12px; }
+.rise { opacity:0; transform:translateY(14px); animation:rise .62s cubic-bezier(.22,.8,.2,1) forwards; }
+@keyframes rise { to { opacity:1; transform:none; } }
+.page-head { display:flex; align-items:flex-end; gap:20px; flex-wrap:wrap; }
+.page-head .eyebrow { display:inline-flex; align-items:center; gap:8px; font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--brand); font-weight:700; }
+.page-head .eyebrow::before { content:""; width:22px; height:1.5px; background:var(--brand); border-radius:2px; }
+.page-head h1 { font-size:26px; font-weight:800; margin-top:9px; letter-spacing:.01em; }
+.page-head h1 em { font-style:normal; font-family:var(--display); font-weight:600; color:var(--brand); }
+.page-head .desc { font-size:12.5px; color:var(--text-3); margin-top:6px; }
+.page-head .desc b { font-family:var(--mono); color:var(--text-2); }
+.page-head .acts { margin-left:auto; display:flex; gap:10px; flex-wrap:wrap; }
+
+.card { background:var(--card); border:1px solid var(--line); border-radius:var(--r-m); box-shadow:var(--shadow-s); margin-top:16px; overflow:hidden; }
+
+/* ============================ 评分总览 ============================ */
+.overview { display:grid; grid-template-columns:392px minmax(0,1fr); gap:16px; margin-top:18px; }
+.score-card {
+  position:relative; overflow:hidden; border-radius:var(--r-l); padding:24px 26px; color:#fff;
+  background:
+    radial-gradient(120% 150% at 92% -20%, rgba(26,109,255,.55), transparent 60%),
+    radial-gradient(80% 120% at 6% 120%, rgba(200,146,47,.34), transparent 62%),
+    linear-gradient(120deg,#0c1322,#16203a 62%,#1b2745);
+  box-shadow:var(--shadow-l);
+}
+.score-card::before {
+  content:""; position:absolute; inset:0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+  background-size:40px 40px;
+  mask-image:radial-gradient(120% 100% at 80% 0%, #000 30%, transparent 78%);
+  -webkit-mask-image:radial-gradient(120% 100% at 80% 0%, #000 30%, transparent 78%);
+}
+.score-card > * { position:relative; z-index:1; }
+.score-card .sc-label { font-size:10.5px; letter-spacing:.18em; text-transform:uppercase; color:#9fc2ff; font-weight:700; }
+.score-main { display:flex; align-items:flex-end; gap:16px; margin-top:12px; }
+.score-big { font-family:var(--display); font-size:58px; font-weight:600; line-height:.92; letter-spacing:-.02em; }
+.score-side { padding-bottom:6px; }
+.score-side .stars { font-size:16px; }
+.score-side .sm { font-size:12px; color:#a6b3cc; margin-top:6px; }
+.score-side .sm b { color:#ffd88a; font-family:var(--display); font-size:14px; }
+.score-tags { display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; }
+.score-tags span {
+  font-size:11.5px; font-weight:700; padding:3px 10px; border-radius:20px;
+  background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.16); color:#dce6f7;
+}
+.dists { margin-top:18px; display:flex; flex-direction:column; gap:9px; }
+.dist { display:flex; align-items:center; gap:10px; font-size:11.5px; color:#a6b3cc; }
+.dist .k { width:34px; flex-shrink:0; }
+.dist .track { flex:1; height:7px; border-radius:4px; background:rgba(255,255,255,.13); overflow:hidden; }
+.dist .track i { display:block; height:100%; border-radius:4px; background:linear-gradient(90deg,#ffd88a,#f5a524); width:0; transition:width 1s cubic-bezier(.22,.8,.2,1); }
+.dist .pct { width:44px; text-align:right; font-family:var(--mono); color:#fff; font-weight:600; }
+
+/* 星级 */
+.stars { position:relative; display:inline-block; font-size:13px; letter-spacing:1.5px; color:#ded8ca; line-height:1; white-space:nowrap; }
+.stars i { position:absolute; left:0; top:0; color:var(--star); overflow:hidden; white-space:nowrap; font-style:normal; }
+
+/* 指标小卡 */
+.stat-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:16px; }
+.stat { background:var(--card); border:1px solid var(--line); border-radius:var(--r-m); padding:16px 18px; transition:transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s; }
+.stat:hover { transform:translateY(-3px); box-shadow:var(--shadow-m); }
+.stat .k { font-size:12px; color:var(--text-2); font-weight:600; display:flex; align-items:center; gap:7px; }
+.stat .k i { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.stat .v { font-family:var(--display); font-size:30px; font-weight:600; margin-top:9px; line-height:1.1; }
+.stat .v small { font-size:14px; font-weight:600; opacity:.6; margin-right:2px; }
+.stat .v small.u { margin:0; opacity:.45; font-size:13px; }
+.stat .d { font-size:11.5px; color:var(--text-3); margin-top:5px; }
+.stat .d b { font-family:var(--mono); color:var(--text-2); }
+.stat .d .up { color:var(--green); font-family:var(--mono); font-weight:600; }
+.stat .d .down { color:var(--coral); font-family:var(--mono); font-weight:600; }
+.stat.alert { border-color:#ffd9cc; background:linear-gradient(180deg,#fff,#fffaf8); }
+
+/* ============================ Tab / 工具条 ============================ */
+.tabs { display:flex; gap:4px; padding:6px 14px 0; overflow-x:auto; border-bottom:1px solid var(--line); }
+.tabs::-webkit-scrollbar { height:0; }
+.tab { position:relative; display:flex; align-items:center; gap:7px; white-space:nowrap; padding:12px 14px 14px; font-size:13.5px; font-weight:700; color:var(--text-2); transition:color .18s; }
+.tab:hover { color:var(--brand); }
+.tab.on { color:var(--brand); }
+.tab.on::after { content:""; position:absolute; left:10px; right:10px; bottom:-1px; height:2.5px; border-radius:3px 3px 0 0; background:var(--brand); }
+.tab .cnt { font-family:var(--mono); font-size:10.5px; font-weight:600; background:#f1eee6; color:var(--text-2); border-radius:20px; padding:1px 7px; line-height:1.6; }
+.tab.on .cnt { background:var(--brand-soft); color:var(--brand); }
+.tab .cnt.hot { background:var(--coral); color:#fff; }
+
+.toolbar { display:flex; align-items:center; gap:10px; padding:14px 16px; flex-wrap:wrap; border-bottom:1px solid var(--line); background:#fdfcfa; }
+.sel {
+  height:34px; border:1px solid var(--line); border-radius:9px; background:#fff; padding:0 30px 0 11px;
+  font-size:12.5px; font-weight:600; color:var(--text-2); outline:none; cursor:pointer;
+  appearance:none; -webkit-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2398a0ac' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 10px center; transition:border-color .18s, box-shadow .18s;
+}
+.sel:focus { border-color:var(--brand); box-shadow:0 0 0 3px rgba(26,109,255,.12); }
+.tb-label { font-size:12px; color:var(--text-3); font-weight:600; }
+.toolbar .spacer { margin-left:auto; }
+.tb-reset { font-size:12.5px; font-weight:700; color:var(--text-3); padding:8px 6px; }
+.tb-reset:hover { color:var(--brand); }
+.result-hint { font-size:12px; color:var(--text-3); }
+.result-hint b { color:var(--brand); font-family:var(--mono); }
+
+/* ============================ 评价列表 ============================ */
+.rv-list { display:flex; flex-direction:column; }
+.rv { display:flex; gap:14px; padding:20px 22px; border-bottom:1px solid var(--line-soft); transition:background .2s; }
+.rv:last-child { border-bottom:none; }
+.rv:hover { background:#fbfaf7; }
+.rv-av { width:42px; height:42px; border-radius:12px; flex-shrink:0; display:grid; place-items:center; font-size:15px; font-weight:800; color:#fff; }
+.rv-main { flex:1; min-width:0; }
+.rv-top { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+.rv-top b { font-size:13.5px; font-weight:700; }
+.lv { font-family:var(--mono); font-size:10px; font-weight:600; padding:1px 6px; border-radius:5px; background:var(--amber-soft); color:var(--gold); }
+.rv-time { font-size:11.5px; color:var(--text-3); font-family:var(--mono); margin-left:auto; }
+.rv-prod {
+  display:inline-flex; align-items:center; gap:8px; margin-top:10px; padding:5px 11px 5px 6px;
+  background:#faf8f4; border:1px solid var(--line-soft); border-radius:9px; font-size:12px; color:var(--text-2);
+  max-width:100%;
+}
+.rv-prod .thumb { width:22px; height:22px; border-radius:6px; font-size:0; flex-shrink:0; }
+.rv-prod em { font-style:normal; color:var(--text-3); }
+.rv-txt { font-size:13.5px; line-height:1.85; color:var(--text); margin-top:11px; }
+.rv-txt .hl { color:var(--brand); font-weight:600; }
+.rv-imgs { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+.rv-imgs .im {
+  width:74px; height:74px; border-radius:10px; display:grid; place-items:center;
+  font-family:var(--mono); font-size:10px; font-weight:600; color:rgba(23,31,46,.45);
+  cursor:pointer; transition:transform .2s, box-shadow .2s; position:relative;
+}
+.rv-imgs .im:hover { transform:scale(1.05); box-shadow:var(--shadow-m); }
+.rv-imgs .im.video::after {
+  content:"▶"; position:absolute; inset:0; display:grid; place-items:center;
+  background:rgba(12,19,34,.34); border-radius:10px; color:#fff; font-size:17px;
+}
+.th1 { background:linear-gradient(135deg,#d9e8ff,#a9ccff); }
+.th2 { background:linear-gradient(135deg,#ffe3d6,#ffc0a3); }
+.th3 { background:linear-gradient(135deg,#d8f4ea,#a8e6d3); }
+.th4 { background:linear-gradient(135deg,#ffeec9,#ffdb96); }
+.th5 { background:linear-gradient(135deg,#e6dcff,#cbb9ff); }
+.th6 { background:linear-gradient(135deg,#d9f0ff,#a8dcf7); }
+
+.rv-reply {
+  margin-top:13px; padding:12px 14px; border-radius:11px;
+  background:var(--brand-soft); border-left:3px solid var(--brand);
+}
+.rv-reply .rh { display:flex; align-items:center; gap:8px; font-size:12px; font-weight:800; color:var(--brand); }
+.rv-reply .rh span { margin-left:auto; font-family:var(--mono); font-size:11px; font-weight:500; color:#6f9be0; }
+.rv-reply .rc { font-size:13px; color:#2a4f8f; line-height:1.8; margin-top:6px; }
+.rv-ops { display:flex; align-items:center; gap:4px; margin-top:13px; flex-wrap:wrap; }
+.rv-ops .sep { width:1px; height:14px; background:var(--line); margin:0 5px; }
+
+.st { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; padding:3.5px 10px; border-radius:20px; white-space:nowrap; }
+.st::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+.s-good { color:var(--green); background:var(--green-soft); }
+.s-mid { color:var(--amber); background:var(--amber-soft); }
+.s-bad { color:var(--coral); background:var(--coral-soft); }
+.s-wait { color:var(--brand); background:var(--brand-soft); }
+.s-done { color:var(--text-2); background:#f1eee6; }
+.tagm { display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:800; padding:1.5px 7px; border-radius:5px; }
+.t-img { background:var(--violet-soft); color:var(--violet); }
+.t-add { background:var(--teal-soft); color:var(--teal); }
+.t-top { background:var(--amber-soft); color:var(--gold); }
+
+.op { font-size:12.5px; font-weight:700; color:var(--brand); padding:5px 9px; border-radius:7px; transition:background .18s; white-space:nowrap; }
+.op:hover { background:var(--brand-soft); }
+.op.muted { color:var(--text-2); }
+.op.muted:hover { background:#f1eee6; }
+.op.danger { color:var(--coral); }
+.op.danger:hover { background:var(--coral-soft); }
+.op.strong { background:var(--brand); color:#fff; padding:6px 14px; border-radius:8px; box-shadow:0 8px 18px -10px rgba(26,109,255,.95); }
+.op.strong:hover { filter:brightness(1.07); }
+
+.empty { padding:62px 20px; text-align:center; }
+.empty .eic { width:60px; height:60px; border-radius:18px; margin:0 auto 15px; background:#f4f1ea; display:grid; place-items:center; color:var(--text-3); border:1px solid var(--line); }
+.empty .eic svg { width:27px; height:27px; }
+.empty h4 { font-size:15px; font-weight:800; }
+.empty p { font-size:12.5px; color:var(--text-3); margin-top:6px; }
+
+/* 分页 */
+.pager { display:flex; align-items:center; gap:14px; padding:15px 16px; border-top:1px solid var(--line); flex-wrap:wrap; }
+.pager .info { font-size:12.5px; color:var(--text-3); }
+.pager .info b { font-family:var(--mono); color:var(--text-2); }
+.pager .spacer { margin-left:auto; }
+.pages { display:flex; gap:5px; }
+.pg { min-width:32px; height:32px; padding:0 9px; border-radius:9px; border:1px solid var(--line); background:#fff; font-size:12.5px; font-weight:700; color:var(--text-2); display:grid; place-items:center; transition:all .18s; }
+.pg:hover:not(:disabled) { border-color:#c9dcff; color:var(--brand); background:var(--brand-soft); }
+.pg.on { background:var(--brand); border-color:var(--brand); color:#fff; box-shadow:0 8px 18px -10px rgba(26,109,255,.95); }
+.pg:disabled { opacity:.45; cursor:not-allowed; }
+
+/* ============================ 弹窗 ============================ */
+.modal { position:fixed; inset:0; z-index:70; display:grid; place-items:center; padding:20px; opacity:0; visibility:hidden; transition:opacity .22s; }
+.modal.on { opacity:1; visibility:visible; }
+.modal-mask { position:absolute; inset:0; background:rgba(12,19,34,.55); backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px); }
+.modal-box { position:relative; width:560px; max-width:100%; background:#fff; border-radius:var(--r-l); box-shadow:var(--shadow-l); transform:translateY(14px) scale(.98); overflow:hidden; transition:transform .28s cubic-bezier(.22,.8,.2,1); max-height:92vh; display:flex; flex-direction:column; }
+.modal.on .modal-box { transform:none; }
+.modal-head { padding:20px 22px 14px; }
+.modal-head h3 { font-size:17px; font-weight:800; }
+.modal-head p { font-size:12.5px; color:var(--text-3); margin-top:5px; }
+.modal-body { padding:0 22px 4px; overflow-y:auto; flex:1; }
+.modal-foot { padding:16px 22px 20px; display:flex; gap:10px; justify-content:flex-end; }
+.field { margin-bottom:15px; }
+.field label { display:block; font-size:12.5px; font-weight:700; color:var(--text-2); margin-bottom:7px; }
+.field label i { color:var(--coral); font-style:normal; }
+.field input, .field select, .field textarea { width:100%; height:40px; border:1px solid var(--line); border-radius:10px; padding:0 12px; font-size:13px; outline:none; background:#fff; transition:border-color .18s, box-shadow .18s; }
+.field textarea { height:auto; padding:11px 12px; resize:vertical; line-height:1.75; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color:var(--brand); box-shadow:0 0 0 3px rgba(26,109,255,.12); }
+.field .hint { font-size:11.5px; color:var(--text-3); margin-top:6px; display:flex; justify-content:space-between; }
+.quick { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+.quick button { padding:6px 12px; border-radius:18px; border:1px solid var(--line); background:#fff; font-size:12px; font-weight:600; color:var(--text-2); transition:all .18s; text-align:left; }
+.quick button:hover { border-color:#c9dcff; color:var(--brand); background:var(--brand-soft); }
+.quote { background:#faf8f4; border:1px solid var(--line-soft); border-radius:11px; padding:13px 15px; margin-bottom:16px; }
+.quote .qt { font-size:12.5px; font-weight:800; display:flex; align-items:center; gap:8px; }
+.quote .qc { font-size:12.5px; color:var(--text-2); line-height:1.8; margin-top:7px; }
+.btn-plain { height:42px; padding:0 18px; border-radius:11px; border:1px solid var(--line); background:#fff; color:var(--text-2); font-weight:700; font-size:13px; transition:all .18s; }
+.btn-plain:hover { border-color:#cfc9bc; color:var(--text); }
+.btn-go { height:42px; padding:0 22px; border-radius:11px; background:linear-gradient(135deg,#4da3ff,var(--brand)); color:#fff; font-weight:700; font-size:13px; box-shadow:0 10px 22px -12px rgba(26,109,255,.95); transition:filter .18s; }
+.btn-go:hover { filter:brightness(1.06); }
+.btn-go.danger { background:linear-gradient(135deg,#ff8a5c,var(--coral)); box-shadow:0 10px 22px -12px rgba(255,90,46,.95); }
+
+.toasts { position:fixed; top:18px; left:50%; transform:translateX(-50%); z-index:80; display:flex; flex-direction:column; gap:10px; align-items:center; }
+.toast { display:flex; align-items:center; gap:10px; padding:11px 18px; border-radius:12px; background:#0c1322; color:#fff; font-size:13px; font-weight:600; box-shadow:var(--shadow-l); animation:toastIn .3s cubic-bezier(.22,.8,.2,1); }
+.toast.out { animation:toastOut .25s forwards; }
+.toast svg { width:16px; height:16px; flex-shrink:0; }
+.toast.ok svg { color:#7ef0b1; }
+.toast.warn svg { color:#ffd88a; }
+@keyframes toastIn { from { opacity:0; transform:translateY(-14px) scale(.96); } }
+@keyframes toastOut { to { opacity:0; transform:translateY(-10px) scale(.97); } }
+
+/* ============================ 响应式 ============================ */
+@media (max-width:1300px) {
+  .overview { grid-template-columns:1fr; }
+  .search { width:190px; }
+}
+@media (max-width:980px) {
+  .rail { position:fixed; left:0; top:0; transform:translateX(-100%); box-shadow:var(--shadow-l); }
+  .rail.open { transform:none; }
+  .burger { display:grid; }
+  .crumb { display:none; }
+  .search { width:100%; max-width:100%; order:5; margin-left:0; }
+  .topbar { flex-wrap:wrap; }
+  .canvas { padding:18px 16px 32px; }
+  .pop { right:16px; width:calc(100vw - 32px); }
+}
+@media (max-width:760px) {
+  .stat-grid { grid-template-columns:1fr 1fr; }
+  .page-head .acts { margin-left:0; width:100%; }
+  .page-head .acts .btn-ghost, .page-head .acts .btn-primary { flex:1; justify-content:center; }
+  .score-card { padding:20px; }
+  .score-big { font-size:48px; }
+  .rv { padding:16px; gap:11px; }
+  .rv-av { width:36px; height:36px; font-size:13px; border-radius:10px; }
+  .rv-time { margin-left:0; width:100%; }
+  .rv-imgs .im { width:62px; height:62px; }
+  .me { border-left:none; padding-left:0; }
+  .btn-primary span { display:none; }
+  .btn-primary { padding:0 13px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  * { animation:none !important; transition:none !important; }
+  .rise { opacity:1; transform:none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ============================ 侧栏 ============================ -->
+  <aside class="rail" id="rail">
+    <div class="brand">
+      <div class="brand-mark">极</div>
+      <div class="brand-txt"><b>极客商家中心</b><span>Merchant Hub</span></div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-group">
+        <div class="nav-label">经营</div>
+        <a class="nav-item" href="./index.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.8"/><rect x="13.5" y="3" width="7.5" height="4.5" rx="1.8"/><rect x="13.5" y="10.5" width="7.5" height="10.5" rx="1.8"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.8"/></svg>
+          <span>经营概览</span>
+        </a>
+        <a class="nav-item" href="./analytics.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-6M22 20H2"/></svg>
+          <span>数据看板</span>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">商品</div>
+        <a class="nav-item" href="./products.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5 12 12l9-4.5M12 12v9"/></svg>
+          <span>商品管理</span>
+          <em class="pill">4</em>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">交易</div>
+        <a class="nav-item" href="./orders.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12v20l-3-1.8-3 1.8-3-1.8L6 22z"/><path d="M9.5 7.5h5M9.5 11.5h5"/></svg>
+          <span>订单管理</span>
+          <em class="pill">42</em>
+        </a>
+        <a class="nav-item" href="./shipping.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h11v9H3z"/><path d="M14 10h3.5l3.5 3.5V16h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>
+          <span>发货中心</span>
+          <em class="pill">3</em>
+        </a>
+        <a class="nav-item" href="./aftersale.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 9a9 9 0 1 1 2.6 8.2"/><path d="M3 4v5.2h5.2"/></svg>
+          <span>售后管理</span>
+          <em class="pill">6</em>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">财务</div>
+        <a class="nav-item" href="./finance.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2.4"/><path d="M3 10.5h18"/><circle cx="17" cy="14.6" r="1.3"/></svg>
+          <span>财务结算</span>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">增长</div>
+        <a class="nav-item" href="./marketing.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 20 4v15L3 12.5z"/><path d="M7.5 13.2V18a2 2 0 0 0 4 0v-3"/></svg>
+          <span>营销中心</span>
+          <em class="pill">3</em>
+        </a>
+        <a class="nav-item active" href="./reviews.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.3L7 21.5l.9-3.2A8.3 8.3 0 1 1 21 11.5z"/><path d="M8.5 10.5h7M8.5 13.8h4.5"/></svg>
+          <span>评价管理</span>
+          <em class="pill" id="navWaitCount">0</em>
+        </a>
+      </div>
+    </nav>
+
+    <div class="rail-foot">
+      <div class="store-chip">
+        <div class="store-logo">旗</div>
+        <div class="s-txt"><b>极客数码旗舰店</b><span><i class="dot-ok"></i> 已认证 · 金牌卖家</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============================ 主区域 ============================ -->
+  <div class="main">
+    <header class="topbar">
+      <button class="burger icon-btn" id="burger" aria-label="打开导航">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+
+      <div class="crumb">商家中心 <span>/</span> <b>评价管理</b></div>
+
+      <label class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="text" id="topSearch" placeholder="搜索评价内容 / 买家 / 商品" />
+        <kbd>⌘K</kbd>
+      </label>
+
+      <button class="btn-ghost" id="exportBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        导出
+      </button>
+
+      <button class="icon-btn" id="bell" aria-label="通知">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8.5a6 6 0 1 0-12 0c0 6-2.2 7.5-2.2 7.5h16.4S18 14.5 18 8.5z"/><path d="M13.7 20a2 2 0 0 1-3.4 0"/></svg>
+        <em class="badge-dot" id="bellCount">5</em>
+      </button>
+
+      <div class="me">
+        <div class="me-av">陈</div>
+        <div><b>陈掌柜</b><span>超级管理员</span></div>
+      </div>
+    </header>
+
+    <div class="pop" id="pop">
+      <h4>通知 · 5 条未读</h4>
+      <div class="pop-item"><div class="pi" style="background:var(--coral-soft)">💬</div><div><p>有 <b id="popWaitCount">0</b> 条评价待回复，其中 2 条已超 48 小时</p><time>12 分钟前</time></div></div>
+      <div class="pop-item"><div class="pi" style="background:var(--amber-soft)">⭐</div><div><p>收到 1 条 3 星中评，建议及时沟通处理</p><time>1 小时前</time></div></div>
+      <div class="pop-item"><div class="pi" style="background:var(--green-soft)">📈</div><div><p>近 7 天好评率提升至 96.2%，继续保持</p><time>今天 09:00</time></div></div>
+    </div>
+
+    <main class="canvas">
+      <section class="page-head rise" style="animation-delay:.02s">
+        <div>
+          <div class="eyebrow">Reputation · Review Center</div>
+          <h1>评价<em>管理</em></h1>
+          <div class="desc">共 <b id="headTotal">0</b> 条评价 · 待回复 <b id="headWait">0</b> 条 · 好评率 <b id="headGood">0%</b></div>
+        </div>
+        <div class="acts">
+          <button class="btn-ghost" id="ruleBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+            回复规则
+          </button>
+          <button class="btn-primary" id="batchBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.3L7 21.5l.9-3.2A8.3 8.3 0 1 1 21 11.5z"/><path d="M9 11h6"/></svg>
+            <span>批量回复</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- 评分总览 -->
+      <section class="overview">
+        <article class="score-card rise" style="animation-delay:.08s">
+          <div class="sc-label">店铺综合评分</div>
+          <div class="score-main">
+            <div class="score-big num" id="scoreBig">4.86</div>
+            <div class="score-side">
+              <span class="stars" id="scoreStars">★★★★★<i style="width:0%">★★★★★</i></span>
+              <div class="sm">好评率 <b id="scoreGood">0%</b> · 超过 <b>96%</b> 同行</div>
+            </div>
+          </div>
+          <div class="score-tags">
+            <span>描述相符 4.88</span><span>服务态度 4.91</span><span>物流服务 4.79</span>
+          </div>
+          <div class="dists" id="dists"></div>
+        </article>
+
+        <div class="stat-grid" id="statGrid"></div>
+      </section>
+
+      <!-- 评价列表 -->
+      <section class="card rise" style="animation-delay:.14s">
+        <div class="tabs" id="tabs"></div>
+
+        <div class="toolbar">
+          <span class="tb-label">评分</span>
+          <select class="sel" id="fStar">
+            <option value="all">全部评分</option>
+            <option value="5">5 星好评</option>
+            <option value="4">4 星好评</option>
+            <option value="3">3 星中评</option>
+            <option value="2">2 星差评</option>
+            <option value="1">1 星差评</option>
+            <option value="bad">仅中差评（≤3 星）</option>
+          </select>
+          <span class="tb-label">商品</span>
+          <select class="sel" id="fProd"><option value="all">全部商品</option></select>
+          <span class="tb-label">时间</span>
+          <select class="sel" id="fRange">
+            <option value="all">全部时间</option>
+            <option value="today">今天</option>
+            <option value="7">近 7 天</option>
+            <option value="30">近 30 天</option>
+          </select>
+          <span class="tb-label">排序</span>
+          <select class="sel" id="fSort">
+            <option value="time_desc">时间 · 新→旧</option>
+            <option value="time_asc">时间 · 旧→新</option>
+            <option value="star_asc">评分 · 低→高</option>
+            <option value="star_desc">评分 · 高→低</option>
+          </select>
+          <button class="tb-reset" id="resetBtn">重置筛选</button>
+          <div class="spacer"></div>
+          <span class="result-hint">共 <b id="resultCount">0</b> 条评价</span>
+        </div>
+
+        <div class="rv-list" id="rvList"></div>
+        <div class="pager" id="pager"></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- ============================ 弹窗 ============================ -->
+<div class="modal" id="modal">
+  <div class="modal-mask" data-close="1"></div>
+  <div class="modal-box">
+    <div class="modal-head"><h3 id="mdTitle">标题</h3><p id="mdDesc"></p></div>
+    <div class="modal-body" id="mdBody"></div>
+    <div class="modal-foot" id="mdFoot"></div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script>
+/* ==========================================================================
+   极客商家中心 — 评价管理
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  var BASE = new Date(2026, 9, 5, 10, 20, 0);
+  var pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+  var int = function (n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
+  var esc = function (s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  };
+  var fmt = function (d) {
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' +
+      pad(d.getHours()) + ':' + pad(d.getMinutes());
+  };
+  var day0 = function (d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+  var stars = function (n) {
+    return '<span class="stars">★★★★★<i style="width:' + (n / 5 * 100) + '%">★★★★★</i></span>';
+  };
+
+  /* ---------------------------- 商品 / 人群 ---------------------------- */
+  var PRODUCTS = [
+    { n: 'Apple iPhone 17 Pro 256G 原色钛金属', th: 'th1', tag: 'iPhone' },
+    { n: '小米 15 Ultra 16+512G 徕卡影像', th: 'th2', tag: 'MI' },
+    { n: '华为 MateBook X Pro 2026 超凡屏', th: 'th3', tag: 'Mate' },
+    { n: '索尼 WH-1000XM6 头戴降噪耳机', th: 'th5', tag: 'SONY' },
+    { n: '戴森 V16 无线手持吸尘器', th: 'th4', tag: 'DYSON' },
+    { n: 'iPad Pro 13 英寸 M4 WiFi 512G', th: 'th6', tag: 'iPad' },
+    { n: '罗技 MX Master 4 无线鼠标', th: 'th1', tag: 'Logi' },
+    { n: '三星 990 PRO 2TB NVMe 固态硬盘', th: 'th3', tag: 'SSD' }
+  ];
+  var AV = ['linear-gradient(135deg,#4da3ff,#1a6dff)', 'linear-gradient(135deg,#ffb37a,#ff7a45)',
+            'linear-gradient(135deg,#7fd6bf,#0d9488)', 'linear-gradient(135deg,#ffd88a,#c8922f)',
+            'linear-gradient(135deg,#b6a2ff,#7c5cff)', 'linear-gradient(135deg,#7fbaff,#0a4fd6)'];
+  var IMGTH = ['th1', 'th2', 'th3', 'th4', 'th5', 'th6'];
+
+  /* ---------------------------- 评价数据 ---------------------------- */
+  /* [昵称, 等级, 星级, 商品索引, 规格, 内容, 图片数, 含视频, 商家回复, 距今小时, 置顶] */
+  var RAW = [
+    ['林清和', 'V5', 5, 0, '256G · 原色钛', '手机是官方正品，包装完好无破损，物流第二天就到了。屏幕显示非常细腻，拍照比上一代提升明显，续航也够用，值得入手！', 3, false, '感谢您的支持与认可！我们会继续努力，期待再次为您服务～', 2, true],
+    ['苏若雪', 'V4', 5, 3, '铂金银', '降噪效果确实强，通勤地铁上基本听不到噪音，佩戴也很轻。音质比我之前的耳机好一个档次。', 2, true, '', 6, false],
+    ['周天翊', 'V6', 5, 1, '16+512G · 黑色', '拍照真的很惊艳，夜景成片率高，充电速度也快。系统流畅，玩游戏完全不卡。', 0, false, '', 9, false],
+    ['徐佳宁', 'V3', 4, 4, '旗舰版', '吸力很强，地板缝隙里的灰都能吸干净。就是机身稍微有点重，女生用久了会累。', 1, false, '感谢反馈！后续我们会推出更轻量的配件，方便日常使用～', 14, false],
+    ['郑维安', 'V5', 5, 2, 'i7 / 32G / 1T', '屏幕素质顶级，色彩准确，做设计完全够用。散热控制得不错，渲染时风扇声音也不大。', 2, false, '', 20, false],
+    ['何知微', 'V4', 3, 5, '512G · 深空黑', '东西还行，但配件没有一起发过来，联系客服后才补发。希望发货前能核对清楚。', 0, false, '非常抱歉给您带来不便，我们已优化出库核对流程，补发配件请您留意物流。', 26, false],
+    ['孟星辰', 'V2', 5, 6, '石墨黑', '手感很好，多设备切换很方便，办公效率提升不少。电池也耐用。', 1, false, '', 31, false],
+    ['唐述白', 'V6', 5, 7, '2TB / PCIe 4.0', '读写速度非常快，装系统几秒钟就好了。原厂正品，质保放心。', 0, false, '', 38, false],
+    ['谢澜舟', 'V3', 2, 3, '铂金银', '收到货发现外包装有明显挤压痕迹，虽然耳机本身没问题，但整体体验不太好，希望包装能加固一下。', 2, false, '非常抱歉，包装问题我们已反馈给仓储部门加强防护。如有其他问题可随时联系客服为您处理。', 44, false],
+    ['邹予安', 'V5', 5, 0, '256G · 原色钛', '第二次购买了，给家人也换了一台。各方面都很均衡，没有明显短板。', 1, false, '', 52, false],
+    ['冯听柔', 'V4', 5, 4, '旗舰版', '除尘效果很棒，宠物毛也能轻松吸走。噪音比想象中小，值得推荐。', 2, true, '', 60, false],
+    ['鲍慎行', 'V2', 1, 3, '铂金银', '耳机左耳有轻微电流声，已经申请换货，处理中，希望尽快解决。', 1, false, '', 68, false],
+    ['柳听澜', 'V5', 4, 1, '16+512G · 黑色', '整体满意，就是发货稍慢，等了三天才发出。产品本身做工扎实，拍照很出色。', 0, false, '感谢理解！大促期间订单较多，我们会加快出库速度。', 76, false],
+    ['崔慕白', 'V6', 5, 2, 'i7 / 32G / 1T', '性能强劲，多开虚拟机毫无压力。键盘手感也不错，很适合办公。', 1, false, '', 92, false],
+    ['sq_lin', 'V3', 3, 6, '石墨黑', '鼠标本身不错，但驱动安装有点麻烦，希望能优化一下官网下载体验。', 0, false, '感谢建议！我们已将驱动下载入口重新整理，欢迎再次体验。', 110, false],
+    ['闻人清', 'V4', 5, 5, '512G · 深空黑', '屏幕显示很细腻，配合手写笔做笔记非常方便，重量也合适。', 2, false, '', 140, false],
+    ['白予珩', 'V5', 5, 7, '2TB / PCIe 4.0', '第二次回购了，上一块用了三年没有任何问题，这次给新电脑升级。', 0, false, '', 190, false],
+    ['许知遇', 'V3', 2, 5, '512G · 深空黑', '屏幕右下角有轻微亮点，虽然不明显但不影响使用，就没有折腾换货了。', 1, false, '', 260, false]
+  ];
+
+  var reviews = RAW.map(function (r, i) {
+    return {
+      id: 'R' + (1001 + i),
+      nick: r[0], lv: r[1], star: r[2], prod: PRODUCTS[r[3]], pi: r[3], spec: r[4],
+      txt: r[5], imgs: r[6], video: r[7], reply: r[8], top: r[10],
+      created: new Date(BASE.getTime() - r[9] * 3600000),
+      replyAt: r[8] ? new Date(BASE.getTime() - (r[9] - 2) * 3600000) : null,
+      av: AV[i % AV.length]
+    };
+  });
+
+  /* 店铺累计评分分布（用于综合评分卡） */
+  var DIST = [['5 星', 1147], ['4 星', 114], ['3 星', 14], ['2 星', 6], ['1 星', 5]];
+  var DIST_TOTAL = DIST.reduce(function (s, d) { return s + d[1]; }, 0);
+  var SHOP_SCORE = DIST.reduce(function (s, d, i) { return s + (5 - i) * d[1]; }, 0) / DIST_TOTAL;
+  var GOOD_RATE = (DIST[0][1] + DIST[1][1]) / DIST_TOTAL * 100;
+
+  /* ---------------------------- 字典 ---------------------------- */
+  var TABS = [
+    ['all', '全部评价'], ['wait', '待回复'], ['replied', '已回复'],
+    ['img', '有图/视频'], ['good', '好评'], ['bad', '中差评']
+  ];
+  var QUICKS = [
+    '感谢您的支持与认可！我们会继续努力，期待再次为您服务～',
+    '非常抱歉给您带来了不好的体验，已安排专员跟进处理，请留意站内信。',
+    '感谢反馈！您提到的问题可联系在线客服，我们会在 24 小时内处理。',
+    '本店商品均为官方授权正品，支持全国联保，请放心使用。',
+    '感谢您选择极客数码，物流体验我们会持续优化，祝您使用愉快！',
+    '您的建议已记录并反馈至相关部门，感谢您帮助我们做得更好。'
+  ];
+
+  /* ---------------------------- 状态 ---------------------------- */
+  var state = { tab: 'all', q: '', star: 'all', prod: 'all', range: 'all', sort: 'time_desc', page: 1, size: 6 };
+  var byId = function (id) {
+    for (var i = 0; i < reviews.length; i++) if (reviews[i].id === id) return reviews[i];
+    return null;
+  };
+  var isBad = function (r) { return r.star <= 3; };
+  var inRange = function (r) {
+    if (state.range === 'all') return true;
+    if (state.range === 'today') return day0(r.created) === day0(BASE);
+    return (day0(BASE) - day0(r.created)) / 86400000 <= parseInt(state.range, 10);
+  };
+  function matchTab(r) {
+    switch (state.tab) {
+      case 'wait': return !r.reply;
+      case 'replied': return !!r.reply;
+      case 'img': return r.imgs > 0 || r.video;
+      case 'good': return r.star >= 4;
+      case 'bad': return isBad(r);
+      default: return true;
+    }
+  }
+  function matchStar(r) {
+    if (state.star === 'all') return true;
+    if (state.star === 'bad') return isBad(r);
+    return r.star === parseInt(state.star, 10);
+  }
+  function matchQ(r) {
+    if (!state.q) return true;
+    var q = state.q.toLowerCase();
+    return r.txt.toLowerCase().indexOf(q) >= 0 || r.nick.toLowerCase().indexOf(q) >= 0 ||
+      r.prod.n.toLowerCase().indexOf(q) >= 0;
+  }
+  function filtered() {
+    var list = reviews.filter(function (r) {
+      return matchTab(r) && matchStar(r) && matchQ(r) && inRange(r) &&
+        (state.prod === 'all' || r.pi === parseInt(state.prod, 10));
+    });
+    var s = state.sort;
+    list.sort(function (a, b) {
+      if (s === 'time_asc') return a.created - b.created;
+      if (s === 'star_asc') return a.star - b.star || b.created - a.created;
+      if (s === 'star_desc') return b.star - a.star || b.created - a.created;
+      return b.created - a.created;
+    });
+    /* 置顶优先（仅默认排序时） */
+    if (s === 'time_desc') list.sort(function (a, b) { return (b.top ? 1 : 0) - (a.top ? 1 : 0); });
+    return list;
+  }
+  function countOf(k) {
+    if (k === 'all') return reviews.length;
+    var save = state.tab;
+    state.tab = k;
+    var n = reviews.filter(function (r) { return matchTab(r); }).length;
+    state.tab = save;
+    return n;
+  }
+  var waitCount = function () { return reviews.filter(function (r) { return !r.reply; }).length; };
+
+  /* ---------------------------- 渲染：评分总览 ---------------------------- */
+  function renderScore() {
+    document.getElementById('scoreBig').textContent = SHOP_SCORE.toFixed(2);
+    document.getElementById('scoreStars').innerHTML = '★★★★★<i style="width:' + (SHOP_SCORE / 5 * 100) + '%">★★★★★</i>';
+    document.getElementById('scoreGood').textContent = GOOD_RATE.toFixed(1) + '%';
+    document.getElementById('dists').innerHTML = DIST.map(function (d) {
+      var pct = d[1] / DIST_TOTAL * 100;
+      return '<div class="dist"><span class="k">' + d[0] + '</span>' +
+        '<span class="track"><i data-w="' + pct.toFixed(1) + '"></i></span>' +
+        '<span class="pct">' + pct.toFixed(1) + '%</span></div>';
+    }).join('');
+    requestAnimationFrame(function () {
+      document.querySelectorAll('#dists .track i').forEach(function (el, i) {
+        setTimeout(function () { el.style.width = el.getAttribute('data-w') + '%'; }, 120 + i * 90);
+      });
+    });
+  }
+
+  function renderStats() {
+    var w = waitCount(), bad = reviews.filter(isBad).length;
+    var items = [
+      { k: '评价总数', v: int(DIST_TOTAL), u: '条', d: '店铺累计评价', c: 'var(--brand)' },
+      { k: '待回复', v: String(w), u: '条', d: '超 48h 未回复 <b>2</b> 条', c: 'var(--coral)', alert: w > 0 },
+      { k: '好评率', v: GOOD_RATE.toFixed(1), u: '%', d: '较上月 <span class="up">+1.8%</span>', c: 'var(--green)' },
+      { k: '中差评', v: String(bad), u: '条', d: '占当前列表 <b>' + (bad / reviews.length * 100).toFixed(1) + '%</b>', c: 'var(--amber)' }
+    ];
+    document.getElementById('statGrid').innerHTML = items.map(function (it) {
+      return '<div class="stat' + (it.alert ? ' alert' : '') + '">' +
+        '<div class="k"><i style="background:' + it.c + '"></i>' + it.k + '</div>' +
+        '<div class="v num">' + it.v + ' <small class="u">' + it.u + '</small></div>' +
+        '<div class="d">' + it.d + '</div></div>';
+    }).join('');
+    document.getElementById('headTotal').textContent = int(DIST_TOTAL);
+    document.getElementById('headWait').textContent = w;
+    document.getElementById('headGood').textContent = GOOD_RATE.toFixed(1) + '%';
+    document.getElementById('navWaitCount').textContent = w;
+    document.getElementById('popWaitCount').textContent = w;
+    document.getElementById('bellCount').textContent = w;
+  }
+
+  function renderTabs() {
+    document.getElementById('tabs').innerHTML = TABS.map(function (t) {
+      var n = countOf(t[0]);
+      var hot = t[0] === 'wait' && n > 0 ? ' hot' : '';
+      return '<button class="tab' + (state.tab === t[0] ? ' on' : '') + '" data-tab="' + t[0] + '">' +
+        t[1] + '<span class="cnt' + hot + '">' + n + '</span></button>';
+    }).join('');
+  }
+
+  /* ---------------------------- 渲染：评价列表 ---------------------------- */
+  function opsOf(r) {
+    if (!r.reply) {
+      return '<button class="op strong" data-act="reply" data-id="' + r.id + '">回复</button>' +
+        '<button class="op muted" data-act="top" data-id="' + r.id + '">' + (r.top ? '取消置顶' : '置顶') + '</button>' +
+        '<button class="op muted" data-act="thanks" data-id="' + r.id + '">感谢</button>' +
+        '<span class="sep"></span><button class="op danger" data-act="appeal" data-id="' + r.id + '">申诉</button>';
+    }
+    return '<button class="op" data-act="reply" data-id="' + r.id + '">修改回复</button>' +
+      '<button class="op muted" data-act="top" data-id="' + r.id + '">' + (r.top ? '取消置顶' : '置顶') + '</button>' +
+      '<button class="op muted" data-act="delreply" data-id="' + r.id + '">删除回复</button>';
+  }
+
+  function imgsHTML(r) {
+    if (!r.imgs && !r.video) return '';
+    var out = '';
+    for (var i = 0; i < r.imgs; i++) {
+      out += '<div class="im ' + IMGTH[(r.pi + i) % 6] + '">图 ' + (i + 1) + '</div>';
+    }
+    if (r.video) out += '<div class="im video ' + IMGTH[(r.pi + 2) % 6] + '"></div>';
+    return '<div class="rv-imgs">' + out + '</div>';
+  }
+
+  function rvHTML(r) {
+    var cls = r.star >= 4 ? 's-good' : (r.star === 3 ? 's-mid' : 's-bad');
+    var label = r.star >= 4 ? '好评' : (r.star === 3 ? '中评' : '差评');
+    var tags = '';
+    if (r.top) tags += '<span class="tagm t-top">已置顶</span>';
+    if (r.imgs) tags += '<span class="tagm t-img">有图 ' + r.imgs + '</span>';
+    if (r.video) tags += '<span class="tagm t-img">视频</span>';
+
+    return '<article class="rv" data-id="' + r.id + '">' +
+      '<div class="rv-av" style="background:' + r.av + '">' + r.nick.charAt(0) + '</div>' +
+      '<div class="rv-main">' +
+        '<div class="rv-top">' +
+          '<b>' + esc(r.nick) + '</b><span class="lv">' + r.lv + '</span>' +
+          stars(r.star) +
+          '<span class="st ' + cls + '">' + label + '</span>' +
+          tags +
+          '<span class="rv-time">' + fmt(r.created) + '</span>' +
+        '</div>' +
+        '<div class="rv-prod">' +
+          '<span class="thumb ' + r.prod.th + '"></span>' +
+          '<span>购买商品：' + esc(r.prod.n) + '</span><em>' + esc(r.spec) + '</em>' +
+        '</div>' +
+        '<div class="rv-txt">' + esc(r.txt) + '</div>' +
+        imgsHTML(r) +
+        (r.reply
+          ? '<div class="rv-reply"><div class="rh">' +
+              '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h9a7 7 0 0 1 7 7v4"/></svg>' +
+              '商家回复<span>' + fmt(r.replyAt) + '</span></div>' +
+              '<div class="rc">' + esc(r.reply) + '</div></div>'
+          : '<div class="rv-reply" style="background:#fdfcfa;border-left-color:#dcd6c9">' +
+              '<div class="rh" style="color:var(--text-3)">暂未回复<span style="color:var(--text-3)">建议 24 小时内响应，提升店铺体验分</span></div></div>') +
+        '<div class="rv-ops">' + opsOf(r) + '</div>' +
+      '</div>' +
+    '</article>';
+  }
+
+  function renderPager(total) {
+    var el = document.getElementById('pager');
+    if (!total) { el.innerHTML = ''; return; }
+    var pages = Math.ceil(total / state.size);
+    var start = (state.page - 1) * state.size;
+    var html = '<span class="info">第 <b>' + (start + 1) + '-' + Math.min(start + state.size, total) +
+      '</b> 条 / 共 <b>' + total + '</b> 条</span><span class="spacer"></span><div class="pages">' +
+      '<button class="pg" data-page="' + (state.page - 1) + '"' + (state.page === 1 ? ' disabled' : '') + '>‹</button>';
+    for (var i = 1; i <= pages; i++) {
+      html += '<button class="pg' + (i === state.page ? ' on' : '') + '" data-page="' + i + '">' + i + '</button>';
+    }
+    html += '<button class="pg" data-page="' + (state.page + 1) + '"' + (state.page === pages ? ' disabled' : '') + '>›</button></div>';
+    el.innerHTML = html;
+  }
+
+  function renderList() {
+    var list = filtered();
+    document.getElementById('resultCount').textContent = list.length;
+    var pages = Math.ceil(list.length / state.size) || 1;
+    if (state.page > pages) state.page = pages;
+    var slice = list.slice((state.page - 1) * state.size, state.page * state.size);
+    var box = document.getElementById('rvList');
+
+    if (!slice.length) {
+      var isWait = state.tab === 'wait';
+      box.innerHTML = '<div class="empty">' +
+        '<div class="eic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.3L7 21.5l.9-3.2A8.3 8.3 0 1 1 21 11.5z"/></svg></div>' +
+        '<h4>' + (isWait ? '太棒了，评价都已回复' : '没有匹配的评价') + '</h4>' +
+        '<p>' + (isWait ? '保持 24 小时内响应的好习惯' : '试试调整筛选条件或清空关键词') + '</p></div>';
+      renderPager(0);
+      return;
+    }
+    box.innerHTML = slice.map(rvHTML).join('');
+    renderPager(list.length);
+  }
+
+  function render() { renderTabs(); renderList(); }
+  function renderAll() { renderScore(); renderStats(); render(); }
+
+  /* ---------------------------- 提示 / 弹窗 ---------------------------- */
+  var ICON = {
+    ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+    warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5h.01"/></svg>'
+  };
+  function toast(msg, type) {
+    var el = document.createElement('div');
+    el.className = 'toast ' + (type || 'ok');
+    el.innerHTML = (ICON[type] || ICON.ok) + '<span>' + msg + '</span>';
+    document.getElementById('toasts').appendChild(el);
+    setTimeout(function () {
+      el.classList.add('out');
+      setTimeout(function () { el.remove(); }, 260);
+    }, 2200);
+  }
+
+  var modal = document.getElementById('modal');
+  function closeModal() { modal.classList.remove('on'); }
+  function openModal(cfg) {
+    document.getElementById('mdTitle').textContent = cfg.title;
+    document.getElementById('mdDesc').textContent = cfg.desc || '';
+    document.getElementById('mdBody').innerHTML = cfg.body || '';
+    document.getElementById('mdFoot').innerHTML = cfg.foot || '';
+    modal.classList.add('on');
+    if (cfg.mount) cfg.mount();
+  }
+  modal.addEventListener('click', function (e) {
+    if (e.target.getAttribute && e.target.getAttribute('data-close')) closeModal();
+  });
+
+  /* ---------------------------- 回复 ---------------------------- */
+  function openReply(id) {
+    var r = byId(id);
+    if (!r) return;
+    var isBadr = isBad(r);
+    openModal({
+      title: r.reply ? '修改回复' : '回复评价',
+      desc: esc(r.nick) + ' · ' + r.star + ' 星' + (isBadr ? ' · 建议优先处理' : ''),
+      body:
+        '<div class="quote">' +
+          '<div class="qt">' + stars(r.star) + '<span style="font-weight:600;color:var(--text-2)">' + esc(r.prod.n) + '</span></div>' +
+          '<div class="qc">' + esc(r.txt) + '</div>' +
+        '</div>' +
+        '<div class="field"><label>快捷回复模板</label><div class="quick" id="quickBox">' +
+          QUICKS.map(function (q) { return '<button>' + esc(q) + '</button>'; }).join('') +
+        '</div></div>' +
+        '<div class="field"><label>回复内容 <i>*</i></label>' +
+          '<textarea id="rpTxt" rows="4" placeholder="真诚、具体的回复更容易获得买家认可">' + esc(r.reply) + '</textarea>' +
+          '<div class="hint"><span>建议 30-150 字，包含致歉/感谢与解决方案</span><span id="rpCount">0 / 500</span></div>' +
+        '</div>',
+      foot: '<button class="btn-plain" data-close="1">取消</button>' +
+            '<button class="btn-go" id="rpOk">' + (r.reply ? '保存修改' : '发布回复') + '</button>',
+      mount: function () {
+        var ta = document.getElementById('rpTxt');
+        var cnt = document.getElementById('rpCount');
+        var sync = function () {
+          if (ta.value.length > 500) ta.value = ta.value.slice(0, 500);
+          cnt.textContent = ta.value.length + ' / 500';
+        };
+        sync();
+        ta.addEventListener('input', sync);
+        document.getElementById('quickBox').addEventListener('click', function (e) {
+          var b = e.target.closest('button');
+          if (!b) return;
+          ta.value = b.textContent;
+          sync();
+          ta.focus();
+        });
+        document.getElementById('rpOk').onclick = function () {
+          var v = ta.value.trim();
+          if (!v) { toast('请填写回复内容', 'warn'); return; }
+          r.reply = v;
+          r.replyAt = new Date();
+          closeModal();
+          renderScore(); renderStats(); render();
+          toast('回复已发布', 'ok');
+        };
+      }
+    });
+  }
+
+  function confirmModal(title, desc, okText, danger, onOk) {
+    openModal({
+      title: title, desc: desc, body: '',
+      foot: '<button class="btn-plain" data-close="1">取消</button>' +
+            '<button class="btn-go' + (danger ? ' danger' : '') + '" id="mdOk">' + okText + '</button>',
+      mount: function () { document.getElementById('mdOk').onclick = function () { closeModal(); onOk(); }; }
+    });
+  }
+
+  /* ---------------------------- 动作 ---------------------------- */
+  function doAct(id, act) {
+    var r = byId(id);
+    if (!r) return;
+    if (act === 'reply') { openReply(id); return; }
+    if (act === 'top') {
+      r.top = !r.top;
+      render();
+      toast(r.top ? '已置顶该评价' : '已取消置顶');
+      return;
+    }
+    if (act === 'thanks') { toast('已向买家表达感谢'); return; }
+    if (act === 'appeal') {
+      confirmModal('提交申诉', '如该评价存在恶意内容或与实际不符，可提交平台介入审核。', '提交申诉', false, function () {
+        toast('申诉已提交，平台将在 3 个工作日内处理');
+      });
+      return;
+    }
+    if (act === 'delreply') {
+      confirmModal('删除回复', '删除后该评价将回到「待回复」状态。', '确认删除', true, function () {
+        r.reply = '';
+        r.replyAt = null;
+        renderScore(); renderStats(); render();
+        toast('回复已删除', 'warn');
+      });
+    }
+  }
+
+  /* ---------------------------- 批量回复 ---------------------------- */
+  function openBatch() {
+    var waits = reviews.filter(function (r) { return !r.reply; });
+    if (!waits.length) { toast('所有评价都回复过了', 'warn'); return; }
+    var badN = waits.filter(isBad).length;
+    openModal({
+      title: '批量回复 · ' + waits.length + ' 条待回复',
+      desc: badN ? '其中 ' + badN + ' 条为中差评，建议单独个性化回复' : '将使用统一模板批量回复',
+      body:
+        '<div class="quote">' +
+          '<div class="qt">将回复以下评价</div>' +
+          '<div class="qc" style="max-height:150px;overflow:auto">' +
+            waits.map(function (r, i) {
+              return (i + 1) + '. ' + stars(r.star) + ' <b>' + esc(r.nick) + '</b>：' + esc(r.txt.slice(0, 34)) + '…';
+            }).join('<br>') +
+          '</div>' +
+        '</div>' +
+        '<div class="field"><label>快捷回复模板</label><div class="quick" id="batchQuick">' +
+          QUICKS.slice(0, 4).map(function (q) { return '<button>' + esc(q) + '</button>'; }).join('') +
+        '</div></div>' +
+        '<div class="field"><label>统一回复内容 <i>*</i></label>' +
+          '<textarea id="bqTxt" rows="3">' + esc(QUICKS[0]) + '</textarea>' +
+          '<div class="hint"><span>批量回复将与单条回复一样公开展示</span></div></div>',
+      foot: '<button class="btn-plain" data-close="1">取消</button><button class="btn-go" id="bqOk">确认批量回复</button>',
+      mount: function () {
+        var ta = document.getElementById('bqTxt');
+        document.getElementById('batchQuick').addEventListener('click', function (e) {
+          var b = e.target.closest('button');
+          if (b) ta.value = b.textContent;
+        });
+        document.getElementById('bqOk').onclick = function () {
+          var v = ta.value.trim();
+          if (!v) { toast('请填写回复内容', 'warn'); return; }
+          var now = new Date();
+          waits.forEach(function (r) { r.reply = v; r.replyAt = now; });
+          closeModal();
+          state.tab = 'all';
+          renderAll();
+          toast('已批量回复 ' + waits.length + ' 条评价');
+        };
+      }
+    });
+  }
+
+  /* ---------------------------- 事件 ---------------------------- */
+  document.getElementById('rvList').addEventListener('click', function (e) {
+    var im = e.target.closest('.rv-imgs .im');
+    if (im) { toast('已打开图片查看器（演示）'); return; }
+    var b = e.target.closest('[data-act]');
+    if (b) doAct(b.getAttribute('data-id'), b.getAttribute('data-act'));
+  });
+
+  document.getElementById('tabs').addEventListener('click', function (e) {
+    var t = e.target.closest('.tab');
+    if (!t) return;
+    state.tab = t.getAttribute('data-tab');
+    state.page = 1;
+    render();
+  });
+
+  ['fStar', 'fProd', 'fRange', 'fSort'].forEach(function (id) {
+    document.getElementById(id).addEventListener('change', function () {
+      state.star = document.getElementById('fStar').value;
+      state.prod = document.getElementById('fProd').value;
+      state.range = document.getElementById('fRange').value;
+      state.sort = document.getElementById('fSort').value;
+      state.page = 1;
+      render();
+    });
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', function () {
+    state.tab = 'all'; state.q = ''; state.star = 'all'; state.prod = 'all';
+    state.range = 'all'; state.sort = 'time_desc'; state.page = 1;
+    ['fStar', 'fProd', 'fRange'].forEach(function (id) { document.getElementById(id).value = 'all'; });
+    document.getElementById('fSort').value = 'time_desc';
+    document.getElementById('topSearch').value = '';
+    render();
+    toast('筛选条件已重置');
+  });
+
+  document.getElementById('topSearch').addEventListener('input', function (e) {
+    state.q = e.target.value.trim();
+    state.page = 1;
+    render();
+  });
+
+  document.getElementById('pager').addEventListener('click', function (e) {
+    var b = e.target.closest('.pg');
+    if (!b || b.disabled) return;
+    var p = parseInt(b.getAttribute('data-page'), 10);
+    if (p < 1 || p > Math.ceil(filtered().length / state.size)) return;
+    state.page = p;
+    render();
+    document.querySelector('.canvas').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  document.getElementById('batchBtn').addEventListener('click', openBatch);
+  document.getElementById('exportBtn').addEventListener('click', function () {
+    toast('评价数据导出任务已创建');
+  });
+  document.getElementById('ruleBtn').addEventListener('click', function () {
+    openModal({
+      title: '自动回复规则',
+      desc: '规则命中后将自动回复买家评价，节省人工成本',
+      body:
+        '<div class="field"><label>触发条件</label>' +
+          '<select><option>4-5 星好评 → 自动致谢</option><option>1-3 星中差评 → 不自动回复，转人工</option></select></div>' +
+        '<div class="field"><label>回复时效</label>' +
+          '<select><option>买家评价后立即回复</option><option>延迟 2 小时回复</option></select></div>' +
+        '<div class="field"><label>自动回复模板</label>' +
+          '<textarea rows="3">' + esc(QUICKS[0]) + '</textarea>' +
+          '<div class="hint"><span>中差评建议人工个性化回复，更利于问题闭环</span></div></div>',
+      foot: '<button class="btn-plain" data-close="1">取消</button><button class="btn-go" id="ruleOk">保存规则</button>',
+      mount: function () {
+        document.getElementById('ruleOk').onclick = function () { closeModal(); toast('自动回复规则已保存'); };
+      }
+    });
+  });
+
+  document.getElementById('bell').addEventListener('click', function (e) {
+    e.stopPropagation();
+    document.getElementById('pop').classList.toggle('open');
+  });
+  document.addEventListener('click', function (e) {
+    var pop = document.getElementById('pop');
+    if (!pop.contains(e.target)) pop.classList.remove('open');
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { closeModal(); document.getElementById('pop').classList.remove('open'); }
+  });
+  document.getElementById('burger').addEventListener('click', function () {
+    document.getElementById('rail').classList.toggle('open');
+  });
+
+  /* ---------------------------- 启动 ---------------------------- */
+  document.addEventListener('DOMContentLoaded', function () {
+    document.getElementById('fProd').innerHTML = '<option value="all">全部商品</option>' +
+      PRODUCTS.map(function (p, i) { return '<option value="' + i + '">' + p.n + '</option>'; }).join('');
+    renderAll();
+  });
+})();
+</script>
+</body>
+</html>

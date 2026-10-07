@@ -1,0 +1,1 @@
+import{V as r,X as i,Y as o,aa as s}from"./index-Cpwlptp1.js";const u={submit(e){return r.post("/reviews",e)},async mine(){return(await r.get("/user/reviews")||[]).map(s)},remove(e){return r.delete(`/user/reviews/${e}`)},async byProduct(e,t={}){const a=await r.get(`/products/${e}/reviews`,{params:i(t)});return o(a,s)}};export{u as r};

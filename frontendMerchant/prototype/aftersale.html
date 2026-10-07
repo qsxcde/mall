@@ -1,0 +1,1372 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>售后管理 · 极客商家中心</title>
+<meta name="description" content="极客数码商城 商家中心 — 售后管理" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+/* ==========================================================================
+   极客商家中心 — 设计令牌（全站共用视觉体系）
+   ========================================================================== */
+:root {
+  --rail:#0c1322; --rail-2:#131c30; --rail-line:rgba(255,255,255,.07);
+  --canvas:#f3f0e9; --card:#fff; --line:#e6e1d6; --line-soft:#efece4;
+  --text:#171f2e; --text-2:#5b6472; --text-3:#98a0ac;
+  --brand:#1a6dff; --brand-deep:#0a4fd6; --brand-soft:#eaf1ff;
+  --coral:#ff5a2e; --coral-soft:#ffece6;
+  --green:#109150; --green-soft:#e6f6ec;
+  --teal:#0d9488; --teal-soft:#e2f6f3;
+  --amber:#e08b1a; --amber-soft:#fdf1dc;
+  --violet:#7c5cff; --violet-soft:#efeaff;
+  --gold:#c8922f;
+  --shadow-s:0 1px 2px rgba(20,26,40,.04), 0 1px 3px rgba(20,26,40,.05);
+  --shadow-m:0 2px 6px rgba(20,26,40,.05), 0 10px 26px -12px rgba(20,26,40,.18);
+  --shadow-l:0 18px 48px -20px rgba(16,24,40,.35);
+  --r-m:14px; --r-l:20px;
+  --ui:"Manrope","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --display:"Fraunces","Songti SC",Georgia,"Times New Roman",serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html { -webkit-text-size-adjust:100%; }
+body { font-family:var(--ui); background:var(--canvas); color:var(--text); font-size:14px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+body::after {
+  content:""; position:fixed; inset:0; z-index:9000; pointer-events:none; opacity:.05;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+a { text-decoration:none; color:inherit; }
+button { font-family:inherit; cursor:pointer; border:none; background:none; color:inherit; }
+input, select, textarea { font-family:inherit; color:inherit; }
+svg { display:block; }
+::-webkit-scrollbar { width:10px; height:10px; }
+::-webkit-scrollbar-thumb { background:#cfc9bc; border-radius:10px; border:3px solid transparent; background-clip:content-box; }
+::-webkit-scrollbar-thumb:hover { background:#b6af9f; background-clip:content-box; border:3px solid transparent; }
+::-webkit-scrollbar-track { background:transparent; }
+.num { font-family:var(--display); font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1; letter-spacing:-.01em; }
+.mono { font-family:var(--mono); font-size:12px; font-variant-numeric:tabular-nums; }
+
+/* ============================ 骨架 ============================ */
+.app { display:flex; min-height:100vh; }
+.rail {
+  width:244px; flex-shrink:0; background:var(--rail); color:#cfd6e4; display:flex; flex-direction:column;
+  position:sticky; top:0; height:100vh; z-index:40; transition:transform .32s cubic-bezier(.22,.8,.2,1);
+  background-image:
+    radial-gradient(120% 90% at 0% 0%, rgba(26,109,255,.22), transparent 55%),
+    radial-gradient(90% 70% at 100% 100%, rgba(255,90,46,.1), transparent 60%);
+}
+.brand { display:flex; align-items:center; gap:11px; padding:22px 20px 20px; }
+.brand-mark {
+  width:38px; height:38px; border-radius:11px; flex-shrink:0;
+  background:linear-gradient(140deg,#4da3ff,var(--brand) 60%,var(--brand-deep));
+  display:grid; place-items:center; font-family:var(--display); font-weight:700; font-size:19px; color:#fff;
+  box-shadow:0 8px 20px -8px rgba(26,109,255,.9), inset 0 1px 0 rgba(255,255,255,.4);
+}
+.brand-txt b { display:block; color:#fff; font-size:15px; font-weight:800; letter-spacing:.02em; line-height:1.2; }
+.brand-txt span { font-size:11px; color:#7b869c; letter-spacing:.14em; text-transform:uppercase; }
+.nav { flex:1; overflow-y:auto; padding:6px 12px 16px; }
+.nav::-webkit-scrollbar { width:0; }
+.nav-group { margin-top:15px; }
+.nav-group:first-child { margin-top:4px; }
+.nav-label { font-size:10.5px; letter-spacing:.18em; text-transform:uppercase; color:#5c6880; padding:0 10px 8px; font-weight:700; }
+.nav-item { position:relative; display:flex; align-items:center; gap:11px; padding:9.5px 12px; border-radius:10px; font-size:13.5px; font-weight:600; color:#a9b4c8; transition:background .18s, color .18s; }
+.nav-item svg { width:18px; height:18px; flex-shrink:0; opacity:.9; }
+.nav-item:hover { background:rgba(255,255,255,.06); color:#fff; }
+.nav-item.active { color:#fff; background:linear-gradient(100deg, rgba(26,109,255,.95), rgba(26,109,255,.55)); box-shadow:0 10px 24px -12px rgba(26,109,255,.95); }
+.nav-item.active::before { content:""; position:absolute; left:-12px; top:50%; transform:translateY(-50%); width:3px; height:20px; border-radius:0 3px 3px 0; background:#7fbaff; }
+.nav-item .pill { margin-left:auto; background:var(--coral); color:#fff; font-family:var(--mono); font-size:10px; font-weight:600; border-radius:20px; padding:1.5px 7px; line-height:1.5; }
+.nav-item.active .pill { background:rgba(255,255,255,.28); }
+.rail-foot { padding:14px; border-top:1px solid var(--rail-line); }
+.store-chip { display:flex; align-items:center; gap:10px; background:var(--rail-2); border:1px solid var(--rail-line); border-radius:12px; padding:11px; }
+.store-logo { width:34px; height:34px; border-radius:9px; flex-shrink:0; background:linear-gradient(135deg,#ffd88a,var(--gold)); display:grid; place-items:center; font-size:13px; font-weight:800; color:#4a3208; }
+.store-chip .s-txt { min-width:0; }
+.store-chip .s-txt b { display:block; font-size:12.5px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.store-chip .s-txt span { font-size:11px; color:#7b869c; display:flex; align-items:center; gap:5px; }
+.dot-ok { width:6px; height:6px; border-radius:50%; background:#35d07f; box-shadow:0 0 0 3px rgba(53,208,127,.18); }
+
+.main { flex:1; min-width:0; display:flex; flex-direction:column; }
+.topbar {
+  position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:16px; padding:13px 28px;
+  background:rgba(243,240,233,.82); backdrop-filter:saturate(1.6) blur(14px);
+  -webkit-backdrop-filter:saturate(1.6) blur(14px); border-bottom:1px solid var(--line);
+}
+.burger { display:none; width:38px; height:38px; border-radius:10px; border:1px solid var(--line); background:#fff; place-items:center; }
+.crumb { font-size:12.5px; color:var(--text-3); display:flex; align-items:center; gap:7px; }
+.crumb b { color:var(--text); font-weight:700; }
+.search { margin-left:auto; display:flex; align-items:center; gap:9px; background:#fff; border:1px solid var(--line); border-radius:11px; padding:0 13px; height:38px; width:268px; transition:border-color .18s, box-shadow .18s; }
+.search:focus-within { border-color:var(--brand); box-shadow:0 0 0 3px rgba(26,109,255,.12); }
+.search svg { width:16px; height:16px; color:var(--text-3); }
+.search input { border:none; outline:none; background:none; font-size:13px; width:100%; }
+.search kbd { font-family:var(--mono); font-size:10.5px; color:var(--text-3); border:1px solid var(--line); border-radius:5px; padding:1px 5px; background:#faf8f4; }
+.icon-btn { position:relative; width:38px; height:38px; border-radius:11px; border:1px solid var(--line); background:#fff; display:grid; place-items:center; color:var(--text-2); transition:all .18s; flex-shrink:0; }
+.icon-btn:hover { color:var(--brand); border-color:#c9dcff; background:var(--brand-soft); }
+.icon-btn svg { width:18px; height:18px; }
+.badge-dot { position:absolute; top:6px; right:6px; min-width:16px; height:16px; padding:0 4px; border-radius:9px; background:var(--coral); color:#fff; font-family:var(--mono); font-size:10px; font-weight:600; display:grid; place-items:center; border:2px solid var(--canvas); }
+.btn-primary, .btn-ghost { display:inline-flex; align-items:center; gap:7px; height:38px; padding:0 16px; border-radius:11px; font-weight:700; font-size:13px; transition:all .18s; white-space:nowrap; }
+.btn-primary { background:linear-gradient(135deg,#4da3ff,var(--brand)); color:#fff; box-shadow:0 10px 22px -12px rgba(26,109,255,.95); }
+.btn-primary:hover { filter:brightness(1.06); transform:translateY(-1px); }
+.btn-primary.danger { background:linear-gradient(135deg,#ff8a5c,var(--coral)); box-shadow:0 10px 22px -12px rgba(255,90,46,.95); }
+.btn-ghost { border:1px solid var(--line); background:#fff; color:var(--text-2); }
+.btn-ghost:hover { border-color:#c9dcff; color:var(--brand); background:var(--brand-soft); }
+.btn-primary svg, .btn-ghost svg { width:16px; height:16px; }
+.me { display:flex; align-items:center; gap:9px; padding-left:15px; border-left:1px solid var(--line); }
+.me-av { width:34px; height:34px; border-radius:10px; background:linear-gradient(135deg,#2b3a67,var(--brand)); color:#fff; display:grid; place-items:center; font-size:13px; font-weight:800; }
+.me b { font-size:13px; display:block; line-height:1.2; }
+.me span { font-size:11px; color:var(--text-3); }
+.pop { position:absolute; top:54px; right:28px; width:320px; background:#fff; border:1px solid var(--line); border-radius:var(--r-m); box-shadow:var(--shadow-l); padding:8px; z-index:50; opacity:0; visibility:hidden; transform:translateY(-8px); transition:all .2s cubic-bezier(.2,.8,.2,1); }
+.pop.open { opacity:1; visibility:visible; transform:translateY(0); }
+.pop h4 { font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-3); padding:8px 10px 6px; }
+.pop-item { display:flex; gap:10px; padding:10px; border-radius:10px; transition:background .18s; }
+.pop-item:hover { background:#faf8f4; }
+.pop-item .pi { width:30px; height:30px; border-radius:9px; display:grid; place-items:center; flex-shrink:0; font-size:14px; }
+.pop-item p { font-size:12.5px; line-height:1.5; }
+.pop-item time { font-size:11px; color:var(--text-3); }
+
+/* ============================ 画布 / 页头 / 统计 ============================ */
+.canvas { padding:24px 28px 40px; background-image:radial-gradient(circle, rgba(23,31,46,.05) 1px, transparent 1px); background-size:24px 24px; background-position:-12px -12px; }
+.rise { opacity:0; transform:translateY(14px); animation:rise .62s cubic-bezier(.22,.8,.2,1) forwards; }
+@keyframes rise { to { opacity:1; transform:none; } }
+.page-head { display:flex; align-items:flex-end; gap:20px; flex-wrap:wrap; }
+.page-head .eyebrow { display:inline-flex; align-items:center; gap:8px; font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--brand); font-weight:700; }
+.page-head .eyebrow::before { content:""; width:22px; height:1.5px; background:var(--brand); border-radius:2px; }
+.page-head h1 { font-size:26px; font-weight:800; margin-top:9px; letter-spacing:.01em; }
+.page-head h1 em { font-style:normal; font-family:var(--display); font-weight:600; color:var(--brand); }
+.page-head .desc { font-size:12.5px; color:var(--text-3); margin-top:6px; }
+.page-head .desc b { font-family:var(--mono); color:var(--text-2); }
+.page-head .acts { margin-left:auto; display:flex; gap:10px; flex-wrap:wrap; }
+
+.stat-strip { display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-top:18px; }
+.stat { background:var(--card); border:1px solid var(--line); border-radius:var(--r-m); padding:14px 16px; transition:transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s; }
+.stat:hover { transform:translateY(-3px); box-shadow:var(--shadow-m); }
+.stat .k { font-size:12px; color:var(--text-2); font-weight:600; display:flex; align-items:center; gap:7px; }
+.stat .k i { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.stat .v { font-family:var(--display); font-size:25px; font-weight:600; margin-top:8px; line-height:1.1; }
+.stat .v small { font-size:13px; font-weight:600; opacity:.6; margin-right:2px; }
+.stat .v small.u { margin:0; opacity:.45; font-size:13px; }
+.stat .d { font-size:11.5px; color:var(--text-3); margin-top:4px; }
+.stat .d b { font-family:var(--mono); color:var(--text-2); }
+.stat.alert { border-color:#ffd9cc; background:linear-gradient(180deg,#fff,#fffaf8); }
+
+.card { background:var(--card); border:1px solid var(--line); border-radius:var(--r-m); box-shadow:var(--shadow-s); margin-top:16px; overflow:hidden; }
+
+/* ============================ Tab / 工具条 / 批量条 ============================ */
+.tabs { display:flex; gap:4px; padding:6px 14px 0; overflow-x:auto; border-bottom:1px solid var(--line); }
+.tabs::-webkit-scrollbar { height:0; }
+.tab { position:relative; display:flex; align-items:center; gap:7px; white-space:nowrap; padding:12px 14px 14px; font-size:13.5px; font-weight:700; color:var(--text-2); transition:color .18s; }
+.tab:hover { color:var(--brand); }
+.tab.on { color:var(--brand); }
+.tab.on::after { content:""; position:absolute; left:10px; right:10px; bottom:-1px; height:2.5px; border-radius:3px 3px 0 0; background:var(--brand); }
+.tab .cnt { font-family:var(--mono); font-size:10.5px; font-weight:600; background:#f1eee6; color:var(--text-2); border-radius:20px; padding:1px 7px; line-height:1.6; }
+.tab.on .cnt { background:var(--brand-soft); color:var(--brand); }
+.tab .cnt.hot { background:var(--coral); color:#fff; }
+
+.toolbar { display:flex; align-items:center; gap:10px; padding:14px 16px; flex-wrap:wrap; border-bottom:1px solid var(--line); background:#fdfcfa; }
+.sel {
+  height:34px; border:1px solid var(--line); border-radius:9px; background:#fff; padding:0 30px 0 11px;
+  font-size:12.5px; font-weight:600; color:var(--text-2); outline:none; cursor:pointer;
+  appearance:none; -webkit-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2398a0ac' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 10px center; transition:border-color .18s, box-shadow .18s;
+}
+.sel:focus { border-color:var(--brand); box-shadow:0 0 0 3px rgba(26,109,255,.12); }
+.tb-label { font-size:12px; color:var(--text-3); font-weight:600; }
+.toolbar .spacer { margin-left:auto; }
+.tb-reset { font-size:12.5px; font-weight:700; color:var(--text-3); padding:8px 6px; }
+.tb-reset:hover { color:var(--brand); }
+.result-hint { font-size:12px; color:var(--text-3); }
+.result-hint b { color:var(--brand); font-family:var(--mono); }
+
+.bulk { display:flex; align-items:center; gap:12px; padding:0 16px; max-height:0; overflow:hidden; background:linear-gradient(100deg,#0c1322,#17233d); color:#fff; transition:max-height .28s cubic-bezier(.22,.8,.2,1), padding .28s; }
+.bulk.on { max-height:64px; padding:13px 16px; }
+.bulk .txt { font-size:13px; font-weight:600; }
+.bulk .txt b { font-family:var(--display); font-size:16px; color:#ffd88a; margin:0 3px; }
+.bulk .spacer { margin-left:auto; }
+.bulk-btn { display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 13px; border-radius:9px; background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.16); color:#e6ecf7; font-size:12.5px; font-weight:700; transition:all .18s; white-space:nowrap; }
+.bulk-btn:hover { background:rgba(255,255,255,.2); }
+.bulk-btn.solid { background:linear-gradient(135deg,#4da3ff,var(--brand)); border-color:transparent; color:#fff; }
+.bulk-btn.solid:hover { filter:brightness(1.08); }
+.bulk-btn.dgr { background:rgba(255,90,46,.22); border-color:rgba(255,90,46,.4); }
+.bulk-btn.dgr:hover { background:rgba(255,90,46,.34); }
+
+/* ============================ 工单列表 ============================ */
+.tickets { display:flex; flex-direction:column; }
+.tk { display:grid; grid-template-columns:30px minmax(0,1fr) 186px; gap:16px; padding:18px 20px; border-bottom:1px solid var(--line-soft); transition:background .2s; position:relative; }
+.tk:last-child { border-bottom:none; }
+.tk:hover { background:#fbfaf7; }
+.tk:hover::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--brand); border-radius:0 3px 3px 0; }
+.tk-check { padding-top:3px; }
+.tk-check input { width:16px; height:16px; accent-color:var(--brand); cursor:pointer; }
+.tk-main { min-width:0; }
+
+.tk-top { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+.tk-no { font-family:var(--mono); font-size:12px; font-weight:600; }
+.tk-type { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:800; padding:2.5px 9px; border-radius:6px; }
+.ty-refund { background:var(--coral-soft); color:var(--coral); }
+.ty-return { background:var(--amber-soft); color:#86540a; }
+.ty-exchange { background:var(--brand-soft); color:var(--brand); }
+.tk-time { font-size:11.5px; color:var(--text-3); font-family:var(--mono); }
+.tk-body { display:flex; gap:13px; margin-top:12px; }
+.tk-thumb { width:58px; height:58px; border-radius:11px; flex-shrink:0; display:grid; place-items:center; font-family:var(--mono); font-size:9px; font-weight:600; color:rgba(23,31,46,.45); }
+.th1 { background:linear-gradient(135deg,#d9e8ff,#a9ccff); }
+.th2 { background:linear-gradient(135deg,#ffe3d6,#ffc0a3); }
+.th3 { background:linear-gradient(135deg,#d8f4ea,#a8e6d3); }
+.th4 { background:linear-gradient(135deg,#ffeec9,#ffdb96); }
+.th5 { background:linear-gradient(135deg,#e6dcff,#cbb9ff); }
+.th6 { background:linear-gradient(135deg,#d9f0ff,#a8dcf7); }
+.tk-prod { flex:1; min-width:0; }
+.tk-prod .pn { font-size:13.5px; font-weight:600; }
+.tk-prod .ps { font-size:11.5px; color:var(--text-3); margin-top:5px; }
+.tk-prod .pm { font-size:12px; color:var(--text-2); margin-top:7px; display:flex; gap:14px; flex-wrap:wrap; }
+.tk-prod .pm b { font-family:var(--mono); font-weight:600; color:var(--text); }
+
+.tk-reason { margin-top:13px; padding:12px 14px; border-radius:11px; background:#faf8f4; border:1px solid var(--line-soft); }
+.tk-reason .rh { font-size:12px; font-weight:800; color:var(--text-2); display:flex; align-items:center; gap:8px; }
+.tk-reason .rh em { font-style:normal; color:var(--coral); }
+.tk-reason .rc { font-size:13px; color:var(--text-2); line-height:1.8; margin-top:7px; }
+.evis { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+.evi { width:60px; height:60px; border-radius:9px; display:grid; place-items:center; font-family:var(--mono); font-size:10px; font-weight:600; color:rgba(23,31,46,.45); cursor:pointer; transition:transform .2s; }
+.evi:hover { transform:scale(1.06); }
+
+.tk-ops { display:flex; align-items:center; gap:4px; margin-top:14px; flex-wrap:wrap; }
+.op { font-size:12.5px; font-weight:700; color:var(--brand); padding:5px 9px; border-radius:7px; transition:background .18s; white-space:nowrap; }
+.op:hover { background:var(--brand-soft); }
+.op.muted { color:var(--text-2); }
+.op.muted:hover { background:#f1eee6; }
+.op.danger { color:var(--coral); }
+.op.danger:hover { background:var(--coral-soft); }
+.op.strong { background:var(--brand); color:#fff; padding:6px 14px; border-radius:8px; box-shadow:0 8px 18px -10px rgba(26,109,255,.95); }
+.op.strong:hover { filter:brightness(1.07); }
+.op.warnop { background:var(--amber); color:#fff; padding:6px 14px; border-radius:8px; }
+.op.warnop:hover { filter:brightness(1.07); }
+
+/* 右侧状态栏 */
+.tk-side { display:flex; flex-direction:column; align-items:flex-end; gap:11px; }
+.st { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; padding:3.5px 10px; border-radius:20px; white-space:nowrap; }
+.st::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+.s-wait { color:var(--coral); background:var(--coral-soft); }
+.s-doing { color:var(--brand); background:var(--brand-soft); }
+.s-back { color:var(--amber); background:var(--amber-soft); }
+.s-recv { color:var(--teal); background:var(--teal-soft); }
+.s-done { color:var(--green); background:var(--green-soft); }
+.s-refuse { color:var(--text-2); background:#f1eee6; }
+.s-closed { color:var(--text-3); background:#f4f1ea; }
+
+.due { text-align:right; }
+.due .dt { font-family:var(--mono); font-size:12px; font-weight:600; }
+.due .dl { font-size:10.5px; color:var(--text-3); margin-top:3px; }
+.due.urgent .dt { color:var(--coral); }
+.due.urgent .dl { color:var(--coral); opacity:.8; }
+
+.money { text-align:right; }
+.money .mv { font-family:var(--display); font-size:20px; font-weight:600; }
+.money .mv small { font-size:12px; }
+.money .mk { font-size:10.5px; color:var(--text-3); margin-top:3px; }
+.money .mk s { text-decoration:line-through; }
+
+/* ============================ 抽屉 / 弹窗 / 表单 ============================ */
+.scrim { position:fixed; inset:0; background:rgba(12,19,34,.5); z-index:60; opacity:0; visibility:hidden; transition:all .3s; backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px); }
+.scrim.on { opacity:1; visibility:visible; }
+.drawer { position:fixed; top:0; right:0; bottom:0; width:560px; max-width:100vw; background:var(--card); z-index:61; display:flex; flex-direction:column; transform:translateX(100%); transition:transform .34s cubic-bezier(.22,.8,.2,1); box-shadow:-24px 0 60px -30px rgba(12,19,34,.55); }
+.drawer.on { transform:none; }
+.dr-head { padding:18px 22px; border-bottom:1px solid var(--line); background:linear-gradient(120deg,#0c1322,#17233d); color:#fff; display:flex; align-items:center; gap:12px; }
+.dr-head .dht { flex:1; min-width:0; }
+.dr-head .dht span { font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:#8d9bb5; font-weight:700; }
+.dr-head .dht b { display:block; font-family:var(--mono); font-size:15px; font-weight:600; margin-top:4px; }
+.dr-close { width:32px; height:32px; border-radius:9px; background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.16); display:grid; place-items:center; color:#fff; transition:background .18s; flex-shrink:0; }
+.dr-close:hover { background:rgba(255,255,255,.22); }
+.dr-close svg { width:16px; height:16px; }
+.dr-body { flex:1; overflow-y:auto; padding:20px 22px; }
+.dr-foot { padding:14px 22px; border-top:1px solid var(--line); display:flex; gap:10px; background:#fdfcfa; }
+.dr-foot .btn-primary, .dr-foot .btn-ghost { flex:1; justify-content:center; height:42px; }
+.dr-sec { margin-bottom:22px; }
+.dr-sec:last-child { margin-bottom:0; }
+.dr-sec > h4 { font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-3); font-weight:800; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+.dr-sec > h4::after { content:""; flex:1; height:1px; background:var(--line-soft); }
+
+.banner { display:flex; align-items:center; gap:12px; padding:14px 16px; border-radius:12px; font-size:13px; margin-bottom:20px; }
+.banner .bic { width:36px; height:36px; border-radius:10px; background:rgba(255,255,255,.6); display:grid; place-items:center; flex-shrink:0; }
+.banner .bic svg { width:18px; height:18px; }
+.banner b { display:block; font-size:14px; }
+.banner span { font-size:12px; opacity:.85; }
+.banner.coral { background:var(--coral-soft); color:var(--coral); }
+.banner.blue { background:var(--brand-soft); color:var(--brand); }
+.banner.amber { background:var(--amber-soft); color:#86540a; }
+.banner.teal { background:var(--teal-soft); color:var(--teal); }
+.banner.green { background:var(--green-soft); color:#0b6b3b; }
+.banner.gray { background:#f1eee6; color:var(--text-2); }
+
+.dl { font-size:12.5px; color:var(--text-2); line-height:2; display:flex; gap:8px; }
+.dl .k { color:var(--text-3); flex-shrink:0; min-width:62px; }
+.dl b { color:var(--text); font-weight:600; }
+.d-money { font-size:12.5px; }
+.d-money .mr { display:flex; justify-content:space-between; padding:4px 0; color:var(--text-2); }
+.d-money .mr b { font-family:var(--mono); font-weight:600; }
+.d-money .mr.total { border-top:1px dashed var(--line); margin-top:6px; padding-top:8px; color:var(--text); font-weight:700; }
+.d-money .mr.total b { font-family:var(--display); font-size:17px; color:var(--coral); }
+
+.tl { display:flex; flex-direction:column; }
+.tl-row { display:flex; gap:11px; position:relative; padding-bottom:15px; }
+.tl-row:last-child { padding-bottom:0; }
+.tl-row::before { content:""; position:absolute; left:6.5px; top:16px; bottom:0; width:1.5px; background:var(--line); }
+.tl-row:last-child::before { display:none; }
+.tl-dot { width:14px; height:14px; border-radius:50%; flex-shrink:0; margin-top:3px; border:2.5px solid var(--line); background:#fff; position:relative; z-index:1; }
+.tl-row.done .tl-dot { border-color:var(--brand); background:var(--brand); }
+.tl-row.now .tl-dot { border-color:var(--coral); background:var(--coral); box-shadow:0 0 0 5px rgba(255,90,46,.14); }
+.tl-txt b { font-size:12.5px; font-weight:700; display:block; }
+.tl-txt span { font-size:11.5px; color:var(--text-3); font-family:var(--mono); }
+.tl-txt p { font-size:12.5px; color:var(--text-2); margin-top:5px; line-height:1.7; }
+
+.modal { position:fixed; inset:0; z-index:70; display:grid; place-items:center; padding:20px; opacity:0; visibility:hidden; transition:opacity .22s; }
+.modal.on { opacity:1; visibility:visible; }
+.modal-mask { position:absolute; inset:0; background:rgba(12,19,34,.55); backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px); }
+.modal-box { position:relative; width:540px; max-width:100%; background:#fff; border-radius:var(--r-l); box-shadow:var(--shadow-l); transform:translateY(14px) scale(.98); overflow:hidden; transition:transform .28s cubic-bezier(.22,.8,.2,1); max-height:92vh; display:flex; flex-direction:column; }
+.modal.on .modal-box { transform:none; }
+.modal-head { padding:20px 22px 14px; }
+.modal-head h3 { font-size:17px; font-weight:800; }
+.modal-head p { font-size:12.5px; color:var(--text-3); margin-top:5px; }
+.modal-body { padding:0 22px 4px; overflow-y:auto; flex:1; }
+.modal-foot { padding:16px 22px 20px; display:flex; gap:10px; justify-content:flex-end; }
+.field { margin-bottom:15px; }
+.field label { display:block; font-size:12.5px; font-weight:700; color:var(--text-2); margin-bottom:7px; }
+.field label i { color:var(--coral); font-style:normal; }
+.field input, .field select, .field textarea { width:100%; height:40px; border:1px solid var(--line); border-radius:10px; padding:0 12px; font-size:13px; outline:none; background:#fff; transition:border-color .18s, box-shadow .18s; }
+.field textarea { height:auto; padding:10px 12px; resize:vertical; line-height:1.7; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color:var(--brand); box-shadow:0 0 0 3px rgba(26,109,255,.12); }
+.field select { appearance:none; -webkit-appearance:none; cursor:pointer; padding-right:32px; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2398a0ac' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 12px center; }
+.field .hint { font-size:11.5px; color:var(--text-3); margin-top:6px; }
+.frow { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.chip-picks { display:flex; flex-wrap:wrap; gap:8px; }
+.chip { padding:6px 13px; border-radius:18px; border:1px solid var(--line); background:#fff; font-size:12px; font-weight:600; color:var(--text-2); transition:all .18s; }
+.chip:hover { border-color:#c9dcff; color:var(--brand); }
+.chip.on { background:var(--brand); border-color:var(--brand); color:#fff; }
+.quote { background:#faf8f4; border:1px solid var(--line-soft); border-radius:11px; padding:13px 15px; margin-bottom:16px; }
+.quote .qt { font-size:12.5px; font-weight:800; }
+.quote .qc { font-size:12.5px; color:var(--text-2); line-height:1.8; margin-top:7px; }
+.quick { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+.quick button { padding:6px 12px; border-radius:18px; border:1px solid var(--line); background:#fff; font-size:12px; font-weight:600; color:var(--text-2); transition:all .18s; text-align:left; }
+.quick button:hover { border-color:#c9dcff; color:var(--brand); background:var(--brand-soft); }
+.btn-plain { height:42px; padding:0 18px; border-radius:11px; border:1px solid var(--line); background:#fff; color:var(--text-2); font-weight:700; font-size:13px; transition:all .18s; }
+.btn-plain:hover { border-color:#cfc9bc; color:var(--text); }
+.btn-go { height:42px; padding:0 22px; border-radius:11px; background:linear-gradient(135deg,#4da3ff,var(--brand)); color:#fff; font-weight:700; font-size:13px; box-shadow:0 10px 22px -12px rgba(26,109,255,.95); transition:filter .18s; }
+.btn-go:hover { filter:brightness(1.06); }
+.btn-go.danger { background:linear-gradient(135deg,#ff8a5c,var(--coral)); box-shadow:0 10px 22px -12px rgba(255,90,46,.95); }
+
+/* ============================ 分页 / 空态 / 提示 ============================ */
+.pager { display:flex; align-items:center; gap:14px; padding:15px 16px; border-top:1px solid var(--line); flex-wrap:wrap; }
+.pager .info { font-size:12.5px; color:var(--text-3); }
+.pager .info b { font-family:var(--mono); color:var(--text-2); }
+.pager .spacer { margin-left:auto; }
+.pages { display:flex; gap:5px; }
+.pg { min-width:32px; height:32px; padding:0 9px; border-radius:9px; border:1px solid var(--line); background:#fff; font-size:12.5px; font-weight:700; color:var(--text-2); display:grid; place-items:center; transition:all .18s; }
+.pg:hover:not(:disabled) { border-color:#c9dcff; color:var(--brand); background:var(--brand-soft); }
+.pg.on { background:var(--brand); border-color:var(--brand); color:#fff; box-shadow:0 8px 18px -10px rgba(26,109,255,.95); }
+.pg:disabled { opacity:.45; cursor:not-allowed; }
+
+.empty { padding:62px 20px; text-align:center; }
+.empty .eic { width:60px; height:60px; border-radius:18px; margin:0 auto 15px; background:#f4f1ea; display:grid; place-items:center; color:var(--text-3); border:1px solid var(--line); }
+.empty .eic svg { width:27px; height:27px; }
+.empty h4 { font-size:15px; font-weight:800; }
+.empty p { font-size:12.5px; color:var(--text-3); margin-top:6px; }
+
+.toasts { position:fixed; top:18px; left:50%; transform:translateX(-50%); z-index:80; display:flex; flex-direction:column; gap:10px; align-items:center; }
+.toast { display:flex; align-items:center; gap:10px; padding:11px 18px; border-radius:12px; background:#0c1322; color:#fff; font-size:13px; font-weight:600; box-shadow:var(--shadow-l); animation:toastIn .3s cubic-bezier(.22,.8,.2,1); }
+.toast.out { animation:toastOut .25s forwards; }
+.toast svg { width:16px; height:16px; flex-shrink:0; }
+.toast.ok svg { color:#7ef0b1; }
+.toast.warn svg { color:#ffd88a; }
+@keyframes toastIn { from { opacity:0; transform:translateY(-14px) scale(.96); } }
+@keyframes toastOut { to { opacity:0; transform:translateY(-10px) scale(.97); } }
+
+/* ============================ 响应式 ============================ */
+@media (max-width:1400px) {
+  .stat-strip { grid-template-columns:repeat(3,1fr); }
+  .search { width:200px; }
+}
+@media (max-width:1100px) {
+  .tk { grid-template-columns:30px minmax(0,1fr); }
+  .tk-side { grid-column:2; flex-direction:row; align-items:center; justify-content:flex-start; gap:22px; margin-top:4px; }
+}
+@media (max-width:980px) {
+  .rail { position:fixed; left:0; top:0; transform:translateX(-100%); box-shadow:var(--shadow-l); }
+  .rail.open { transform:none; }
+  .burger { display:grid; }
+  .crumb { display:none; }
+  .search { width:100%; max-width:100%; order:5; margin-left:0; }
+  .topbar { flex-wrap:wrap; }
+  .canvas { padding:18px 16px 32px; }
+  .pop { right:16px; width:calc(100vw - 32px); }
+}
+@media (max-width:760px) {
+  .stat-strip { grid-template-columns:repeat(2,1fr); }
+  .page-head .acts { margin-left:0; width:100%; }
+  .page-head .acts .btn-ghost, .page-head .acts .btn-primary { flex:1; justify-content:center; }
+  .tk { padding:15px; gap:11px; }
+  .tk-body { flex-direction:column; }
+  .tk-side { flex-direction:column; align-items:flex-start; gap:10px; }
+  .due, .money { text-align:left; }
+  .drawer { width:100vw; }
+  .frow { grid-template-columns:1fr; }
+  .me { border-left:none; padding-left:0; }
+  .btn-primary span { display:none; }
+  .btn-primary { padding:0 13px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  * { animation:none !important; transition:none !important; }
+  .rise { opacity:1; transform:none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ============================ 侧栏 ============================ -->
+  <aside class="rail" id="rail">
+    <div class="brand">
+      <div class="brand-mark">极</div>
+      <div class="brand-txt"><b>极客商家中心</b><span>Merchant Hub</span></div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-group">
+        <div class="nav-label">经营</div>
+        <a class="nav-item" href="./index.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.8"/><rect x="13.5" y="3" width="7.5" height="4.5" rx="1.8"/><rect x="13.5" y="10.5" width="7.5" height="10.5" rx="1.8"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.8"/></svg>
+          <span>经营概览</span>
+        </a>
+        <a class="nav-item" href="./analytics.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-6M22 20H2"/></svg>
+          <span>数据看板</span>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">商品</div>
+        <a class="nav-item" href="./products.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5 12 12l9-4.5M12 12v9"/></svg>
+          <span>商品管理</span>
+          <em class="pill">4</em>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">交易</div>
+        <a class="nav-item" href="./orders.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12v20l-3-1.8-3 1.8-3-1.8L6 22z"/><path d="M9.5 7.5h5M9.5 11.5h5"/></svg>
+          <span>订单管理</span>
+          <em class="pill">42</em>
+        </a>
+        <a class="nav-item" href="./shipping.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h11v9H3z"/><path d="M14 10h3.5l3.5 3.5V16h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>
+          <span>发货中心</span>
+          <em class="pill">3</em>
+        </a>
+        <a class="nav-item active" href="./aftersale.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 9a9 9 0 1 1 2.6 8.2"/><path d="M3 4v5.2h5.2"/></svg>
+          <span>售后管理</span>
+          <em class="pill" id="navAfterCount">0</em>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">财务</div>
+        <a class="nav-item" href="./finance.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2.4"/><path d="M3 10.5h18"/><circle cx="17" cy="14.6" r="1.3"/></svg>
+          <span>财务结算</span>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">增长</div>
+        <a class="nav-item" href="./marketing.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 20 4v15L3 12.5z"/><path d="M7.5 13.2V18a2 2 0 0 0 4 0v-3"/></svg>
+          <span>营销中心</span>
+          <em class="pill">3</em>
+        </a>
+        <a class="nav-item" href="./reviews.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.3L7 21.5l.9-3.2A8.3 8.3 0 1 1 21 11.5z"/><path d="M8.5 10.5h7M8.5 13.8h4.5"/></svg>
+          <span>评价管理</span>
+          <em class="pill">13</em>
+        </a>
+      </div>
+    </nav>
+
+    <div class="rail-foot">
+      <div class="store-chip">
+        <div class="store-logo">旗</div>
+        <div class="s-txt"><b>极客数码旗舰店</b><span><i class="dot-ok"></i> 已认证 · 金牌卖家</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============================ 主区域 ============================ -->
+  <div class="main">
+    <header class="topbar">
+      <button class="burger icon-btn" id="burger" aria-label="打开导航">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+
+      <div class="crumb">商家中心 <span>/</span> <b>售后管理</b></div>
+
+      <label class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="text" id="topSearch" placeholder="搜索售后单号 / 订单号 / 买家" />
+        <kbd>⌘K</kbd>
+      </label>
+
+      <button class="btn-ghost" id="ruleBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+        售后规则
+      </button>
+
+      <button class="icon-btn" id="bell" aria-label="通知">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8.5a6 6 0 1 0-12 0c0 6-2.2 7.5-2.2 7.5h16.4S18 14.5 18 8.5z"/><path d="M13.7 20a2 2 0 0 1-3.4 0"/></svg>
+        <em class="badge-dot" id="bellCount">5</em>
+      </button>
+
+      <div class="me">
+        <div class="me-av">陈</div>
+        <div><b>陈掌柜</b><span>超级管理员</span></div>
+      </div>
+    </header>
+
+    <div class="pop" id="pop">
+      <h4>通知 · 5 条未读</h4>
+      <div class="pop-item"><div class="pi" style="background:var(--coral-soft)">⏰</div><div><p>有 <b id="popUrgent">0</b> 笔售后将在 6 小时内超时，请尽快处理</p><time>3 分钟前</time></div></div>
+      <div class="pop-item"><div class="pi" style="background:var(--amber-soft)">📦</div><div><p>2 笔退货包裹已签收，等待你确认收货</p><time>40 分钟前</time></div></div>
+      <div class="pop-item"><div class="pi" style="background:var(--brand-soft)">📊</div><div><p>本月售后率 3.2%，低于同类目均值 4.1%</p><time>2 小时前</time></div></div>
+    </div>
+
+    <main class="canvas">
+      <section class="page-head rise" style="animation-delay:.02s">
+        <div>
+          <div class="eyebrow">After-sale · Service Desk</div>
+          <h1>售后<em>管理</em></h1>
+          <div class="desc">
+            共 <b id="headTotal">0</b> 笔售后 · 待处理 <b id="headWait">0</b> 笔 · 超时预警 <b id="headUrgent">0</b> 笔
+          </div>
+        </div>
+        <div class="acts">
+          <button class="btn-primary danger" id="batchRefuse">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+            <span>批量拒绝</span>
+          </button>
+          <button class="btn-primary" id="batchAgree">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            <span>批量同意</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="stat-strip" id="statStrip"></section>
+
+      <section class="card rise" style="animation-delay:.14s">
+        <div class="tabs" id="tabs"></div>
+
+        <div class="toolbar">
+          <span class="tb-label">售后类型</span>
+          <select class="sel" id="fType">
+            <option value="all">全部类型</option>
+            <option value="refund">仅退款</option>
+            <option value="return">退货退款</option>
+            <option value="exchange">换货</option>
+          </select>
+          <span class="tb-label">申请原因</span>
+          <select class="sel" id="fReason">
+            <option value="all">全部原因</option>
+            <option value="七天无理由">七天无理由</option>
+            <option value="商品质量问题">商品质量问题</option>
+            <option value="发错货">发错货</option>
+            <option value="少件/漏发">少件 / 漏发</option>
+            <option value="物流破损">物流破损</option>
+            <option value="与描述不符">与描述不符</option>
+          </select>
+          <span class="tb-label">金额区间</span>
+          <select class="sel" id="fAmount">
+            <option value="all">不限金额</option>
+            <option value="0-1000">¥0 - 1,000</option>
+            <option value="1000-5000">¥1,000 - 5,000</option>
+            <option value="5000-999999">¥5,000 以上</option>
+          </select>
+          <span class="tb-label">排序</span>
+          <select class="sel" id="fSort">
+            <option value="urgent">时效 · 最紧急优先</option>
+            <option value="time_desc">申请时间 · 新→旧</option>
+            <option value="amount_desc">退款金额 · 高→低</option>
+          </select>
+          <button class="tb-reset" id="resetBtn">重置筛选</button>
+          <div class="spacer"></div>
+          <span class="result-hint">筛选结果 <b id="resultCount">0</b> 笔</span>
+        </div>
+
+        <div class="bulk" id="bulkBar">
+          <span class="txt">已选 <b id="selCount">0</b> 笔售后</span>
+          <div class="spacer"></div>
+          <button class="bulk-btn solid" id="bulkAgree">批量同意退款</button>
+          <button class="bulk-btn dgr" id="bulkRefuse">批量拒绝</button>
+          <button class="bulk-btn" id="bulkExport">导出工单</button>
+          <button class="bulk-btn" id="bulkClear">取消选择</button>
+        </div>
+
+        <div class="tickets" id="tickets"></div>
+        <div class="pager" id="pager"></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- ============================ 抽屉：售后详情 ============================ -->
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="dr-head">
+    <div class="dht"><span id="drKicker">After-sale Detail</span><b id="drNo">—</b></div>
+    <button class="dr-close" id="drClose" aria-label="关闭">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+  <div class="dr-body" id="drBody"></div>
+  <div class="dr-foot" id="drFoot"></div>
+</aside>
+
+<!-- ============================ 弹窗 ============================ -->
+<div class="modal" id="modal">
+  <div class="modal-mask" data-close="1"></div>
+  <div class="modal-box">
+    <div class="modal-head"><h3 id="mdTitle">标题</h3><p id="mdDesc"></p></div>
+    <div class="modal-body" id="mdBody"></div>
+    <div class="modal-foot" id="mdFoot"></div>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<div class="toasts" id="toasts"></div>
+
+<script>
+/* ==========================================================================
+   极客商家中心 — 售后管理
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  var BASE = new Date(2026, 9, 5, 10, 20, 0);
+  var pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+  var int = function (n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
+  var money = function (n) { return (+n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
+  var wan = function (n) { return (n / 10000).toFixed(1) + '万'; };
+  var fmt = function (d) {
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  };
+  var esc = function (s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  };
+
+  /* ---------------------------- 字典 ---------------------------- */
+  var TYPES = {
+    refund: { t: '仅退款', cls: 'ty-refund' },
+    return: { t: '退货退款', cls: 'ty-return' },
+    exchange: { t: '换货', cls: 'ty-exchange' }
+  };
+  var ST = {
+    wait:   { t: '待处理', cls: 's-wait',   act: '商家需在时限内审核', due: 48 },
+    back:   { t: '待买家退货', cls: 's-back', act: '已同意，等待买家寄回', due: null },
+    recv:   { t: '待商家收货', cls: 's-recv', act: '买家已寄回，请确认收货', due: 168 },
+    done:   { t: '已完成', cls: 's-done',   act: '退款已原路退回', due: null },
+    refuse: { t: '已拒绝', cls: 's-refuse', act: '商家拒绝了本次申请', due: null },
+    closed: { t: '已关闭', cls: 's-closed', act: '买家主动撤销申请', due: null }
+  };
+  var REASONS = ['七天无理由', '商品质量问题', '发错货', '少件/漏发', '物流破损', '与描述不符'];
+  var REFUSE_REASONS = ['已拆封激活，不支持无理由退货', '商品已使用且影响二次销售', '超出 7 天无理由期限', '凭证不足以证明质量问题', '退回商品与订单不符'];
+  var ADDRESSES = ['极客数码旗舰店退货仓 · 广东省深圳市南山区科苑南路 2588 号 A 座 1F',
+                   '极客数码华东退货仓 · 浙江省杭州市余杭区文一西路 969 号 3 号库',
+                   '极客数码华北退货仓 · 北京市大兴区亦庄经济开发区科创十一街 8 号'];
+
+  /* ---------------------------- 商品 / 买家 ---------------------------- */
+  var PRODS = [
+    { n: 'Apple iPhone 17 Pro 256G', s: '256G · 原色钛', th: 'th1', tag: 'iPhone', price: 8999 },
+    { n: '小米 15 Ultra 16+512G', s: '16+512G · 黑色', th: 'th2', tag: 'MI', price: 6499 },
+    { n: '华为 MateBook X Pro 2026', s: 'i7 / 32G / 1T', th: 'th3', tag: 'Mate', price: 12999 },
+    { n: '索尼 WH-1000XM6 耳机', s: '铂金银', th: 'th5', tag: 'SONY', price: 2999 },
+    { n: '戴森 V16 无线吸尘器', s: '旗舰版', th: 'th4', tag: 'DYSON', price: 4990 },
+    { n: 'iPad Pro 13 英寸 M4 512G', s: '深空黑', th: 'th6', tag: 'iPad', price: 9299 },
+    { n: '罗技 MX Master 4 鼠标', s: '石墨黑', th: 'th1', tag: 'Logi', price: 699 },
+    { n: 'Apple AirPods Pro 3', s: '主动降噪', th: 'th2', tag: 'AirPods', price: 1899 }
+  ];
+  var BUYERS = [
+    { n: '林清和', lv: 'V5' }, { n: '苏若雪', lv: 'V4' }, { n: '周天翊', lv: 'V6' },
+    { n: '徐佳宁', lv: 'V3' }, { n: '郑维安', lv: 'V5' }, { n: '何知微', lv: 'V4' },
+    { n: '孟星辰', lv: 'V2' }, { n: '唐述白', lv: 'V6' }, { n: '谢澜舟', lv: 'V3' },
+    { n: '邹予安', lv: 'V5' }, { n: '冯听柔', lv: 'V4' }, { n: '鲍慎行', lv: 'V2' }
+  ];
+
+  /* [类型, 状态, 原因, 描述, 凭证数, 买家, 商品, 数量, 申请距今年小时, 退款说明] */
+  var RAW = [
+    ['refund', 'wait', '七天无理由', '刚收到就不想要了，还没拆封，希望可以直接退款。', 1, 0, 0, 1, 2, ''],
+    ['return', 'wait', '商品质量问题', '屏幕左下角有一个明显的坏点，白色背景下特别清楚，已经拍下来了。', 3, 4, 1, 1, 8, ''],
+    ['exchange', 'wait', '发错货', '下单的是黑色 512G，收到的却是白色 256G，麻烦换一下。', 2, 8, 5, 1, 20, ''],
+    ['refund', 'wait', '少件/漏发', '包裹里只有耳机本体，没有配充电线，说明书也没有。', 2, 2, 3, 1, 30, ''],
+    ['return', 'wait', '物流破损', '外包装有明显挤压变形，拆开后屏幕边缘有细微划痕。', 3, 6, 4, 1, 44, ''],
+    ['refund', 'wait', '与描述不符', '详情页写的是 32G 内存，实际收到的机器只有 16G，请核实。', 2, 5, 2, 1, 46, ''],
+    ['return', 'back', '七天无理由', '尺寸不太合适，想退货，商品完好未使用。', 1, 9, 6, 2, 60, ''],
+    ['return', 'back', '商品质量问题', '耳机左耳有电流声，已经录了音频作为凭证。', 2, 1, 3, 1, 72, ''],
+    ['return', 'recv', '七天无理由', '买重复了，商品未拆封，已按要求寄回。', 1, 3, 7, 1, 150, ''],
+    ['exchange', 'recv', '商品质量问题', '开机后屏幕有竖线，已寄回等待换新。', 3, 10, 4, 1, 165, ''],
+    ['refund', 'done', '少件/漏发', '缺少转接线，已协商部分退款。', 1, 7, 1, 1, 200, ''],
+    ['return', 'done', '七天无理由', '收到后感觉颜色和图片有差异，已退货。', 0, 11, 0, 1, 260, ''],
+    ['refund', 'done', '商品质量问题', '键盘有按键失灵，已全额退款。', 2, 0, 2, 1, 320, ''],
+    ['refund', 'refuse', '七天无理由', '用了两天觉得不好用想退，但已经激活了。', 0, 4, 0, 1, 380, '已激活，按规则不支持无理由退货'],
+    ['return', 'refuse', '与描述不符', '觉得屏幕色彩和描述不一致。', 1, 2, 5, 1, 420, '经核实参数与页面描述完全一致，不予退货'],
+    ['refund', 'closed', '七天无理由', '拍错了，本来想买另一款。', 0, 8, 6, 1, 500, '']
+  ];
+
+  var seed = 20261005;
+  var rnd = function () { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+
+  var tickets = RAW.map(function (r, i) {
+    var pr = PRODS[r[6]];
+    var qty = r[7];
+    var goods = pr.price * qty;
+    var ship = 0;
+    var created = new Date(BASE.getTime() - r[8] * 3600000);
+    var st = ST[r[1]];
+    var t = {
+      idx: i,
+      id: 'AS' + (2026100500 + 128 - i * 3),
+      orderNo: 'GK' + (2026100812 - i * 37),
+      type: r[0], status: r[1], reason: r[2], desc: r[3], evis: r[4],
+      buyer: BUYERS[r[5]], prod: pr, qty: qty,
+      goods: goods, ship: ship, refund: goods + ship,
+      pay: goods + ship,
+      created: created,
+      deadline: st.due ? new Date(created.getTime() + st.due * 3600000) : null,
+      refuseReason: r[9],
+      note: rnd() > .7 ? '买家已多次催促，请尽快处理' : ''
+    };
+    return t;
+  });
+
+  /* ---------------------------- 状态 ---------------------------- */
+  var state = { tab: 'all', q: '', type: 'all', reason: 'all', amount: 'all', sort: 'urgent', page: 1, size: 5 };
+  var selected = {};
+
+  var byId = function (id) {
+    for (var i = 0; i < tickets.length; i++) if (tickets[i].id === id) return tickets[i];
+    return null;
+  };
+  var hoursLeft = function (t) {
+    if (!t.deadline || t.status === 'done' || t.status === 'refuse' || t.status === 'closed') return null;
+    return (t.deadline - BASE) / 3600000;
+  };
+  var isUrgent = function (t) { var h = hoursLeft(t); return h != null && h <= 6; };
+  var selectedIds = function () { return Object.keys(selected).filter(function (k) { return selected[k]; }); };
+
+  /* ---------------------------- 过滤 ---------------------------- */
+  function inAmount(t) {
+    if (state.amount === 'all') return true;
+    var p = state.amount.split('-');
+    return t.refund >= +p[0] && t.refund <= +p[1];
+  }
+  function matchQ(t) {
+    if (!state.q) return true;
+    var q = state.q.toLowerCase();
+    return t.id.toLowerCase().indexOf(q) >= 0 || t.orderNo.toLowerCase().indexOf(q) >= 0 ||
+      t.buyer.n.toLowerCase().indexOf(q) >= 0 || t.prod.n.toLowerCase().indexOf(q) >= 0;
+  }
+  function filtered() {
+    var list = tickets.filter(function (t) {
+      var tm = state.tab === 'all' || t.status === state.tab ||
+        (state.tab === 'refuse' && t.status === 'refuse') ||
+        (state.tab === 'done' && (t.status === 'done' || t.status === 'closed'));
+      return tm && (state.type === 'all' || t.type === state.type) &&
+        (state.reason === 'all' || t.reason === state.reason) && inAmount(t) && matchQ(t);
+    });
+    var s = state.sort;
+    list.sort(function (a, b) {
+      if (s === 'time_desc') return b.created - a.created;
+      if (s === 'amount_desc') return b.refund - a.refund;
+      var ha = hoursLeft(a), hb = hoursLeft(b);
+      if (ha == null && hb == null) return b.created - a.created;
+      if (ha == null) return 1;
+      if (hb == null) return -1;
+      return ha - hb;
+    });
+    return list;
+  }
+  function countOf(k) {
+    if (k === 'all') return tickets.length;
+    if (k === 'done') return tickets.filter(function (t) { return t.status === 'done' || t.status === 'closed'; }).length;
+    return tickets.filter(function (t) { return t.status === k; }).length;
+  }
+
+  /* ---------------------------- 渲染：统计 ---------------------------- */
+  function renderStats() {
+    var wait = countOf('wait'), back = countOf('back'), recv = countOf('recv');
+    var urgent = tickets.filter(isUrgent).length;
+    var openAmt = tickets.filter(function (t) {
+      return t.status !== 'done' && t.status !== 'refuse' && t.status !== 'closed';
+    }).reduce(function (s, t) { return s + t.refund; }, 0);
+    var MONTH_AFTER = 118, ORDERS = 3648;
+    var items = [
+      { k: '待处理', v: String(wait), u: '笔', d: '超时预警 <b>' + urgent + '</b> 笔', c: 'var(--coral)', alert: urgent > 0 },
+      { k: '待买家退货', v: String(back), u: '笔', d: '已同意待寄回', c: 'var(--amber)' },
+      { k: '待商家收货', v: String(recv), u: '笔', d: '包裹已寄回待确认', c: 'var(--teal)' },
+      { k: '售后涉及金额', v: '<small>¥</small>' + wan(openAmt), u: '', d: '未结案的退款总额', c: 'var(--brand)' },
+      { k: '本月售后率', v: (MONTH_AFTER / ORDERS * 100).toFixed(1), u: '%', d: '低于类目均值 <b>4.1%</b>', c: 'var(--green)' }
+    ];
+    document.getElementById('statStrip').innerHTML = items.map(function (it) {
+      return '<div class="stat' + (it.alert ? ' alert' : '') + '"><div class="k"><i style="background:' + it.c + '"></i>' + it.k + '</div>' +
+        '<div class="v num">' + it.v + (it.u ? ' <small class="u">' + it.u + '</small>' : '') + '</div>' +
+        '<div class="d">' + it.d + '</div></div>';
+    }).join('');
+    document.getElementById('headTotal').textContent = tickets.length;
+    document.getElementById('headWait').textContent = wait;
+    document.getElementById('headUrgent').textContent = urgent;
+    document.getElementById('popUrgent').textContent = urgent;
+    document.getElementById('navAfterCount').textContent = wait;
+    document.getElementById('bellCount').textContent = urgent + 3;
+  }
+
+  function renderTabs() {
+    var TABS = [['all', '全部售后'], ['wait', '待处理'], ['back', '待买家退货'], ['recv', '待商家收货'],
+                ['done', '已完成'], ['refuse', '已拒绝']];
+    document.getElementById('tabs').innerHTML = TABS.map(function (t) {
+      var n = countOf(t[0]);
+      var hot = (t[0] === 'wait' && n > 0) ? ' hot' : '';
+      return '<button class="tab' + (state.tab === t[0] ? ' on' : '') + '" data-tab="' + t[0] + '">' +
+        t[1] + '<span class="cnt' + hot + '">' + n + '</span></button>';
+    }).join('');
+  }
+
+  /* ---------------------------- 渲染：工单 ---------------------------- */
+  function dueHTML(t) {
+    var h = hoursLeft(t);
+    if (h == null) return '';
+    var urgent = h <= 6;
+    var txt = h >= 24 ? '剩 ' + (h / 24).toFixed(1) + ' 天' : '剩 ' + Math.max(0, h).toFixed(1) + ' 小时';
+    return '<div class="due' + (urgent ? ' urgent' : '') + '">' +
+      '<div class="dt">' + (h <= 0 ? '已超时' : txt) + '</div>' +
+      '<div class="dl">' + (urgent ? '超时将自动退款' : '处理时限内') + '</div></div>';
+  }
+
+  function opsHTML(t) {
+    var d = '<button class="op muted" data-act="detail" data-id="' + t.id + '">查看详情</button>';
+    switch (t.status) {
+      case 'wait':
+        return '<button class="op strong" data-act="agree" data-id="' + t.id + '">同意退款</button>' +
+               '<button class="op danger" data-act="refuse" data-id="' + t.id + '">拒绝</button>' +
+               d + '<button class="op muted" data-act="chat" data-id="' + t.id + '">联系买家</button>';
+      case 'back':
+        return '<button class="op" data-act="urge" data-id="' + t.id + '">提醒买家寄回</button>' +
+               d + '<button class="op muted" data-act="revoke" data-id="' + t.id + '">撤销同意</button>';
+      case 'recv':
+        return '<button class="op warnop" data-act="receive" data-id="' + t.id + '">确认收货并退款</button>' +
+               '<button class="op danger" data-act="refuse" data-id="' + t.id + '">拒绝退款</button>' + d;
+      case 'refuse':
+        return d + '<button class="op" data-act="recheck" data-id="' + t.id + '">重新审核</button>';
+      default:
+        return d + '<button class="op muted" data-act="export" data-id="' + t.id + '">导出凭证</button>';
+    }
+  }
+
+  function evisHTML(t) {
+    if (!t.evis) return '';
+    var out = '';
+    for (var i = 0; i < t.evis; i++) {
+      out += '<div class="evi ' + ['th1', 'th2', 'th3', 'th4', 'th5', 'th6'][(t.idx + i) % 6] + '">凭证 ' + (i + 1) + '</div>';
+    }
+    return '<div class="evis">' + out + '</div>';
+  }
+
+  function tkHTML(t) {
+    var st = ST[t.status], ty = TYPES[t.type];
+    return '<div class="tk" data-id="' + t.id + '">' +
+      '<div class="tk-check"><input type="checkbox" data-check="' + t.id + '"' + (selected[t.id] ? ' checked' : '') + ' /></div>' +
+      '<div class="tk-main">' +
+        '<div class="tk-top">' +
+          '<span class="tk-no">' + t.id + '</span>' +
+          '<span class="tk-type ' + ty.cls + '">' + ty.t + '</span>' +
+          '<span class="tk-time">' + fmt(t.created) + ' 申请</span>' +
+          (t.note ? '<span class="tk-time" style="color:var(--coral)">· ' + esc(t.note) + '</span>' : '') +
+        '</div>' +
+        '<div class="tk-body">' +
+          '<div class="tk-thumb ' + t.prod.th + '">' + t.prod.tag + '</div>' +
+          '<div class="tk-prod">' +
+            '<div class="pn">' + esc(t.prod.n) + '</div>' +
+            '<div class="ps">' + esc(t.prod.s) + ' · 数量 ' + t.qty + '</div>' +
+            '<div class="pm"><span>订单号 <b>' + t.orderNo + '</b></span>' +
+              '<span>买家 <b>' + t.buyer.n + ' · ' + t.buyer.lv + '</b></span>' +
+              '<span>实付 <b>¥' + money(t.pay) + '</b></span></div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="tk-reason">' +
+          '<div class="rh">申请原因：<em>' + esc(t.reason) + '</em>' +
+            (t.status === 'refuse' && t.refuseReason ? '<span style="color:var(--text-3);font-weight:600">· 拒绝理由：' + esc(t.refuseReason) + '</span>' : '') +
+          '</div>' +
+          '<div class="rc">' + esc(t.desc) + '</div>' +
+          evisHTML(t) +
+        '</div>' +
+        '<div class="tk-ops">' + opsHTML(t) + '</div>' +
+      '</div>' +
+      '<div class="tk-side">' +
+        '<span class="st ' + st.cls + '">' + st.t + '</span>' +
+        dueHTML(t) +
+        '<div class="money"><div class="mv"><small>¥</small>' + money(t.refund) + '</div>' +
+          '<div class="mk">申请退款金额</div></div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  /* ---------------------------- 渲染：列表 / 分页 ---------------------------- */
+  function syncBulk() {
+    var n = selectedIds().length;
+    document.getElementById('selCount').textContent = n;
+    document.getElementById('bulkBar').classList.toggle('on', n > 0);
+  }
+  function clearSelection() {
+    selected = {};
+    document.querySelectorAll('[data-check]').forEach(function (cb) { cb.checked = false; });
+    syncBulk();
+  }
+
+  function renderList() {
+    var list = filtered();
+    document.getElementById('resultCount').textContent = list.length;
+    var box = document.getElementById('tickets');
+    var pages = Math.ceil(list.length / state.size) || 1;
+    if (state.page > pages) state.page = pages;
+    var slice = list.slice((state.page - 1) * state.size, state.page * state.size);
+
+    if (!slice.length) {
+      box.innerHTML = '<div class="empty">' +
+        '<div class="eic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 9a9 9 0 1 1 2.6 8.2"/><path d="M3 4v5.2h5.2"/></svg></div>' +
+        '<h4>' + (state.tab === 'wait' ? '太棒了，待处理售后已清空' : '没有匹配的售后工单') + '</h4>' +
+        '<p>' + (state.tab === 'wait' ? '保持 24 小时内响应的好习惯' : '试试调整筛选条件或清空关键词') + '</p></div>';
+      document.getElementById('pager').innerHTML = '';
+      syncBulk();
+      return;
+    }
+    box.innerHTML = slice.map(tkHTML).join('');
+
+    var pg = '<span class="info">第 <b>' + ((state.page - 1) * state.size + 1) + '-' +
+      Math.min(state.page * state.size, list.length) + '</b> 笔 / 共 <b>' + list.length + '</b> 笔</span>' +
+      '<span class="spacer"></span><div class="pages">' +
+      '<button class="pg" data-page="' + (state.page - 1) + '"' + (state.page === 1 ? ' disabled' : '') + '>‹</button>';
+    for (var i = 1; i <= pages; i++) {
+      pg += '<button class="pg' + (i === state.page ? ' on' : '') + '" data-page="' + i + '">' + i + '</button>';
+    }
+    pg += '<button class="pg" data-page="' + (state.page + 1) + '"' + (state.page === pages ? ' disabled' : '') + '>›</button></div>';
+    document.getElementById('pager').innerHTML = pg;
+    syncBulk();
+  }
+
+  function render() { renderTabs(); renderList(); }
+  function renderAll() { renderStats(); render(); }
+
+  /* ---------------------------- 提示 / 弹窗 ---------------------------- */
+  var ICON = {
+    ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+    warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5h.01"/></svg>'
+  };
+  function toast(msg, type) {
+    var el = document.createElement('div');
+    el.className = 'toast ' + (type || 'ok');
+    el.innerHTML = (ICON[type] || ICON.ok) + '<span>' + msg + '</span>';
+    document.getElementById('toasts').appendChild(el);
+    setTimeout(function () { el.classList.add('out'); setTimeout(function () { el.remove(); }, 260); }, 2400);
+  }
+
+  var modal = document.getElementById('modal');
+  function closeModal() { modal.classList.remove('on'); }
+  function openModal(cfg) {
+    document.getElementById('mdTitle').textContent = cfg.title;
+    document.getElementById('mdDesc').textContent = cfg.desc || '';
+    document.getElementById('mdBody').innerHTML = cfg.body || '';
+    document.getElementById('mdFoot').innerHTML = cfg.foot || '';
+    modal.classList.add('on');
+    if (cfg.mount) cfg.mount();
+  }
+  modal.addEventListener('click', function (e) {
+    if (e.target.getAttribute && e.target.getAttribute('data-close')) closeModal();
+  });
+
+  /* ---------------------------- 处理弹窗 ---------------------------- */
+  function openHandle(ids, mode) {
+    var list = ids.map(byId).filter(function (t) { return t && (t.status === 'wait' || t.status === 'recv'); });
+    if (!list.length) { toast('所选工单当前状态不可处理', 'warn'); return; }
+    var total = list.reduce(function (s, t) { return s + t.refund; }, 0);
+    var isAgree = mode === 'agree';
+
+    openModal({
+      title: (isAgree ? '同意退款' : '拒绝申请') + (list.length > 1 ? ' · ' + list.length + ' 笔' : ''),
+      desc: isAgree ? '同意后款项将原路退回买家，操作不可撤销' : '请选择拒绝理由并说明，买家可发起平台介入',
+      body:
+        '<div class="quote">' +
+          '<div class="qt">售后单 ' + list[0].id + (list.length > 1 ? ' 等 ' + list.length + ' 笔' : '') + '</div>' +
+          '<div class="qc">' + esc(list[0].prod.n) + ' · ' + esc(list[0].reason) +
+            '<br>合计退款 <b style="color:var(--coral)">¥' + money(total) + '</b></div>' +
+        '</div>' +
+        (isAgree
+          ? '<div class="frow">' +
+              '<div class="field"><label>退款金额（元） <i>*</i></label>' +
+                '<input id="hdAmt" type="number" value="' + total.toFixed(2) + '" />' +
+                '<div class="hint">可部分退款，不超过实付 ¥' + money(list[0].pay) + '</div></div>' +
+              '<div class="field"><label>退款类型</label><select id="hdKind">' +
+                '<option>原路退回</option><option>退回余额</option><option>线下转账</option></select></div>' +
+            '</div>' +
+            '<div class="field"><label>退货收货地址</label><select id="hdAddr">' +
+              ADDRESSES.map(function (a) { return '<option>' + a + '</option>'; }).join('') +
+            '</select><div class="hint">仅「退货退款 / 换货」需要买家寄回，仅退款无需关注</div></div>' +
+            '<div class="field"><label>处理说明</label>' +
+              '<textarea id="hdNote" rows="2" placeholder="选填，买家可见">我们已收到您的申请，将尽快为您办理退款。</textarea></div>' +
+            '<div class="quote" style="background:var(--coral-soft);border-color:#ffd9cc;margin-bottom:0">' +
+              '<div class="qc" style="color:#a3300f">⚠️ 同意后 ¥' + money(total) + ' 将立即从店铺账户冻结并于 1-3 个工作日退回买家，该操作不可撤销。</div>' +
+            '</div>'
+          : '<div class="field"><label>拒绝理由 <i>*</i></label><select id="hdReason">' +
+              REFUSE_REASONS.map(function (r) { return '<option>' + r + '</option>'; }).join('') +
+            '</select></div>' +
+            '<div class="field"><label>详细说明 <i>*</i></label>' +
+              '<textarea id="hdDesc" rows="3" placeholder="请说明拒绝依据，如商品已激活、凭证不足等，买家可据此申请平台介入"></textarea></div>' +
+            '<div class="field"><label>快捷理由</label><div class="quick" id="hdQuick">' +
+              REFUSE_REASONS.slice(0, 3).map(function (r) { return '<button>' + r + '</button>'; }).join('') +
+            '</div></div>'),
+      foot: '<button class="btn-plain" data-close="1">取消</button>' +
+            '<button class="btn-go' + (isAgree ? '' : ' danger') + '" id="hdOk">' + (isAgree ? '确认同意退款' : '确认拒绝') + '</button>',
+      mount: function () {
+        if (!isAgree) {
+          var ta = document.getElementById('hdDesc');
+          document.getElementById('hdQuick').addEventListener('click', function (e) {
+            var b = e.target.closest('button');
+            if (!b) return;
+            document.getElementById('hdReason').value = b.textContent;
+            ta.value = '经核实，' + b.textContent + '。如您有异议，可申请平台介入并提供进一步凭证。';
+          });
+        }
+        document.getElementById('hdOk').onclick = function () {
+          var note, refuseReason = '';
+          if (isAgree) {
+            var amt = Math.max(0, +document.getElementById('hdAmt').value || 0);
+            if (amt <= 0) { toast('退款金额需大于 0', 'warn'); return; }
+            note = document.getElementById('hdNote').value.trim();
+          } else {
+            refuseReason = document.getElementById('hdReason').value;
+            var d = document.getElementById('hdDesc').value.trim();
+            if (!d) { toast('请填写详细说明', 'warn'); return; }
+            note = d;
+          }
+          list.forEach(function (t) {
+            if (isAgree) {
+              t.status = (t.type === 'refund') ? 'done' : 'back';
+              t.note = '';
+            } else {
+              t.status = 'refuse';
+              t.refuseReason = refuseReason;
+              t.note = '';
+            }
+            t.handleNote = note;
+          });
+          closeModal();
+          clearSelection();
+          renderAll();
+          if (document.getElementById('drawer').classList.contains('on')) closeDrawer();
+          toast(isAgree
+            ? '已同意 ' + list.length + ' 笔售后，退款处理中'
+            : '已拒绝 ' + list.length + ' 笔售后申请', isAgree ? 'ok' : 'warn');
+        };
+      }
+    });
+  }
+
+  function confirmModal(title, desc, okText, danger, onOk) {
+    openModal({
+      title: title, desc: desc, body: '',
+      foot: '<button class="btn-plain" data-close="1">取消</button>' +
+            '<button class="btn-go' + (danger ? ' danger' : '') + '" id="mdOk">' + okText + '</button>',
+      mount: function () { document.getElementById('mdOk').onclick = function () { closeModal(); onOk(); }; }
+    });
+  }
+
+  /* ---------------------------- 抽屉 ---------------------------- */
+  var drawer = document.getElementById('drawer');
+  var scrim = document.getElementById('scrim');
+
+  function timelineOf(t) {
+    var steps = [{ k: '买家提交申请', d: t.created, done: true, p: esc(t.reason) + ' · ' + esc(t.desc.slice(0, 30)) }];
+    if (t.status === 'wait') {
+      steps.push({ k: '等待商家处理', d: null, now: true, p: '商家需在 ' + fmt(t.deadline) + ' 前完成审核' });
+    } else if (t.status === 'back') {
+      steps.push({ k: '商家同意退货', d: new Date(t.created.getTime() + 2 * 3600000), done: true, p: '已提供退货地址，等待买家寄回' });
+      steps.push({ k: '等待买家寄回', d: null, now: true, p: '买家需在 7 天内完成寄回并填写运单号' });
+    } else if (t.status === 'recv') {
+      steps.push({ k: '商家同意退货', d: new Date(t.created.getTime() + 2 * 3600000), done: true, p: '已提供退货地址' });
+      steps.push({ k: '买家已寄回', d: new Date(t.created.getTime() + 40 * 3600000), done: true, p: '顺丰速运 SF' + (1000000000 + t.idx * 137) });
+      steps.push({ k: '等待商家确认收货', d: null, now: true, p: '确认收货后款项将退回买家' });
+    } else if (t.status === 'done') {
+      steps.push({ k: '商家同意退款', d: new Date(t.created.getTime() + 3 * 3600000), done: true, p: '退款处理中' });
+      steps.push({ k: '退款成功', d: new Date(t.created.getTime() + 5 * 3600000), done: true, p: '¥' + money(t.refund) + ' 已原路退回' });
+      steps.push({ k: '售后完成', d: new Date(t.created.getTime() + 5 * 3600000), done: true, p: '工单已归档' });
+    } else if (t.status === 'refuse') {
+      steps.push({ k: '商家拒绝申请', d: new Date(t.created.getTime() + 3 * 3600000), done: true, p: esc(t.refuseReason) });
+      steps.push({ k: '工单已拒绝', d: new Date(t.created.getTime() + 3 * 3600000), done: true, p: '买家可申请平台介入' });
+    } else {
+      steps.push({ k: '买家撤销申请', d: new Date(t.created.getTime() + 4 * 3600000), done: true, p: '工单自动关闭' });
+    }
+    return steps.map(function (s) {
+      return '<div class="tl-row' + (s.done ? ' done' : '') + (s.now ? ' now' : '') + '">' +
+        '<div class="tl-dot"></div><div class="tl-txt">' +
+        '<b>' + s.k + '</b><span>' + (s.d ? fmt(s.d) : '待处理') + '</span>' +
+        (s.p ? '<p>' + s.p + '</p>' : '') + '</div></div>';
+    }).join('');
+  }
+
+  function openDrawer(id) {
+    var t = byId(id);
+    if (!t) return;
+    var st = ST[t.status], ty = TYPES[t.type];
+    document.getElementById('drNo').textContent = t.id;
+    document.getElementById('drKicker').textContent = ty.t + ' · ' + t.orderNo;
+
+    document.getElementById('drBody').innerHTML =
+      '<div class="banner ' + (t.status === 'wait' ? 'coral' : t.status === 'recv' ? 'amber' : t.status === 'done' ? 'green' : t.status === 'back' ? 'blue' : 'gray') + '">' +
+        '<div class="bic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 9a9 9 0 1 1 2.6 8.2"/><path d="M3 4v5.2h5.2"/></svg></div>' +
+        '<div><b>' + st.t + '</b><span>' + st.act + '</span></div></div>' +
+
+      '<div class="dr-sec"><h4>售后信息</h4>' +
+        '<div class="dl"><span class="k">售后类型</span><b>' + ty.t + '</b></div>' +
+        '<div class="dl"><span class="k">申请原因</span><b>' + esc(t.reason) + '</b></div>' +
+        '<div class="dl"><span class="k">申请时间</span><b>' + fmt(t.created) + '</b></div>' +
+        (t.deadline ? '<div class="dl"><span class="k">处理时限</span><b style="color:' + (isUrgent(t) ? 'var(--coral)' : 'inherit') + '">' + fmt(t.deadline) + '</b></div>' : '') +
+        '<div class="dl"><span class="k">买家描述</span><b style="font-weight:500;line-height:1.8">' + esc(t.desc) + '</b></div>' +
+        evisHTML(t) +
+      '</div>' +
+
+      '<div class="dr-sec"><h4>买家与商品</h4>' +
+        '<div class="dl"><span class="k">买家</span><b>' + t.buyer.n + ' · ' + t.buyer.lv + '</b></div>' +
+        '<div class="dl"><span class="k">关联订单</span><b class="mono">' + t.orderNo + '</b></div>' +
+        '<div class="d-items" style="display:flex;gap:11px;align-items:center;margin-top:11px;background:#faf8f4;border:1px solid var(--line-soft);border-radius:11px;padding:11px">' +
+          '<div class="tk-thumb ' + t.prod.th + '" style="width:44px;height:44px;border-radius:10px">' + t.prod.tag + '</div>' +
+          '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">' + esc(t.prod.n) + '</div>' +
+          '<div style="font-size:11.5px;color:var(--text-3);margin-top:4px">' + esc(t.prod.s) + ' · ×' + t.qty + '</div></div>' +
+          '<div class="mono" style="font-weight:600">¥' + money(t.goods) + '</div>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="dr-sec"><h4>退款金额</h4><div class="d-money">' +
+        '<div class="mr"><span>商品金额</span><b>¥' + money(t.goods) + '</b></div>' +
+        '<div class="mr"><span>运费</span><b>' + (t.ship ? '¥' + money(t.ship) : '包邮') + '</b></div>' +
+        '<div class="mr total"><span>应退买家</span><b>¥' + money(t.refund) + '</b></div>' +
+      '</div></div>' +
+
+      '<div class="dr-sec"><h4>处理进度</h4><div class="tl">' + timelineOf(t) + '</div></div>';
+
+    var f = document.getElementById('drFoot');
+    if (t.status === 'wait') {
+      f.innerHTML = '<button class="btn-ghost" data-dact="refuse">拒绝申请</button>' +
+                    '<button class="btn-primary" data-dact="agree">同意退款</button>';
+    } else if (t.status === 'recv') {
+      f.innerHTML = '<button class="btn-ghost" data-dact="refuse">拒绝退款</button>' +
+                    '<button class="btn-primary" data-dact="receive">确认收货并退款</button>';
+    } else if (t.status === 'back') {
+      f.innerHTML = '<button class="btn-ghost" data-dact="revoke">撤销同意</button>' +
+                    '<button class="btn-primary" data-dact="urge">提醒买家寄回</button>';
+    } else {
+      f.innerHTML = '<button class="btn-primary" data-dact="close">关闭</button>';
+    }
+    f.dataset.id = t.id;
+
+    drawer.classList.add('on');
+    scrim.classList.add('on');
+    drawer.setAttribute('aria-hidden', 'false');
+  }
+  function closeDrawer() {
+    drawer.classList.remove('on');
+    scrim.classList.remove('on');
+    drawer.setAttribute('aria-hidden', 'true');
+  }
+
+  /* ---------------------------- 动作分发 ---------------------------- */
+  function doAct(id, act) {
+    var t = byId(id);
+    if (!t) return;
+    if (act === 'detail') { openDrawer(id); return; }
+    if (act === 'agree') { openHandle([id], 'agree'); return; }
+    if (act === 'refuse') { openHandle([id], 'refuse'); return; }
+    if (act === 'receive') {
+      confirmModal('确认收货并退款', '确认已收到买家寄回的商品，退款 ¥' + money(t.refund) + ' 将退回买家。', '确认收货并退款', false, function () {
+        t.status = 'done';
+        t.note = '';
+        renderAll();
+        if (drawer.classList.contains('on')) closeDrawer();
+        toast('已确认收货，退款 ¥' + money(t.refund) + ' 处理中');
+      });
+      return;
+    }
+    if (act === 'urge') { toast('已向 ' + t.buyer.n + ' 发送寄回提醒'); return; }
+    if (act === 'chat') { toast('已打开与 ' + t.buyer.n + ' 的会话（演示）'); return; }
+    if (act === 'revoke') {
+      confirmModal('撤销同意', '撤销后该售后将回到「待处理」状态，需重新审核。', '确认撤销', true, function () {
+        t.status = 'wait';
+        t.deadline = new Date(BASE.getTime() + 30 * 3600000);
+        renderAll();
+        if (drawer.classList.contains('on')) closeDrawer();
+        toast('已撤销同意，工单回到待处理', 'warn');
+      });
+      return;
+    }
+    if (act === 'recheck') {
+      t.status = 'wait';
+      t.deadline = new Date(BASE.getTime() + 24 * 3600000);
+      renderAll();
+      if (drawer.classList.contains('on')) closeDrawer();
+      toast('已重新进入审核流程');
+      return;
+    }
+    if (act === 'export') { toast('已导出该工单的凭证与记录'); return; }
+  }
+
+  /* ---------------------------- 事件 ---------------------------- */
+  document.getElementById('tickets').addEventListener('click', function (e) {
+    var evi = e.target.closest('.evi');
+    if (evi) { toast('已打开凭证查看器（演示）'); return; }
+    var b = e.target.closest('[data-act]');
+    if (b) {
+      e.stopPropagation();
+      doAct(b.getAttribute('data-id'), b.getAttribute('data-act'));
+      return;
+    }
+    if (e.target.closest('[data-check]')) return;
+    var tk = e.target.closest('.tk');
+    if (tk) openDrawer(tk.getAttribute('data-id'));
+  });
+
+  document.getElementById('tickets').addEventListener('change', function (e) {
+    var cb = e.target.closest('[data-check]');
+    if (!cb) return;
+    selected[cb.getAttribute('data-check')] = cb.checked;
+    syncBulk();
+  });
+
+  document.getElementById('drFoot').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-dact]');
+    if (!b) return;
+    var act = b.getAttribute('data-dact');
+    if (act === 'close') { closeDrawer(); return; }
+    doAct(this.dataset.id, act);
+  });
+
+  document.getElementById('drClose').addEventListener('click', closeDrawer);
+  scrim.addEventListener('click', closeDrawer);
+
+  document.getElementById('tabs').addEventListener('click', function (e) {
+    var t = e.target.closest('.tab');
+    if (!t) return;
+    state.tab = t.getAttribute('data-tab');
+    state.page = 1;
+    clearSelection();
+    render();
+  });
+
+  ['fType', 'fReason', 'fAmount', 'fSort'].forEach(function (id) {
+    document.getElementById(id).addEventListener('change', function () {
+      state.type = document.getElementById('fType').value;
+      state.reason = document.getElementById('fReason').value;
+      state.amount = document.getElementById('fAmount').value;
+      state.sort = document.getElementById('fSort').value;
+      state.page = 1;
+      render();
+    });
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', function () {
+    state.tab = 'all'; state.q = ''; state.type = 'all'; state.reason = 'all';
+    state.amount = 'all'; state.sort = 'urgent'; state.page = 1;
+    ['fType', 'fReason', 'fAmount'].forEach(function (id) { document.getElementById(id).value = 'all'; });
+    document.getElementById('fSort').value = 'urgent';
+    document.getElementById('topSearch').value = '';
+    clearSelection();
+    renderAll();
+    toast('筛选条件已重置');
+  });
+
+  document.getElementById('topSearch').addEventListener('input', function (e) {
+    state.q = e.target.value.trim();
+    state.page = 1;
+    render();
+  });
+
+  document.getElementById('pager').addEventListener('click', function (e) {
+    var b = e.target.closest('.pg');
+    if (!b || b.disabled) return;
+    var p = parseInt(b.getAttribute('data-page'), 10);
+    if (p < 1 || p > Math.ceil(filtered().length / state.size)) return;
+    state.page = p;
+    render();
+  });
+
+  document.getElementById('bulkClear').addEventListener('click', clearSelection);
+  document.getElementById('bulkAgree').addEventListener('click', function () {
+    if (!selectedIds().length) { toast('请先勾选售后工单', 'warn'); return; }
+    openHandle(selectedIds(), 'agree');
+  });
+  document.getElementById('bulkRefuse').addEventListener('click', function () {
+    if (!selectedIds().length) { toast('请先勾选售后工单', 'warn'); return; }
+    openHandle(selectedIds(), 'refuse');
+  });
+  document.getElementById('bulkExport').addEventListener('click', function () {
+    toast('已导出 ' + selectedIds().length + ' 笔工单明细');
+  });
+  document.getElementById('batchAgree').addEventListener('click', function () {
+    var ids = selectedIds().length ? selectedIds()
+      : filtered().filter(function (t) { return t.status === 'wait'; }).map(function (t) { return t.id; });
+    if (!ids.length) { toast('当前没有可同意的工单', 'warn'); return; }
+    openHandle(ids, 'agree');
+  });
+  document.getElementById('batchRefuse').addEventListener('click', function () {
+    var ids = selectedIds().length ? selectedIds()
+      : filtered().filter(function (t) { return t.status === 'wait'; }).map(function (t) { return t.id; });
+    if (!ids.length) { toast('当前没有可拒绝的工单', 'warn'); return; }
+    openHandle(ids, 'refuse');
+  });
+
+  document.getElementById('ruleBtn').addEventListener('click', function () {
+    openModal({
+      title: '售后自动规则',
+      desc: '命中规则后系统将自动处理，减少人工介入',
+      body:
+        '<div class="field"><label>自动同意条件</label>' +
+          '<select><option>仅退款 + 金额 ≤ 200 元 → 自动同意</option>' +
+          '<option>全部退款申请 → 自动同意</option><option>不自动同意</option></select>' +
+          '<div class="hint">小额仅退款自动放行，可显著降低处理时长</div></div>' +
+        '<div class="field"><label>质量问题退货</label>' +
+          '<select><option>需人工审核凭证</option><option>凭证 ≥3 张自动同意</option></select></div>' +
+        '<div class="field"><label>超时保护</label>' +
+          '<select><option>超时前 6 小时提醒我</option><option>超时前 12 小时提醒我</option><option>不提醒</option></select>' +
+          '<div class="hint">超时未处理平台将自动退款，请务必开启提醒</div></div>',
+      foot: '<button class="btn-plain" data-close="1">取消</button><button class="btn-go" id="ruleOk">保存规则</button>',
+      mount: function () {
+        document.getElementById('ruleOk').onclick = function () { closeModal(); toast('售后自动规则已保存'); };
+      }
+    });
+  });
+
+  document.getElementById('bell').addEventListener('click', function (e) {
+    e.stopPropagation();
+    document.getElementById('pop').classList.toggle('open');
+  });
+  document.addEventListener('click', function (e) {
+    var pop = document.getElementById('pop');
+    if (!pop.contains(e.target)) pop.classList.remove('open');
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { closeDrawer(); closeModal(); document.getElementById('pop').classList.remove('open'); }
+  });
+  document.getElementById('burger').addEventListener('click', function () {
+    document.getElementById('rail').classList.toggle('open');
+  });
+
+  /* ---------------------------- 启动 ---------------------------- */
+  document.addEventListener('DOMContentLoaded', function () { renderAll(); });
+})();
+</script>
+</body>
+</html>

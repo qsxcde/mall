@@ -1,0 +1,156 @@
+# ============================================================
+# 极客数码商城 - 本地基础设施编排
+#
+# 启动基础组件（MySQL / Redis / MinIO）：
+#   docker compose -f infra/docker-compose.yml up -d
+#
+# 同时启动可观测性组件（Prometheus / Grafana / Loki / Promtail）：
+#   docker compose -f infra/docker-compose.yml --profile observability up -d
+#
+# 停止并保留数据：docker compose -f infra/docker-compose.yml down
+# 停止并清空数据：docker compose -f infra/docker-compose.yml down -v
+# ============================================================
+name: geek-mall
+
+services:
+  # ---------------- MySQL ----------------
+  mysql:
+    image: mysql:8.0
+    container_name: geek-mall-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-geek_mall}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+      # P2-8：行锁等待 5s 快速报错，避免拖死连接（默认 50s > 连接超时）
+      - --innodb-lock-wait-timeout=5
+      - --max-connections=300
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks: [geek-mall-net]
+
+  # ---------------- Redis ----------------
+  redis:
+    image: redis:7-alpine
+    container_name: geek-mall-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [geek-mall-net]
+
+  # ---------------- MinIO（对象存储） ----------------
+  minio:
+    image: minio/minio:latest
+    container_name: geek-mall-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [geek-mall-net]
+
+  # ---------------- Prometheus（指标） ----------------
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: geek-mall-prometheus
+    restart: unless-stopped
+    profiles: ["observability"]
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [geek-mall-net]
+
+  # ---------------- Grafana（可视化） ----------------
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: geek-mall-grafana
+    restart: unless-stopped
+    profiles: ["observability"]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks: [geek-mall-net]
+
+  # ---------------- Loki（日志聚合） ----------------
+  loki:
+    image: grafana/loki:3.1.1
+    container_name: geek-mall-loki
+    restart: unless-stopped
+    profiles: ["observability"]
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+    networks: [geek-mall-net]
+
+  # ---------------- Promtail（日志采集，读取 backend/logs） ----------------
+  promtail:
+    image: grafana/promtail:3.1.1
+    container_name: geek-mall-promtail
+    restart: unless-stopped
+    profiles: ["observability"]
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      # 采集宿主机上的后端日志目录
+      - ../backend/logs:/var/log/geek-mall:ro
+    ports:
+      - "9080:9080"
+    depends_on:
+      - loki
+    networks: [geek-mall-net]
+
+volumes:
+  mysql-data:
+  redis-data:
+  minio-data:
+  prometheus-data:
+  grafana-data:
+  loki-data:
+
+networks:
+  geek-mall-net:
+    driver: bridge

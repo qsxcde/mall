@@ -1,0 +1,49 @@
+package com.geekmall.common.constant;
+
+/**
+ * Redis Key 统一定义，避免散落在业务代码中造成冲突。
+ */
+public final class RedisKeys {
+
+    private RedisKeys() {
+    }
+
+    /** 短信验证码：mall:sms:code:{scene}:{phone} */
+    public static final String SMS_CODE = "mall:sms:code:";
+
+    /** 登录令牌（单点会话）：mall:login:token:{userId} */
+    public static final String LOGIN_TOKEN = "mall:login:token:";
+
+    /** 商家端登录令牌（与买家端隔离）：mall:merchant:token:{merchantUserId} */
+    public static final String MERCHANT_LOGIN_TOKEN = "mall:merchant:token:";
+
+    /** 秒杀库存：mall:seckill:stock:{itemId} */
+    public static final String SECKILL_STOCK = "mall:seckill:stock:";
+
+    /** 秒杀一人一单标记：mall:seckill:bought:{itemId}:{userId} */
+    public static final String SECKILL_BOUGHT = "mall:seckill:bought:";
+
+    /** 下单幂等：mall:order:idempotent:{requestId} */
+    public static final String ORDER_IDEMPOTENT = "mall:order:idempotent:";
+
+    /** 缓存重建互斥锁：mall:cache:lock:{cacheName}:{cacheKey}（防缓存击穿） */
+    public static final String CACHE_LOCK = "mall:cache:lock:";
+
+    /** 商品布隆过滤器位图（防缓存穿透：挡住一定不存在的商品 ID） */
+    public static final String BLOOM_PRODUCT = "mall:bloom:product";
+
+    /** 商品布隆过滤器「就绪」标记：不存在时表示位图不可信，应跳过校验 */
+    public static final String BLOOM_PRODUCT_READY = "mall:bloom:product:ready";
+
+    public static String smsCode(String scene, String phone) {
+        return SMS_CODE + scene + ":" + phone;
+    }
+
+    public static String loginToken(Long userId) {
+        return LOGIN_TOKEN + userId;
+    }
+
+    public static String merchantLoginToken(Long merchantUserId) {
+        return MERCHANT_LOGIN_TOKEN + merchantUserId;
+    }
+}

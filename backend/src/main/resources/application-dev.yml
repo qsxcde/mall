@@ -1,0 +1,48 @@
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DB:geek_mall}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:root}
+    hikari:
+      pool-name: GeekMallHikariCP
+      minimum-idle: 10
+      # P0-1：本地压测同样需要足够连接 + 快速失败，避免复现「挂起 30s」
+      maximum-pool-size: 50
+      connection-timeout: 3000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      leak-detection-threshold: 10000
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: 0
+      timeout: 3s
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          max-wait: 2s
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    encoding: UTF-8
+
+mall:
+  # 启动时确保存在演示账号 13800000000 / 123456，方便前端联调
+  init-demo-user: true
+  # 启动时确保存在演示商家账号 merchant / 123456（商家中心联调）
+  init-demo-merchant: true
+  sms:
+    # 本地联调时接口会回显验证码，免去查日志
+    expose-code: true
+  mock:
+    # 注册模拟发货等联调接口，打通「支付 → 发货 → 收货 → 评价」链路
+    enabled: true
+
+logging:
+  level:
+    com.geekmall: debug

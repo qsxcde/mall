@@ -1,0 +1,1432 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>发货中心 · 极客商家中心</title>
+<meta name="description" content="极客数码商城 商家中心 — 发货中心" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+/* ==========================================================================
+   极客商家中心 — 设计令牌（全站共用视觉体系）
+   ========================================================================== */
+:root {
+  --rail:#0c1322; --rail-2:#131c30; --rail-line:rgba(255,255,255,.07);
+  --canvas:#f3f0e9; --card:#fff; --line:#e6e1d6; --line-soft:#efece4;
+  --text:#171f2e; --text-2:#5b6472; --text-3:#98a0ac;
+  --brand:#1a6dff; --brand-deep:#0a4fd6; --brand-soft:#eaf1ff;
+  --coral:#ff5a2e; --coral-soft:#ffece6;
+  --green:#109150; --green-soft:#e6f6ec;
+  --teal:#0d9488; --teal-soft:#e2f6f3;
+  --amber:#e08b1a; --amber-soft:#fdf1dc;
+  --violet:#7c5cff; --violet-soft:#efeaff;
+  --gold:#c8922f;
+  --shadow-s:0 1px 2px rgba(20,26,40,.04), 0 1px 3px rgba(20,26,40,.05);
+  --shadow-m:0 2px 6px rgba(20,26,40,.05), 0 10px 26px -12px rgba(20,26,40,.18);
+  --shadow-l:0 18px 48px -20px rgba(16,24,40,.35);
+  --r-m:14px; --r-l:20px;
+  --ui:"Manrope","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --display:"Fraunces","Songti SC",Georgia,"Times New Roman",serif;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html { -webkit-text-size-adjust:100%; }
+body { font-family:var(--ui); background:var(--canvas); color:var(--text); font-size:14px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+body::after {
+  content:""; position:fixed; inset:0; z-index:9000; pointer-events:none; opacity:.05;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+a { text-decoration:none; color:inherit; }
+button { font-family:inherit; cursor:pointer; border:none; background:none; color:inherit; }
+input, select, textarea { font-family:inherit; color:inherit; }
+svg { display:block; }
+::-webkit-scrollbar { width:10px; height:10px; }
+::-webkit-scrollbar-thumb { background:#cfc9bc; border-radius:10px; border:3px solid transparent; background-clip:content-box; }
+::-webkit-scrollbar-thumb:hover { background:#b6af9f; background-clip:content-box; border:3px solid transparent; }
+::-webkit-scrollbar-track { background:transparent; }
+.num { font-family:var(--display); font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1; letter-spacing:-.01em; }
+.mono { font-family:var(--mono); font-size:12px; font-variant-numeric:tabular-nums; }
+
+/* ============================ 骨架 ============================ */
+.app { display:flex; min-height:100vh; }
+.rail {
+  width:244px; flex-shrink:0; background:var(--rail); color:#cfd6e4; display:flex; flex-direction:column;
+  position:sticky; top:0; height:100vh; z-index:40; transition:transform .32s cubic-bezier(.22,.8,.2,1);
+  background-image:
+    radial-gradient(120% 90% at 0% 0%, rgba(26,109,255,.22), transparent 55%),
+    radial-gradient(90% 70% at 100% 100%, rgba(255,90,46,.1), transparent 60%);
+}
+.brand { display:flex; align-items:center; gap:11px; padding:22px 20px 20px; }
+.brand-mark {
+  width:38px; height:38px; border-radius:11px; flex-shrink:0;
+  background:linear-gradient(140deg,#4da3ff,var(--brand) 60%,var(--brand-deep));
+  display:grid; place-items:center; font-family:var(--display); font-weight:700; font-size:19px; color:#fff;
+  box-shadow:0 8px 20px -8px rgba(26,109,255,.9), inset 0 1px 0 rgba(255,255,255,.4);
+}
+.brand-txt b { display:block; color:#fff; font-size:15px; font-weight:800; letter-spacing:.02em; line-height:1.2; }
+.brand-txt span { font-size:11px; color:#7b869c; letter-spacing:.14em; text-transform:uppercase; }
+.nav { flex:1; overflow-y:auto; padding:6px 12px 16px; }
+.nav::-webkit-scrollbar { width:0; }
+.nav-group { margin-top:15px; }
+.nav-group:first-child { margin-top:4px; }
+.nav-label { font-size:10.5px; letter-spacing:.18em; text-transform:uppercase; color:#5c6880; padding:0 10px 8px; font-weight:700; }
+.nav-item { position:relative; display:flex; align-items:center; gap:11px; padding:9.5px 12px; border-radius:10px; font-size:13.5px; font-weight:600; color:#a9b4c8; transition:background .18s, color .18s; }
+.nav-item svg { width:18px; height:18px; flex-shrink:0; opacity:.9; }
+.nav-item:hover { background:rgba(255,255,255,.06); color:#fff; }
+.nav-item.active { color:#fff; background:linear-gradient(100deg, rgba(26,109,255,.95), rgba(26,109,255,.55)); box-shadow:0 10px 24px -12px rgba(26,109,255,.95); }
+.nav-item.active::before { content:""; position:absolute; left:-12px; top:50%; transform:translateY(-50%); width:3px; height:20px; border-radius:0 3px 3px 0; background:#7fbaff; }
+.nav-item .pill { margin-left:auto; background:var(--coral); color:#fff; font-family:var(--mono); font-size:10px; font-weight:600; border-radius:20px; padding:1.5px 7px; line-height:1.5; }
+.nav-item.active .pill { background:rgba(255,255,255,.28); }
+.rail-foot { padding:14px; border-top:1px solid var(--rail-line); }
+.store-chip { display:flex; align-items:center; gap:10px; background:var(--rail-2); border:1px solid var(--rail-line); border-radius:12px; padding:11px; }
+.store-logo { width:34px; height:34px; border-radius:9px; flex-shrink:0; background:linear-gradient(135deg,#ffd88a,var(--gold)); display:grid; place-items:center; font-size:13px; font-weight:800; color:#4a3208; }
+.store-chip .s-txt { min-width:0; }
+.store-chip .s-txt b { display:block; font-size:12.5px; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.store-chip .s-txt span { font-size:11px; color:#7b869c; display:flex; align-items:center; gap:5px; }
+.dot-ok { width:6px; height:6px; border-radius:50%; background:#35d07f; box-shadow:0 0 0 3px rgba(53,208,127,.18); }
+
+.main { flex:1; min-width:0; display:flex; flex-direction:column; }
+.topbar {
+  position:sticky; top:0; z-index:30; display:flex; align-items:center; gap:16px; padding:13px 28px;
+  background:rgba(243,240,233,.82); backdrop-filter:saturate(1.6) blur(14px);
+  -webkit-backdrop-filter:saturate(1.6) blur(14px); border-bottom:1px solid var(--line);
+}
+.burger { display:none; width:38px; height:38px; border-radius:10px; border:1px solid var(--line); background:#fff; place-items:center; }
+.crumb { font-size:12.5px; color:var(--text-3); display:flex; align-items:center; gap:7px; }
+.crumb b { color:var(--text); font-weight:700; }
+.search { margin-left:auto; display:flex; align-items:center; gap:9px; background:#fff; border:1px solid var(--line); border-radius:11px; padding:0 13px; height:38px; width:268px; transition:border-color .18s, box-shadow .18s; }
+.search:focus-within { border-color:var(--brand); box-shadow:0 0 0 3px rgba(26,109,255,.12); }
+.search svg { width:16px; height:16px; color:var(--text-3); }
+.search input { border:none; outline:none; background:none; font-size:13px; width:100%; }
+.search kbd { font-family:var(--mono); font-size:10.5px; color:var(--text-3); border:1px solid var(--line); border-radius:5px; padding:1px 5px; background:#faf8f4; }
+.icon-btn { position:relative; width:38px; height:38px; border-radius:11px; border:1px solid var(--line); background:#fff; display:grid; place-items:center; color:var(--text-2); transition:all .18s; flex-shrink:0; }
+.icon-btn:hover { color:var(--brand); border-color:#c9dcff; background:var(--brand-soft); }
+.icon-btn svg { width:18px; height:18px; }
+.badge-dot { position:absolute; top:6px; right:6px; min-width:16px; height:16px; padding:0 4px; border-radius:9px; background:var(--coral); color:#fff; font-family:var(--mono); font-size:10px; font-weight:600; display:grid; place-items:center; border:2px solid var(--canvas); }
+.btn-primary, .btn-ghost { display:inline-flex; align-items:center; gap:7px; height:38px; padding:0 16px; border-radius:11px; font-weight:700; font-size:13px; transition:all .18s; white-space:nowrap; }
+.btn-primary { background:linear-gradient(135deg,#4da3ff,var(--brand)); color:#fff; box-shadow:0 10px 22px -12px rgba(26,109,255,.95); }
+.btn-primary:hover { filter:brightness(1.06); transform:translateY(-1px); }
+.btn-ghost { border:1px solid var(--line); background:#fff; color:var(--text-2); }
+.btn-ghost:hover { border-color:#c9dcff; color:var(--brand); background:var(--brand-soft); }
+.btn-primary svg, .btn-ghost svg { width:16px; height:16px; }
+.me { display:flex; align-items:center; gap:9px; padding-left:15px; border-left:1px solid var(--line); }
+.me-av { width:34px; height:34px; border-radius:10px; background:linear-gradient(135deg,#2b3a67,var(--brand)); color:#fff; display:grid; place-items:center; font-size:13px; font-weight:800; }
+.me b { font-size:13px; display:block; line-height:1.2; }
+.me span { font-size:11px; color:var(--text-3); }
+.pop { position:absolute; top:54px; right:28px; width:320px; background:#fff; border:1px solid var(--line); border-radius:var(--r-m); box-shadow:var(--shadow-l); padding:8px; z-index:50; opacity:0; visibility:hidden; transform:translateY(-8px); transition:all .2s cubic-bezier(.2,.8,.2,1); }
+.pop.open { opacity:1; visibility:visible; transform:translateY(0); }
+.pop h4 { font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-3); padding:8px 10px 6px; }
+.pop-item { display:flex; gap:10px; padding:10px; border-radius:10px; transition:background .18s; }
+.pop-item:hover { background:#faf8f4; }
+.pop-item .pi { width:30px; height:30px; border-radius:9px; display:grid; place-items:center; flex-shrink:0; font-size:14px; }
+.pop-item p { font-size:12.5px; line-height:1.5; }
+.pop-item time { font-size:11px; color:var(--text-3); }
+
+/* ============================ 画布 / 页头 / 统计 ============================ */
+.canvas { padding:24px 28px 40px; background-image:radial-gradient(circle, rgba(23,31,46,.05) 1px, transparent 1px); background-size:24px 24px; background-position:-12px -12px; }
+.rise { opacity:0; transform:translateY(14px); animation:rise .62s cubic-bezier(.22,.8,.2,1) forwards; }
+@keyframes rise { to { opacity:1; transform:none; } }
+.page-head { display:flex; align-items:flex-end; gap:20px; flex-wrap:wrap; }
+.page-head .eyebrow { display:inline-flex; align-items:center; gap:8px; font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--brand); font-weight:700; }
+.page-head .eyebrow::before { content:""; width:22px; height:1.5px; background:var(--brand); border-radius:2px; }
+.page-head h1 { font-size:26px; font-weight:800; margin-top:9px; letter-spacing:.01em; }
+.page-head h1 em { font-style:normal; font-family:var(--display); font-weight:600; color:var(--brand); }
+.page-head .desc { font-size:12.5px; color:var(--text-3); margin-top:6px; }
+.page-head .desc b { font-family:var(--mono); color:var(--text-2); }
+.page-head .acts { margin-left:auto; display:flex; gap:10px; flex-wrap:wrap; }
+
+.stat-strip { display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-top:18px; }
+.stat { background:var(--card); border:1px solid var(--line); border-radius:var(--r-m); padding:14px 16px; transition:transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s; }
+.stat:hover { transform:translateY(-3px); box-shadow:var(--shadow-m); }
+.stat .k { font-size:12px; color:var(--text-2); font-weight:600; display:flex; align-items:center; gap:7px; }
+.stat .k i { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.stat .v { font-family:var(--display); font-size:25px; font-weight:600; margin-top:8px; line-height:1.1; }
+.stat .v small { font-size:13px; font-weight:600; opacity:.6; margin-right:2px; }
+.stat .v small.u { margin:0; opacity:.45; font-size:13px; }
+.stat .d { font-size:11.5px; color:var(--text-3); margin-top:4px; }
+.stat .d b { font-family:var(--mono); color:var(--text-2); }
+.stat.alert { border-color:#ffd9cc; background:linear-gradient(180deg,#fff,#fffaf8); }
+
+.card { background:var(--card); border:1px solid var(--line); border-radius:var(--r-m); box-shadow:var(--shadow-s); overflow:hidden; }
+
+/* ============================ 布局：主区 + 打单侧栏 ============================ */
+.ship-layout { display:grid; grid-template-columns:minmax(0,1fr) 328px; gap:16px; margin-top:16px; align-items:start; }
+.ship-side { position:sticky; top:82px; display:flex; flex-direction:column; gap:16px; }
+
+/* ============================ Tab / 工具条 / 批量 ============================ */
+.tabs { display:flex; gap:4px; padding:6px 14px 0; overflow-x:auto; border-bottom:1px solid var(--line); }
+.tabs::-webkit-scrollbar { height:0; }
+.tab { position:relative; display:flex; align-items:center; gap:7px; white-space:nowrap; padding:12px 14px 14px; font-size:13.5px; font-weight:700; color:var(--text-2); transition:color .18s; }
+.tab:hover { color:var(--brand); }
+.tab.on { color:var(--brand); }
+.tab.on::after { content:""; position:absolute; left:10px; right:10px; bottom:-1px; height:2.5px; border-radius:3px 3px 0 0; background:var(--brand); }
+.tab .cnt { font-family:var(--mono); font-size:10.5px; font-weight:600; background:#f1eee6; color:var(--text-2); border-radius:20px; padding:1px 7px; line-height:1.6; }
+.tab.on .cnt { background:var(--brand-soft); color:var(--brand); }
+.tab .cnt.hot { background:var(--coral); color:#fff; }
+
+.toolbar { display:flex; align-items:center; gap:10px; padding:14px 16px; flex-wrap:wrap; border-bottom:1px solid var(--line); background:#fdfcfa; }
+.sel {
+  height:34px; border:1px solid var(--line); border-radius:9px; background:#fff; padding:0 30px 0 11px;
+  font-size:12.5px; font-weight:600; color:var(--text-2); outline:none; cursor:pointer;
+  appearance:none; -webkit-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2398a0ac' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 10px center; transition:border-color .18s, box-shadow .18s;
+}
+.sel:focus { border-color:var(--brand); box-shadow:0 0 0 3px rgba(26,109,255,.12); }
+.tb-label { font-size:12px; color:var(--text-3); font-weight:600; }
+.toolbar .spacer { margin-left:auto; }
+.tb-reset { font-size:12.5px; font-weight:700; color:var(--text-3); padding:8px 6px; }
+.tb-reset:hover { color:var(--brand); }
+.result-hint { font-size:12px; color:var(--text-3); }
+.result-hint b { color:var(--brand); font-family:var(--mono); }
+
+/* ============================ 待发货列表 ============================ */
+.s-head, .s-row { display:grid; grid-template-columns:34px minmax(150px,1.05fr) minmax(200px,1.5fr) minmax(140px,1fr) 132px 158px; gap:12px; align-items:center; padding:0 18px; }
+.s-head { background:#faf8f4; border-bottom:1px solid var(--line); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--text-3); font-weight:800; height:40px; }
+.s-row { padding-top:14px; padding-bottom:14px; border-bottom:1px solid var(--line-soft); transition:background .18s; }
+.s-row:last-child { border-bottom:none; }
+.s-row:hover { background:#fbfaf7; }
+.s-row.checked { background:#f5f9ff; }
+.s-row input[type=checkbox] { width:16px; height:16px; accent-color:var(--brand); cursor:pointer; }
+
+.s-no { font-family:var(--mono); font-size:12px; font-weight:600; }
+.s-no span { display:block; font-size:11px; color:var(--text-3); font-weight:400; margin-top:5px; }
+.s-prod { display:flex; gap:11px; align-items:center; min-width:0; }
+.s-thumb { width:46px; height:46px; border-radius:10px; flex-shrink:0; display:grid; place-items:center; font-family:var(--mono); font-size:9px; font-weight:600; color:rgba(23,31,46,.45); }
+.th1 { background:linear-gradient(135deg,#d9e8ff,#a9ccff); }
+.th2 { background:linear-gradient(135deg,#ffe3d6,#ffc0a3); }
+.th3 { background:linear-gradient(135deg,#d8f4ea,#a8e6d3); }
+.th4 { background:linear-gradient(135deg,#ffeec9,#ffdb96); }
+.th5 { background:linear-gradient(135deg,#e6dcff,#cbb9ff); }
+.th6 { background:linear-gradient(135deg,#d9f0ff,#a8dcf7); }
+.s-prod .pn { font-size:13px; font-weight:600; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.s-prod .pq { font-size:11.5px; color:var(--text-3); margin-top:5px; }
+
+.s-addr { font-size:12.5px; min-width:0; }
+.s-addr .an { font-weight:600; display:flex; align-items:center; gap:7px; }
+.s-addr .lv { font-family:var(--mono); font-size:10px; font-weight:600; padding:1px 6px; border-radius:5px; background:var(--amber-soft); color:var(--gold); }
+.s-addr .ad { color:var(--text-3); font-size:11.5px; margin-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+.s-exp select { width:100%; height:34px; border:1px solid var(--line); border-radius:9px; background:#fff; padding:0 26px 0 10px; font-size:12.5px; font-weight:600; color:var(--text-2); outline:none; cursor:pointer; appearance:none; -webkit-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2398a0ac' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 8px center; transition:border-color .18s; }
+.s-exp select:focus { border-color:var(--brand); box-shadow:0 0 0 3px rgba(26,109,255,.12); }
+.s-exp .wl { font-family:var(--mono); font-size:10.5px; color:var(--text-3); margin-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+.s-due { text-align:right; }
+.s-due .dt { font-family:var(--mono); font-size:12px; font-weight:600; }
+.s-due .dl { font-size:10.5px; color:var(--text-3); margin-top:4px; }
+.s-due.urgent .dt, .s-due.urgent .dl { color:var(--coral); }
+.s-due.ok .dt { color:var(--green); }
+
+.s-ops { display:flex; align-items:center; gap:3px; justify-content:flex-end; flex-wrap:wrap; }
+.op { font-size:12.5px; font-weight:700; color:var(--brand); padding:5px 8px; border-radius:7px; transition:background .18s; white-space:nowrap; }
+.op:hover { background:var(--brand-soft); }
+.op.muted { color:var(--text-2); }
+.op.muted:hover { background:#f1eee6; }
+.op.strong { background:var(--brand); color:#fff; padding:6px 12px; border-radius:8px; box-shadow:0 8px 18px -10px rgba(26,109,255,.95); }
+.op.strong:hover { filter:brightness(1.07); }
+
+.st { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700; padding:3px 9px; border-radius:20px; white-space:nowrap; }
+.st::before { content:""; width:5px; height:5px; border-radius:50%; background:currentColor; }
+.s-wait { color:var(--amber); background:var(--amber-soft); }
+.s-printed { color:var(--brand); background:var(--brand-soft); }
+.s-shipped { color:var(--teal); background:var(--teal-soft); }
+.s-done { color:var(--green); background:var(--green-soft); }
+.s-exc { color:var(--coral); background:var(--coral-soft); }
+
+/* 异常件行 */
+.exc-reason { font-size:11.5px; color:var(--coral); margin-top:6px; display:flex; align-items:center; gap:6px; }
+
+.bulk { display:flex; align-items:center; gap:12px; padding:0 16px; max-height:0; overflow:hidden; background:linear-gradient(100deg,#0c1322,#17233d); color:#fff; transition:max-height .28s cubic-bezier(.22,.8,.2,1), padding .28s; }
+.bulk.on { max-height:64px; padding:13px 16px; }
+.bulk .txt { font-size:13px; font-weight:600; }
+.bulk .txt b { font-family:var(--display); font-size:16px; color:#ffd88a; margin:0 3px; }
+.bulk .spacer { margin-left:auto; }
+.bulk-btn { display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 13px; border-radius:9px; background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.16); color:#e6ecf7; font-size:12.5px; font-weight:700; transition:all .18s; white-space:nowrap; }
+.bulk-btn:hover { background:rgba(255,255,255,.2); }
+.bulk-btn.solid { background:linear-gradient(135deg,#4da3ff,var(--brand)); border-color:transparent; color:#fff; }
+.bulk-btn.solid:hover { filter:brightness(1.08); }
+
+/* ============================ 打单侧栏 ============================ */
+.panel-head { display:flex; align-items:center; gap:9px; padding:17px 18px 0; }
+.panel-head h3 { font-size:14.5px; font-weight:800; }
+.panel-head .ic { width:30px; height:30px; border-radius:9px; display:grid; place-items:center; flex-shrink:0; }
+.panel-head .ic svg { width:16px; height:16px; }
+.panel-body { padding:14px 18px 18px; }
+
+.field { margin-bottom:13px; }
+.field:last-child { margin-bottom:0; }
+.field label { display:block; font-size:12px; font-weight:700; color:var(--text-2); margin-bottom:6px; }
+.field input, .field select, .field textarea { width:100%; height:38px; border:1px solid var(--line); border-radius:10px; padding:0 11px; font-size:12.5px; outline:none; background:#fff; transition:border-color .18s, box-shadow .18s; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color:var(--brand); box-shadow:0 0 0 3px rgba(26,109,255,.12); }
+.field select { appearance:none; -webkit-appearance:none; cursor:pointer; padding-right:30px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2398a0ac' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 11px center; }
+.field .hint { font-size:11px; color:var(--text-3); margin-top:5px; line-height:1.6; }
+.two { display:grid; grid-template-columns:1fr 1fr; gap:11px; }
+
+.kv { display:flex; align-items:center; justify-content:space-between; padding:9px 0; border-top:1px dashed var(--line-soft); font-size:12.5px; }
+.kv:first-child { border-top:none; }
+.kv .k { color:var(--text-2); }
+.kv .v { font-family:var(--display); font-size:15px; font-weight:600; }
+.kv .v.good { color:var(--green); }
+.kv .v.warn { color:var(--amber); }
+
+.cta { display:flex; flex-direction:column; gap:9px; margin-top:14px; }
+.cta button { height:42px; border-radius:11px; font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center; gap:8px; transition:all .18s; }
+.cta button svg { width:16px; height:16px; }
+.cta .b-main { background:linear-gradient(135deg,#4da3ff,var(--brand)); color:#fff; box-shadow:0 10px 22px -12px rgba(26,109,255,.95); }
+.cta .b-main:hover { filter:brightness(1.06); }
+.cta .b-main:disabled { background:#e6e1d6; color:var(--text-3); box-shadow:none; cursor:not-allowed; }
+.cta .b-alt { background:#fff; border:1px solid var(--line); color:var(--text-2); }
+.cta .b-alt:hover { border-color:#c9dcff; color:var(--brand); background:var(--brand-soft); }
+
+.printer-tip { display:flex; align-items:flex-start; gap:9px; padding:10px 12px; border-radius:10px; background:var(--green-soft); color:#0b6b3b; font-size:11.5px; line-height:1.65; margin-top:12px; }
+.printer-tip svg { width:14px; height:14px; flex-shrink:0; margin-top:2px; }
+.printer-tip.off { background:var(--amber-soft); color:#86540a; }
+
+/* ============================ 面单预览 ============================ */
+.waybill {
+  background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px; font-size:11px;
+  font-family:var(--mono); color:#0c1322; position:relative; overflow:hidden;
+}
+.waybill::before {
+  content:""; position:absolute; inset:0; pointer-events:none; opacity:.35;
+  background-image:repeating-linear-gradient(0deg, transparent 0 7px, rgba(12,19,34,.035) 7px 8px);
+}
+.waybill .wb-top { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:10px; border-bottom:2px solid #0c1322; position:relative; }
+.waybill .wb-brand { display:flex; align-items:center; gap:7px; }
+.waybill .wb-brand b { font-size:14px; letter-spacing:.06em; font-family:var(--ui); font-weight:800; }
+.waybill .wb-code { text-align:right; }
+.waybill .wb-code b { font-size:15px; letter-spacing:.04em; }
+.waybill .wb-code span { display:block; font-size:9px; color:#6b7484; letter-spacing:.14em; }
+.waybill .wb-sec { padding:9px 0; border-bottom:1px dashed #c9cfd8; position:relative; }
+.waybill .wb-sec:last-child { border-bottom:none; }
+.waybill .wb-line { display:flex; gap:7px; line-height:1.7; }
+.waybill .wb-line em { font-style:normal; color:#6b7484; flex-shrink:0; width:38px; }
+.waybill .wb-line span { word-break:break-all; font-family:var(--ui); font-size:11.5px; }
+.waybill .wb-big { font-family:var(--ui); font-size:13px; font-weight:700; }
+.waybill .wb-barcode { margin-top:10px; position:relative; }
+.waybill .wb-barcode svg { width:100%; height:54px; }
+.waybill .wb-barcode p { text-align:center; font-size:11px; letter-spacing:.28em; margin-top:4px; }
+.waybill .wb-tag { position:absolute; top:-1px; right:-1px; background:#0c1322; color:#fff; font-size:9.5px; font-family:var(--ui); font-weight:700; padding:3px 9px; border-radius:0 12px 0 8px; letter-spacing:.06em; }
+
+/* ============================ 分页 / 空态 / 提示 ============================ */
+.pager { display:flex; align-items:center; gap:14px; padding:15px 16px; border-top:1px solid var(--line); flex-wrap:wrap; }
+.pager .info { font-size:12.5px; color:var(--text-3); }
+.pager .info b { font-family:var(--mono); color:var(--text-2); }
+.pager .spacer { margin-left:auto; }
+.pages { display:flex; gap:5px; }
+.pg { min-width:32px; height:32px; padding:0 9px; border-radius:9px; border:1px solid var(--line); background:#fff; font-size:12.5px; font-weight:700; color:var(--text-2); display:grid; place-items:center; transition:all .18s; }
+.pg:hover:not(:disabled) { border-color:#c9dcff; color:var(--brand); background:var(--brand-soft); }
+.pg.on { background:var(--brand); border-color:var(--brand); color:#fff; box-shadow:0 8px 18px -10px rgba(26,109,255,.95); }
+.pg:disabled { opacity:.45; cursor:not-allowed; }
+
+.empty { padding:58px 20px; text-align:center; }
+.empty .eic { width:58px; height:58px; border-radius:18px; margin:0 auto 14px; background:#f4f1ea; display:grid; place-items:center; color:var(--text-3); border:1px solid var(--line); }
+.empty .eic svg { width:26px; height:26px; }
+.empty h4 { font-size:15px; font-weight:800; }
+.empty p { font-size:12.5px; color:var(--text-3); margin-top:6px; }
+
+.toasts { position:fixed; top:18px; left:50%; transform:translateX(-50%); z-index:80; display:flex; flex-direction:column; gap:10px; align-items:center; }
+.toast { display:flex; align-items:center; gap:10px; padding:11px 18px; border-radius:12px; background:#0c1322; color:#fff; font-size:13px; font-weight:600; box-shadow:var(--shadow-l); animation:toastIn .3s cubic-bezier(.22,.8,.2,1); }
+.toast.out { animation:toastOut .25s forwards; }
+.toast svg { width:16px; height:16px; flex-shrink:0; }
+.toast.ok svg { color:#7ef0b1; }
+.toast.warn svg { color:#ffd88a; }
+@keyframes toastIn { from { opacity:0; transform:translateY(-14px) scale(.96); } }
+@keyframes toastOut { to { opacity:0; transform:translateY(-10px) scale(.97); } }
+
+/* ============================ 弹窗 ============================ */
+.modal { position:fixed; inset:0; z-index:70; display:grid; place-items:center; padding:20px; opacity:0; visibility:hidden; transition:opacity .22s; }
+.modal.on { opacity:1; visibility:visible; }
+.modal-mask { position:absolute; inset:0; background:rgba(12,19,34,.55); backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px); }
+.modal-box { position:relative; width:520px; max-width:100%; background:#fff; border-radius:var(--r-l); box-shadow:var(--shadow-l); transform:translateY(14px) scale(.98); overflow:hidden; transition:transform .28s cubic-bezier(.22,.8,.2,1); max-height:92vh; display:flex; flex-direction:column; }
+.modal.on .modal-box { transform:none; }
+.modal-box.wide { width:640px; }
+.modal-head { padding:20px 22px 14px; }
+.modal-head h3 { font-size:17px; font-weight:800; }
+.modal-head p { font-size:12.5px; color:var(--text-3); margin-top:5px; }
+.modal-body { padding:0 22px 4px; overflow-y:auto; flex:1; }
+.modal-foot { padding:16px 22px 20px; display:flex; gap:10px; justify-content:flex-end; }
+.btn-plain { height:42px; padding:0 18px; border-radius:11px; border:1px solid var(--line); background:#fff; color:var(--text-2); font-weight:700; font-size:13px; transition:all .18s; }
+.btn-plain:hover { border-color:#cfc9bc; color:var(--text); }
+.btn-go { height:42px; padding:0 22px; border-radius:11px; background:linear-gradient(135deg,#4da3ff,var(--brand)); color:#fff; font-weight:700; font-size:13px; box-shadow:0 10px 22px -12px rgba(26,109,255,.95); transition:filter .18s; }
+.btn-go:hover { filter:brightness(1.06); }
+.quote { background:#faf8f4; border:1px solid var(--line-soft); border-radius:11px; padding:13px 15px; margin-bottom:16px; }
+.quote .qt { font-size:12.5px; font-weight:800; }
+.quote .qc { font-size:12.5px; color:var(--text-2); line-height:1.8; margin-top:7px; }
+
+/* ============================ 响应式 ============================ */
+@media (max-width:1440px) {
+  .ship-layout { grid-template-columns:minmax(0,1fr) 300px; }
+  .s-head, .s-row { grid-template-columns:34px minmax(140px,1fr) minmax(180px,1.4fr) 130px 158px; }
+  .s-head > div:nth-child(4), .s-row > div:nth-child(4) { display:none; }
+}
+@media (max-width:1400px) {
+  .stat-strip { grid-template-columns:repeat(3,1fr); }
+  .search { width:200px; }
+}
+@media (max-width:1180px) {
+  .ship-layout { grid-template-columns:1fr; }
+  .ship-side { position:static; }
+}
+@media (max-width:980px) {
+  .rail { position:fixed; left:0; top:0; transform:translateX(-100%); box-shadow:var(--shadow-l); }
+  .rail.open { transform:none; }
+  .burger { display:grid; }
+  .crumb { display:none; }
+  .search { width:100%; max-width:100%; order:5; margin-left:0; }
+  .topbar { flex-wrap:wrap; }
+  .canvas { padding:18px 16px 32px; }
+  .pop { right:16px; width:calc(100vw - 32px); }
+}
+@media (max-width:820px) {
+  .s-head { display:none; }
+  .s-row { grid-template-columns:26px minmax(0,1fr); row-gap:12px; padding:14px; }
+  .s-prod, .s-addr, .s-exp, .s-due, .s-ops { grid-column:2; }
+  .s-ops { justify-content:flex-start; }
+  .s-due { text-align:left; }
+  .s-exp select { max-width:180px; }
+}
+@media (max-width:760px) {
+  .stat-strip { grid-template-columns:repeat(2,1fr); }
+  .page-head .acts { margin-left:0; width:100%; }
+  .page-head .acts .btn-ghost, .page-head .acts .btn-primary { flex:1; justify-content:center; }
+  .me { border-left:none; padding-left:0; }
+  .btn-primary span { display:none; }
+  .btn-primary { padding:0 13px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  * { animation:none !important; transition:none !important; }
+  .rise { opacity:1; transform:none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ============================ 侧栏 ============================ -->
+  <aside class="rail" id="rail">
+    <div class="brand">
+      <div class="brand-mark">极</div>
+      <div class="brand-txt"><b>极客商家中心</b><span>Merchant Hub</span></div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-group">
+        <div class="nav-label">经营</div>
+        <a class="nav-item" href="./index.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.8"/><rect x="13.5" y="3" width="7.5" height="4.5" rx="1.8"/><rect x="13.5" y="10.5" width="7.5" height="10.5" rx="1.8"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.8"/></svg>
+          <span>经营概览</span>
+        </a>
+        <a class="nav-item" href="./analytics.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-6M22 20H2"/></svg>
+          <span>数据看板</span>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">商品</div>
+        <a class="nav-item" href="./products.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5 12 12l9-4.5M12 12v9"/></svg>
+          <span>商品管理</span>
+          <em class="pill">4</em>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">交易</div>
+        <a class="nav-item" href="./orders.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12v20l-3-1.8-3 1.8-3-1.8L6 22z"/><path d="M9.5 7.5h5M9.5 11.5h5"/></svg>
+          <span>订单管理</span>
+          <em class="pill">42</em>
+        </a>
+        <a class="nav-item active" href="./shipping.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h11v9H3z"/><path d="M14 10h3.5l3.5 3.5V16h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>
+          <span>发货中心</span>
+          <em class="pill" id="navLateCount">0</em>
+        </a>
+        <a class="nav-item" href="./aftersale.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 9a9 9 0 1 1 2.6 8.2"/><path d="M3 4v5.2h5.2"/></svg>
+          <span>售后管理</span>
+          <em class="pill">6</em>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">财务</div>
+        <a class="nav-item" href="./finance.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2.4"/><path d="M3 10.5h18"/><circle cx="17" cy="14.6" r="1.3"/></svg>
+          <span>财务结算</span>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-label">增长</div>
+        <a class="nav-item" href="./marketing.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 20 4v15L3 12.5z"/><path d="M7.5 13.2V18a2 2 0 0 0 4 0v-3"/></svg>
+          <span>营销中心</span>
+          <em class="pill">3</em>
+        </a>
+        <a class="nav-item" href="./reviews.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.3L7 21.5l.9-3.2A8.3 8.3 0 1 1 21 11.5z"/><path d="M8.5 10.5h7M8.5 13.8h4.5"/></svg>
+          <span>评价管理</span>
+          <em class="pill">13</em>
+        </a>
+      </div>
+    </nav>
+
+    <div class="rail-foot">
+      <div class="store-chip">
+        <div class="store-logo">旗</div>
+        <div class="s-txt"><b>极客数码旗舰店</b><span><i class="dot-ok"></i> 已认证 · 金牌卖家</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============================ 主区域 ============================ -->
+  <div class="main">
+    <header class="topbar">
+      <button class="burger icon-btn" id="burger" aria-label="打开导航">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+
+      <div class="crumb">商家中心 <span>/</span> <b>发货中心</b></div>
+
+      <label class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="text" id="topSearch" placeholder="搜索订单号 / 买家 / 运单号" />
+        <kbd>⌘K</kbd>
+      </label>
+
+      <button class="btn-ghost" id="templateBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 17h10v4H7z"/></svg>
+        打印设置
+      </button>
+
+      <button class="icon-btn" id="bell" aria-label="通知">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8.5a6 6 0 1 0-12 0c0 6-2.2 7.5-2.2 7.5h16.4S18 14.5 18 8.5z"/><path d="M13.7 20a2 2 0 0 1-3.4 0"/></svg>
+        <em class="badge-dot" id="bellCount">5</em>
+      </button>
+
+      <div class="me">
+        <div class="me-av">陈</div>
+        <div><b>陈掌柜</b><span>超级管理员</span></div>
+      </div>
+    </header>
+
+    <div class="pop" id="pop">
+      <h4>通知 · 5 条未读</h4>
+      <div class="pop-item"><div class="pi" style="background:var(--coral-soft)">⏰</div><div><p><b id="popLate">0</b> 笔订单已超过 24 小时未发货，请尽快处理</p><time>5 分钟前</time></div></div>
+      <div class="pop-item"><div class="pi" style="background:var(--amber-soft)">📦</div><div><p>顺丰电子面单余额不足 200 张，请及时充值</p><time>1 小时前</time></div></div>
+      <div class="pop-item"><div class="pi" style="background:var(--brand-soft)">🚚</div><div><p>2 个包裹出现物流异常，建议主动联系买家</p><time>3 小时前</time></div></div>
+    </div>
+
+    <main class="canvas">
+      <section class="page-head rise" style="animation-delay:.02s">
+        <div>
+          <div class="eyebrow">Fulfilment · Shipping Desk</div>
+          <h1>发货<em>中心</em></h1>
+          <div class="desc">
+            待发货 <b id="headWait">0</b> 笔 · 超时预警 <b id="headLate">0</b> 笔 · 今日已发 <b id="headShipped">0</b> 笔
+          </div>
+        </div>
+        <div class="acts">
+          <button class="btn-ghost" id="refreshBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v4.5h-4.5"/></svg>
+            同步订单
+          </button>
+          <button class="btn-primary" id="oneKeyBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h11v9H3z"/><path d="M14 10h3.5l3.5 3.5V16h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>
+            <span>一键打单发货</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="stat-strip" id="statStrip"></section>
+
+      <div class="ship-layout">
+        <!-- 待发货订单池 -->
+        <section class="card rise" style="animation-delay:.12s">
+          <div class="tabs" id="tabs"></div>
+
+          <div class="toolbar">
+            <span class="tb-label">承运商</span>
+            <select class="sel" id="fExp">
+              <option value="all">全部承运商</option>
+              <option>顺丰速运</option><option>京东物流</option><option>中通快递</option>
+              <option>圆通速递</option><option>德邦快递</option>
+            </select>
+            <span class="tb-label">仓库</span>
+            <select class="sel" id="fWh">
+              <option value="all">全部仓库</option>
+              <option>深圳总仓</option><option>杭州仓</option><option>北京仓</option>
+            </select>
+            <span class="tb-label">排序</span>
+            <select class="sel" id="fSort">
+              <option value="late">时效 · 最紧急优先</option>
+              <option value="time_asc">付款时间 · 旧→新</option>
+              <option value="time_desc">付款时间 · 新→旧</option>
+            </select>
+            <button class="tb-reset" id="resetBtn">重置筛选</button>
+            <div class="spacer"></div>
+            <span class="result-hint">共 <b id="resultCount">0</b> 笔</span>
+          </div>
+
+          <div class="bulk" id="bulkBar">
+            <span class="txt">已选 <b id="selCount">0</b> 笔订单</span>
+            <div class="spacer"></div>
+            <button class="bulk-btn solid" id="bulkWaybill">批量获取面单</button>
+            <button class="bulk-btn" id="bulkPrint">批量打印</button>
+            <button class="bulk-btn" id="bulkShip">确认发货</button>
+            <button class="bulk-btn" id="bulkClear">取消选择</button>
+          </div>
+
+          <div class="s-head">
+            <div><input type="checkbox" id="checkAll" /></div>
+            <div>订单号 / 付款时间</div>
+            <div>商品</div>
+            <div>收件人</div>
+            <div>承运商 / 运单号</div>
+            <div style="text-align:right">时效 · 操作</div>
+          </div>
+          <div id="sBody"></div>
+          <div class="pager" id="pager"></div>
+        </section>
+
+        <!-- 打单侧栏 -->
+        <aside class="ship-side">
+          <section class="card rise" style="animation-delay:.18s">
+            <div class="panel-head">
+              <span class="ic" style="background:var(--brand-soft);color:var(--brand)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 17h10v4H7z"/></svg>
+              </span>
+              <h3>打单台</h3>
+            </div>
+            <div class="panel-body">
+              <div class="field"><label>打印机</label>
+                <select id="printerSel">
+                  <option>顺丰云打印 · SP-RT300（在线）</option>
+                  <option>菜鸟电子面单打印机 · 已就绪</option>
+                  <option>系统默认打印机</option>
+                </select>
+              </div>
+              <div class="field"><label>面单模板</label>
+                <select id="tplSel">
+                  <option>标准三联单 100×180mm</option>
+                  <option>顺丰专用单 100×150mm</option>
+                  <option>京东物流单 100×180mm</option>
+                </select>
+              </div>
+              <div class="field"><label>默认仓库</label>
+                <select id="whSel">
+                  <option>深圳总仓（广东省深圳市南山区）</option>
+                  <option>杭州仓（浙江省杭州市余杭区）</option>
+                  <option>北京仓（北京市大兴区）</option>
+                </select>
+              </div>
+
+              <div class="kv"><span class="k">当前选中</span><span class="v" id="sideSel">0 笔</span></div>
+              <div class="kv"><span class="k">待打面单</span><span class="v warn" id="sideTodo">0 张</span></div>
+              <div class="kv"><span class="k">今日已打</span><span class="v good" id="sideDone">0 张</span></div>
+
+              <div class="cta">
+                <button class="b-main" id="sidePrint">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 17h10v4H7z"/></svg>
+                  <span>打印所选面单</span>
+                </button>
+                <button class="b-alt" id="sidePreview">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <span>预览面单</span>
+                </button>
+              </div>
+
+              <div class="printer-tip" id="printerTip">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                <span id="printerTipTxt">打印机已连接，电子面单余额 186 张，可正常打单</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="card rise" style="animation-delay:.24s">
+            <div class="panel-head">
+              <span class="ic" style="background:var(--teal-soft);color:var(--teal)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 9v11"/></svg>
+              </span>
+              <h3>面单预览</h3>
+            </div>
+            <div class="panel-body" id="waybillBox"></div>
+          </section>
+        </aside>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ============================ 弹窗 ============================ -->
+<div class="modal" id="modal">
+  <div class="modal-mask" data-close="1"></div>
+  <div class="modal-box" id="modalBox">
+    <div class="modal-head"><h3 id="mdTitle">标题</h3><p id="mdDesc"></p></div>
+    <div class="modal-body" id="mdBody"></div>
+    <div class="modal-foot" id="mdFoot"></div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script>
+/* ==========================================================================
+   极客商家中心 — 发货中心
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  var BASE = new Date(2026, 9, 5, 10, 20, 0);
+  var pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+  var int = function (n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
+  var esc = function (s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  };
+  var fmt = function (d) {
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' +
+      pad(d.getHours()) + ':' + pad(d.getMinutes());
+  };
+  var hhmm = function (d) { return pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+  var day0 = function (d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+
+  /* ---------------------------- 字典 ---------------------------- */
+  var ST = {
+    wait:    { t: '待打单', cls: 's-wait' },
+    printed: { t: '已打单', cls: 's-printed' },
+    shipped: { t: '已发货', cls: 's-shipped' },
+    exc:     { t: '物流异常', cls: 's-exc' }
+  };
+  var TABS = [['all', '全部'], ['late', '超时预警'], ['printed', '已打单'], ['shipped', '今日已发'], ['exc', '物流异常']];
+  var EXPRESS = ['顺丰速运', '京东物流', '中通快递', '圆通速递', '德邦快递'];
+  var WAREHOUSES = ['深圳总仓', '杭州仓', '北京仓'];
+  var EXC_REASONS = ['收件人电话无人接听，派送失败', '地址不详，快递网点暂存待确认', '包裹运输途中破损，已返回站点'];
+
+  var PRODS = [
+    { n: 'Apple iPhone 17 Pro 256G 原色钛金属', s: '256G · 原色钛', th: 'th1', tag: 'iPhone', price: 8999 },
+    { n: '小米 15 Ultra 16+512G 徕卡影像', s: '16+512G · 黑色', th: 'th2', tag: 'MI', price: 6499 },
+    { n: '华为 MateBook X Pro 2026 超凡屏', s: 'i7 / 32G / 1T', th: 'th3', tag: 'Mate', price: 12999 },
+    { n: '索尼 WH-1000XM6 头戴降噪耳机', s: '铂金银', th: 'th5', tag: 'SONY', price: 2999 },
+    { n: '戴森 V16 无线手持吸尘器', s: '旗舰版', th: 'th4', tag: 'DYSON', price: 4990 },
+    { n: 'iPad Pro 13 英寸 M4 512G', s: '512G · 深空黑', th: 'th6', tag: 'iPad', price: 9299 },
+    { n: '罗技 MX Master 4 无线鼠标', s: '石墨黑', th: 'th1', tag: 'Logi', price: 699 },
+    { n: 'Apple AirPods Pro 3 主动降噪', s: '主动降噪', th: 'th2', tag: 'AirPods', price: 1899 }
+  ];
+  var BUYERS = [
+    { n: '林清和', lv: 'V5' }, { n: '苏若雪', lv: 'V4' }, { n: '周天翊', lv: 'V6' },
+    { n: '徐佳宁', lv: 'V3' }, { n: '郑维安', lv: 'V5' }, { n: '何知微', lv: 'V4' },
+    { n: '孟星辰', lv: 'V2' }, { n: '唐述白', lv: 'V6' }, { n: '谢澜舟', lv: 'V3' }, { n: '邹予安', lv: 'V5' }
+  ];
+  var AREAS = [
+    { p: '广东省 深圳市 南山区', d: '科苑南路 2588 号 万科云城 A 座 12F' },
+    { p: '浙江省 杭州市 西湖区', d: '文三路 199 号 云谷大厦 8F' },
+    { p: '北京市 海淀区', d: '中关村大街 27 号 4 号楼 502' },
+    { p: '上海市 浦东新区', d: '世纪大道 1568 号 世纪汇广场 T2-1801' },
+    { p: '江苏省 南京市 鼓楼区', d: '中山北路 88 号 华彩天地 9F' },
+    { p: '四川省 成都市 武侯区', d: '天府大道 1199 号 银泰中心 21F' },
+    { p: '湖北省 武汉市 洪山区', d: '珞喻路 726 号 光谷国际广场 B 座' },
+    { p: '福建省 厦门市 思明区', d: '软件园二期观日路 12 号 3F' }
+  ];
+
+  /* ---------------------------- 数据 ---------------------------- */
+  /* [状态, 付款距今年小时, 商品索引, 数量] */
+  var PATTERN = [
+    ['wait', 26, 0, 1], ['wait', 22, 2, 1], ['wait', 20.5, 1, 1], ['wait', 18, 4, 1],
+    ['wait', 12, 5, 1], ['wait', 8, 7, 2], ['wait', 5, 3, 1], ['wait', 3, 6, 1], ['wait', 1.5, 0, 1],
+    ['printed', 30, 1, 1], ['printed', 24, 3, 1], ['printed', 7, 2, 1], ['printed', 4, 7, 1],
+    ['shipped', 20, 0, 1], ['shipped', 16, 6, 2], ['shipped', 11, 5, 1], ['shipped', 6, 4, 1], ['shipped', 2, 3, 1],
+    ['exc', 34, 2, 1], ['exc', 28, 1, 1]
+  ];
+
+  var seed = 20261005;
+  var rnd = function () { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+
+  var orders = PATTERN.map(function (r, i) {
+    var pr = PRODS[r[2]];
+    var area = AREAS[i % AREAS.length];
+    var paid = new Date(BASE.getTime() - r[1] * 3600000);
+    var o = {
+      idx: i,
+      id: 'GK' + (2026100500 + 312 - i * 7),
+      status: r[0], qty: r[3], prod: pr,
+      buyer: BUYERS[i % BUYERS.length],
+      phone: '1' + (3 + (i % 7)) + String(100000000 + i * 13579).slice(0, 9),
+      area: area,
+      warehouse: WAREHOUSES[i % WAREHOUSES.length],
+      express: EXPRESS[i % EXPRESS.length],
+      waybill: '',
+      paidAt: paid,
+      deadline: new Date(paid.getTime() + 24 * 3600000),
+      printedAt: null, shippedAt: null,
+      excReason: r[0] === 'exc' ? EXC_REASONS[i % EXC_REASONS.length] : '',
+      amount: pr.price * r[3]
+    };
+    if (r[0] === 'printed') { o.waybill = 'SF' + (1000000000 + i * 99991); o.printedAt = new Date(paid.getTime() + 3 * 3600000); }
+    if (r[0] === 'shipped') {
+      o.waybill = 'SF' + (1000000000 + i * 99991);
+      o.printedAt = new Date(paid.getTime() + 2 * 3600000);
+      o.shippedAt = new Date(paid.getTime() + 4 * 3600000);
+    }
+    if (r[0] === 'exc') { o.waybill = 'SF' + (1000000000 + i * 99991); o.printedAt = new Date(paid.getTime() + 2 * 3600000); o.shippedAt = new Date(paid.getTime() + 5 * 3600000); }
+    return o;
+  });
+
+  /* ---------------------------- 状态 ---------------------------- */
+  var state = { tab: 'all', q: '', exp: 'all', wh: 'all', sort: 'late', page: 1, size: 7 };
+  var selected = {};
+  var printedToday = orders.filter(function (o) { return o.printedAt && day0(o.printedAt) === day0(BASE); }).length + 118;
+
+  var byId = function (id) {
+    for (var i = 0; i < orders.length; i++) if (orders[i].id === id) return orders[i];
+    return null;
+  };
+  var hoursLeft = function (o) {
+    if (o.status !== 'wait') return null;
+    return (o.deadline - BASE) / 3600000;
+  };
+  var isLate = function (o) { var h = hoursLeft(o); return h != null && h <= 6; };
+  var selectedIds = function () { return Object.keys(selected).filter(function (k) { return selected[k]; }); };
+  var printTargets = function () {
+    var ids = selectedIds();
+    var pool = ids.length ? ids.map(byId) : orders.filter(function (o) { return o.status === 'wait'; });
+    return pool.filter(function (o) { return o && (o.status === 'wait' || o.status === 'printed'); });
+  };
+
+  /* ---------------------------- 过滤 ---------------------------- */
+  function matchQ(o) {
+    if (!state.q) return true;
+    var q = state.q.toLowerCase();
+    return o.id.toLowerCase().indexOf(q) >= 0 || o.buyer.n.toLowerCase().indexOf(q) >= 0 ||
+      o.waybill.toLowerCase().indexOf(q) >= 0 || o.prod.n.toLowerCase().indexOf(q) >= 0;
+  }
+  function inTab(o) {
+    if (state.tab === 'all') return true;
+    if (state.tab === 'late') return isLate(o);
+    return o.status === state.tab;
+  }
+  function filtered() {
+    var list = orders.filter(function (o) {
+      return inTab(o) && matchQ(o) &&
+        (state.exp === 'all' || o.express === state.exp) &&
+        (state.wh === 'all' || o.warehouse === state.wh);
+    });
+    var s = state.sort;
+    list.sort(function (a, b) {
+      if (s === 'time_asc') return a.paidAt - b.paidAt;
+      if (s === 'time_desc') return b.paidAt - a.paidAt;
+      var ha = hoursLeft(a), hb = hoursLeft(b);
+      if (ha == null && hb == null) return a.paidAt - b.paidAt;
+      if (ha == null) return 1;
+      if (hb == null) return -1;
+      return ha - hb;
+    });
+    return list;
+  }
+  function countOf(k) {
+    if (k === 'all') return orders.length;
+    if (k === 'late') return orders.filter(isLate).length;
+    return orders.filter(function (o) { return o.status === k; }).length;
+  }
+
+  /* ---------------------------- 渲染：统计 ---------------------------- */
+  function renderStats() {
+    var wait = countOf('wait'), printed = countOf('printed'), late = countOf('late');
+    var SHIPPED_7D = 1286, LATE_7D = 18;
+    var items = [
+      { k: '待发货', v: String(wait), u: '笔', d: '超时预警 <b>' + late + '</b> 笔', c: 'var(--coral)', alert: late > 0 },
+      { k: '已打单待发出', v: String(printed), u: '笔', d: '面单已生成待交寄', c: 'var(--brand)' },
+      { k: '今日已发', v: String(countOf('shipped')), u: '笔', d: '平均发货时长 <b>4.2h</b>', c: 'var(--teal)' },
+      { k: '物流异常', v: String(countOf('exc')), u: '笔', d: '需主动联系买家', c: 'var(--amber)' },
+      { k: '发货及时率', v: ((SHIPPED_7D - LATE_7D) / SHIPPED_7D * 100).toFixed(1), u: '%', d: '近 7 天 <b>' + int(SHIPPED_7D) + '</b> 单中 ' + LATE_7D + ' 单超时', c: 'var(--green)' }
+    ];
+    document.getElementById('statStrip').innerHTML = items.map(function (it) {
+      return '<div class="stat' + (it.alert ? ' alert' : '') + '"><div class="k"><i style="background:' + it.c + '"></i>' + it.k + '</div>' +
+        '<div class="v num">' + it.v + (it.u ? ' <small class="u">' + it.u + '</small>' : '') + '</div>' +
+        '<div class="d">' + it.d + '</div></div>';
+    }).join('');
+    document.getElementById('headWait').textContent = wait;
+    document.getElementById('headLate').textContent = late;
+    document.getElementById('headShipped').textContent = countOf('shipped');
+    document.getElementById('navLateCount').textContent = late;
+    document.getElementById('popLate').textContent = late;
+    document.getElementById('bellCount').textContent = late + 3;
+  }
+
+  function renderTabs() {
+    document.getElementById('tabs').innerHTML = TABS.map(function (t) {
+      var n = countOf(t[0]);
+      var hot = (t[0] === 'late' && n > 0) ? ' hot' : '';
+      return '<button class="tab' + (state.tab === t[0] ? ' on' : '') + '" data-tab="' + t[0] + '">' +
+        t[1] + '<span class="cnt' + hot + '">' + n + '</span></button>';
+    }).join('');
+  }
+
+  /* ---------------------------- 渲染：行 ---------------------------- */
+  function dueHTML(o) {
+    if (o.status === 'exc') {
+      return '<div class="s-due urgent"><div class="dt">异常</div><div class="dl">需人工介入</div></div>';
+    }
+    if (o.status === 'shipped') {
+      return '<div class="s-due ok"><div class="dt">已发出</div><div class="dl">' +
+        (o.shippedAt ? hhmm(o.shippedAt) : '') + ' 交寄</div></div>';
+    }
+    if (o.status === 'printed') {
+      return '<div class="s-due"><div class="dt">待交寄</div><div class="dl">面单已就绪</div></div>';
+    }
+    var h = hoursLeft(o);
+    var urgent = h <= 6;
+    var txt = h < 0 ? '已超时 ' + Math.abs(h).toFixed(1) + 'h'
+      : (h >= 1 ? '剩 ' + h.toFixed(1) + ' 小时' : '剩 ' + Math.round(h * 60) + ' 分钟');
+    return '<div class="s-due' + (urgent ? ' urgent' : '') + '"><div class="dt">' + txt + '</div>' +
+      '<div class="dl">' + (urgent ? '超时将影响体验分' : '24h 发货承诺') + '</div></div>';
+  }
+
+  function opsHTML(o) {
+    if (o.status === 'exc') {
+      return '<button class="op" data-act="handle" data-id="' + o.id + '">处理异常</button>' +
+             '<button class="op muted" data-act="detail" data-id="' + o.id + '">详情</button>';
+    }
+    if (o.status === 'shipped') {
+      return '<button class="op muted" data-act="trace" data-id="' + o.id + '">物流轨迹</button>';
+    }
+    if (o.status === 'printed') {
+      return '<button class="op strong" data-act="ship" data-id="' + o.id + '">发货</button>' +
+             '<button class="op muted" data-act="reprint" data-id="' + o.id + '">重打</button>';
+    }
+    return '<button class="op strong" data-act="waybill" data-id="' + o.id + '">打单</button>' +
+           '<button class="op muted" data-act="detail" data-id="' + o.id + '">详情</button>';
+  }
+
+  function rowHTML(o) {
+    var st = ST[o.status];
+    return '<div class="s-row' + (selected[o.id] ? ' checked' : '') + '" data-id="' + o.id + '">' +
+      '<div><input type="checkbox" data-check="' + o.id + '"' + (selected[o.id] ? ' checked' : '') + ' /></div>' +
+      '<div class="s-no">' + o.id + '<span>' + fmt(o.paidAt) + ' 付款</span>' +
+        '<span style="margin-top:5px"><em class="st ' + st.cls + '" style="font-style:normal">' + st.t + '</em></span></div>' +
+      '<div class="s-prod">' +
+        '<div class="s-thumb ' + o.prod.th + '">' + o.prod.tag + '</div>' +
+        '<div style="min-width:0"><div class="pn">' + esc(o.prod.n) + '</div>' +
+        '<div class="pq">' + esc(o.prod.s) + ' · ×' + o.qty + ' · ' + o.warehouse + '</div></div>' +
+      '</div>' +
+      '<div class="s-addr">' +
+        '<div class="an">' + o.buyer.n + '<span class="lv">' + o.buyer.lv + '</span></div>' +
+        '<div class="ad" title="' + esc(o.area.p + ' ' + o.area.d) + '">' + esc(o.area.p) + '</div>' +
+      '</div>' +
+      '<div class="s-exp">' +
+        '<select data-exp="' + o.id + '">' +
+          EXPRESS.map(function (e) { return '<option' + (e === o.express ? ' selected' : '') + '>' + e + '</option>'; }).join('') +
+        '</select>' +
+        '<div class="wl">' + (o.waybill ? o.waybill : '未获取面单') + '</div>' +
+      '</div>' +
+      '<div class="s-due-wrap">' + dueHTML(o) + '<div class="s-ops">' + opsHTML(o) + '</div></div>' +
+    '</div>';
+  }
+
+  /* ---------------------------- 面单 ---------------------------- */
+  function barcodeSVG(text) {
+    var s = 0;
+    for (var i = 0; i < text.length; i++) s = (s * 31 + text.charCodeAt(i)) % 2147483648;
+    var bars = '', x = 0;
+    for (var k = 0; k < 76; k++) {
+      s = (s * 1103515245 + 12345) % 2147483648;
+      var w = 1 + (s % 3);
+      if ((s >> 6) % 2 === 0) bars += '<rect x="' + x + '" y="0" width="' + w + '" height="54" fill="#0c1322"/>';
+      x += w + 1;
+    }
+    return '<svg viewBox="0 0 ' + x + ' 54" preserveAspectRatio="none">' + bars + '</svg>';
+  }
+
+  function waybillHTML(o) {
+    if (!o) return '<div style="padding:24px 0;text-align:center;color:var(--text-3);font-size:12px">暂无可预览的订单</div>';
+    var wb = o.waybill || ('SF' + (1000000000 + o.idx * 99991));
+    return '<div class="waybill">' +
+      '<span class="wb-tag">' + o.express.replace('速运', '').replace('快递', '').replace('物流', '') + ' 电子面单</span>' +
+      '<div class="wb-top">' +
+        '<div class="wb-brand">' +
+          '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#0c1322" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h11v9H3z"/><path d="M14 10h3.5l3.5 3.5V16h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>' +
+          '<b>' + o.express + '</b>' +
+        '</div>' +
+        '<div class="wb-code"><b>' + wb + '</b><span>TRACKING NO.</span></div>' +
+      '</div>' +
+      '<div class="wb-sec">' +
+        '<div class="wb-line"><em>收件</em><span class="wb-big">' + o.buyer.n + '　' + o.phone + '</span></div>' +
+        '<div class="wb-line"><em>地址</em><span>' + esc(o.area.p + ' ' + o.area.d) + '</span></div>' +
+      '</div>' +
+      '<div class="wb-sec">' +
+        '<div class="wb-line"><em>寄件</em><span class="wb-big">极客数码旗舰店</span></div>' +
+        '<div class="wb-line"><em>地址</em><span>' + (o.warehouse === '深圳总仓' ? '广东省深圳市南山区科苑南路 2588 号 A 座 1F'
+          : o.warehouse === '杭州仓' ? '浙江省杭州市余杭区文一西路 969 号 3 号库'
+          : '北京市大兴区亦庄经济开发区科创十一街 8 号') + '</span></div>' +
+      '</div>' +
+      '<div class="wb-sec">' +
+        '<div class="wb-line"><em>订单</em><span>' + o.id + '　共 ' + o.qty + ' 件</span></div>' +
+        '<div class="wb-line"><em>内件</em><span>' + esc(o.prod.n) + ' × ' + o.qty + '</span></div>' +
+        '<div class="wb-line"><em>备注</em><span>' + (o.amount > 5000 ? '贵重物品 · 请当面签收' : '易碎 · 轻拿轻放') + '</span></div>' +
+      '</div>' +
+      '<div class="wb-barcode">' + barcodeSVG(wb) + '<p>' + wb + '</p></div>' +
+    '</div>';
+  }
+
+  function refreshWaybill() {
+    var ids = selectedIds();
+    var o = ids.length ? byId(ids[0]) : (filtered()[0] || orders[0]);
+    document.getElementById('waybillBox').innerHTML = waybillHTML(o);
+  }
+
+  /* ---------------------------- 渲染：列表 / 分页 ---------------------------- */
+  function syncBulk() {
+    var n = selectedIds().length;
+    document.getElementById('selCount').textContent = n;
+    document.getElementById('bulkBar').classList.toggle('on', n > 0);
+    document.getElementById('sideSel').textContent = n + ' 笔';
+    var todo = printTargets();
+    document.getElementById('sideTodo').textContent =
+      todo.filter(function (o) { return !o.waybill; }).length + ' 张';
+    document.getElementById('sideDone').textContent = int(printedToday) + ' 张';
+    document.getElementById('sidePrint').disabled = !todo.length;
+  }
+  function syncCheckAll(list) {
+    var ids = list.map(function (o) { return o.id; });
+    var n = ids.filter(function (id) { return selected[id]; }).length;
+    var el = document.getElementById('checkAll');
+    el.checked = n > 0 && n === ids.length;
+    el.indeterminate = n > 0 && n < ids.length;
+  }
+  function clearSelection() {
+    selected = {};
+    document.querySelectorAll('[data-check]').forEach(function (cb) { cb.checked = false; });
+    document.querySelectorAll('.s-row.checked').forEach(function (r) { r.classList.remove('checked'); });
+    syncBulk();
+    refreshWaybill();
+  }
+
+  function renderList() {
+    var list = filtered();
+    document.getElementById('resultCount').textContent = list.length;
+    var box = document.getElementById('sBody');
+    var pages = Math.ceil(list.length / state.size) || 1;
+    if (state.page > pages) state.page = pages;
+    var slice = list.slice((state.page - 1) * state.size, state.page * state.size);
+
+    if (!slice.length) {
+      var isLate = state.tab === 'late';
+      box.innerHTML = '<div class="empty">' +
+        '<div class="eic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h11v9H3z"/><path d="M14 10h3.5l3.5 3.5V16h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg></div>' +
+        '<h4>' + (isLate ? '没有超时订单，发货节奏很好' : '没有匹配的订单') + '</h4>' +
+        '<p>' + (isLate ? '继续保持 24 小时内发货' : '试试切换状态或清空筛选条件') + '</p></div>';
+      document.getElementById('pager').innerHTML = '';
+      syncBulk();
+      return;
+    }
+    box.innerHTML = slice.map(rowHTML).join('');
+
+    var pg = '<span class="info">第 <b>' + ((state.page - 1) * state.size + 1) + '-' +
+      Math.min(state.page * state.size, list.length) + '</b> 笔 / 共 <b>' + list.length + '</b> 笔</span>' +
+      '<span class="spacer"></span><div class="pages">' +
+      '<button class="pg" data-page="' + (state.page - 1) + '"' + (state.page === 1 ? ' disabled' : '') + '>‹</button>';
+    for (var i = 1; i <= pages; i++) {
+      pg += '<button class="pg' + (i === state.page ? ' on' : '') + '" data-page="' + i + '">' + i + '</button>';
+    }
+    pg += '<button class="pg" data-page="' + (state.page + 1) + '"' + (state.page === pages ? ' disabled' : '') + '>›</button></div>';
+    document.getElementById('pager').innerHTML = pg;
+
+    syncBulk();
+    syncCheckAll(list);
+  }
+
+  function render() { renderTabs(); renderList(); refreshWaybill(); }
+  function renderAll() { renderStats(); render(); }
+
+  /* ---------------------------- 提示 / 弹窗 ---------------------------- */
+  var ICON = {
+    ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+    warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5h.01"/></svg>'
+  };
+  function toast(msg, type) {
+    var el = document.createElement('div');
+    el.className = 'toast ' + (type || 'ok');
+    el.innerHTML = (ICON[type] || ICON.ok) + '<span>' + msg + '</span>';
+    document.getElementById('toasts').appendChild(el);
+    setTimeout(function () { el.classList.add('out'); setTimeout(function () { el.remove(); }, 260); }, 2400);
+  }
+
+  var modal = document.getElementById('modal');
+  function closeModal() { modal.classList.remove('on'); }
+  function openModal(cfg) {
+    document.getElementById('modalBox').classList.toggle('wide', !!cfg.wide);
+    document.getElementById('mdTitle').textContent = cfg.title;
+    document.getElementById('mdDesc').textContent = cfg.desc || '';
+    document.getElementById('mdBody').innerHTML = cfg.body || '';
+    document.getElementById('mdFoot').innerHTML = cfg.foot || '';
+    modal.classList.add('on');
+    if (cfg.mount) cfg.mount();
+  }
+  modal.addEventListener('click', function (e) {
+    if (e.target.getAttribute && e.target.getAttribute('data-close')) closeModal();
+  });
+  function confirmModal(title, desc, okText, onOk) {
+    openModal({
+      title: title, desc: desc, body: '',
+      foot: '<button class="btn-plain" data-close="1">取消</button><button class="btn-go" id="mdOk">' + okText + '</button>',
+      mount: function () { document.getElementById('mdOk').onclick = function () { closeModal(); onOk(); }; }
+    });
+  }
+
+  /* ---------------------------- 核心动作 ---------------------------- */
+  function genWaybill(o) {
+    return 'SF' + (1000000000 + o.idx * 99991 + Math.floor(rnd() * 89));
+  }
+  function doPrint(list, silent) {
+    var fresh = list.filter(function (o) { return o.status === 'wait'; });
+    fresh.forEach(function (o) {
+      o.waybill = genWaybill(o);
+      o.status = 'printed';
+      o.printedAt = new Date();
+      printedToday++;
+    });
+    var reprinted = list.length - fresh.length;
+    renderAll();
+    if (!silent) {
+      toast('已生成并发送 ' + list.length + ' 张面单至打印机' + (reprinted ? '（含 ' + reprinted + ' 张重打）' : ''));
+    }
+    return fresh.length;
+  }
+  function doShip(list, silent) {
+    var n = 0;
+    list.forEach(function (o) {
+      if (o.status !== 'printed' && o.status !== 'wait') return;
+      if (!o.waybill) { o.waybill = genWaybill(o); o.printedAt = new Date(); printedToday++; }
+      o.status = 'shipped';
+      o.shippedAt = new Date();
+      n++;
+    });
+    if (n) { clearSelection(); renderAll(); }
+    if (!silent) toast('已发货 ' + n + ' 笔订单');
+    return n;
+  }
+
+  function doAct(id, act) {
+    var o = byId(id);
+    if (!o) return;
+    if (act === 'waybill') {
+      doPrint([o], true);
+      openWaybillModal([o]);
+      toast('已生成面单 ' + o.waybill);
+      return;
+    }
+    if (act === 'reprint') { toast('已重新发送面单 ' + o.waybill + ' 至打印机'); return; }
+    if (act === 'ship') {
+      confirmModal('确认发货', '订单 ' + o.id + ' 将标记为已发出，承运商 ' + o.express + ' · ' + o.waybill + '。', '确认发货', function () {
+        doShip([o]);
+      });
+      return;
+    }
+    if (act === 'trace') {
+      openModal({
+        title: '物流轨迹',
+        desc: o.express + ' · ' + o.waybill,
+        body: '<div class="quote"><div class="qt">' + esc(o.prod.n) + ' × ' + o.qty + '</div>' +
+          '<div class="qc">收件人 ' + o.buyer.n + '　' + o.area.p + '</div></div>' +
+          '<div style="font-size:12.5px;line-height:2.2;color:var(--text-2)">' +
+          '● ' + hhmm(o.shippedAt) + '　【深圳南山营业点】已收件<br>' +
+          '● ' + hhmm(new Date(o.shippedAt.getTime() + 3600000)) + '　【深圳转运中心】已发出，下一站杭州<br>' +
+          '● ' + hhmm(new Date(o.shippedAt.getTime() + 7200000)) + '　快件运输中，预计明日 18:00 前送达</div>',
+        foot: '<button class="btn-plain" data-close="1">关闭</button>'
+      });
+      return;
+    }
+    if (act === 'detail') {
+      openModal({
+        title: '订单详情',
+        desc: o.id + ' · ' + ST[o.status].t,
+        body: '<div class="quote"><div class="qt">' + esc(o.prod.n) + ' × ' + o.qty +
+            '<span style="float:right;font-family:var(--mono)">¥' + int(o.amount) + '</span></div>' +
+            '<div class="qc">' + esc(o.prod.s) + '</div></div>' +
+          '<div style="font-size:12.5px;line-height:2;color:var(--text-2)">' +
+          '收件人：<b>' + o.buyer.n + ' · ' + o.buyer.lv + '</b><br>' +
+          '联系电话：<b>' + o.phone + '</b><br>' +
+          '收货地址：<b>' + esc(o.area.p + ' ' + o.area.d) + '</b><br>' +
+          '发货仓库：<b>' + o.warehouse + '</b><br>' +
+          '承运商：<b>' + o.express + '</b><br>' +
+          '运单号：<b>' + (o.waybill || '未获取') + '</b><br>' +
+          '付款时间：<b>' + fmt(o.paidAt) + '</b></div>',
+        foot: '<button class="btn-plain" data-close="1">关闭</button>' +
+              (o.status === 'wait' ? '<button class="btn-go" id="mdWb">获取面单</button>' : ''),
+        mount: function () {
+          var b = document.getElementById('mdWb');
+          if (b) b.onclick = function () { closeModal(); doPrint([o]); };
+        }
+      });
+      return;
+    }
+    if (act === 'handle') {
+      openModal({
+        title: '处理物流异常',
+        desc: o.express + ' · ' + o.waybill,
+        body: '<div class="quote" style="background:var(--coral-soft);border-color:#ffd9cc">' +
+            '<div class="qc" style="color:#a3300f;margin-top:0">异常原因：' + esc(o.excReason) + '</div></div>' +
+          '<div style="font-size:12.5px;line-height:2;color:var(--text-2);margin-bottom:16px">' +
+          '收件人：<b>' + o.buyer.n + '</b>　' + o.phone + '<br>' +
+          '地址：<b>' + esc(o.area.p + ' ' + o.area.d) + '</b></div>' +
+          '<div style="font-size:12.5px;font-weight:700;color:var(--text-2);margin-bottom:9px">处理方式</div>' +
+          '<div style="display:flex;flex-direction:column;gap:9px">' +
+            '<button class="btn-plain" style="justify-content:flex-start;text-align:left" data-hact="call">联系买家确认新地址或改约派送时间</button>' +
+            '<button class="btn-plain" style="justify-content:flex-start;text-align:left" data-hact="resend">通知快递二次派送</button>' +
+            '<button class="btn-plain" style="justify-content:flex-start;text-align:left" data-hact="back">同意退回并发起退款</button>' +
+          '</div>',
+        foot: '<button class="btn-plain" data-close="1">关闭</button>',
+        mount: function () {
+          document.querySelectorAll('[data-hact]').forEach(function (b) {
+            b.onclick = function () {
+              var a = b.getAttribute('data-hact');
+              closeModal();
+              if (a === 'back') {
+                o.status = 'shipped'; o.excReason = '';
+                renderAll();
+                toast('已同意退回，退款将由售后流程处理', 'warn');
+              } else {
+                toast(a === 'call' ? '已向 ' + o.buyer.n + ' 发送确认短信' : '已通知 ' + o.express + ' 二次派送');
+              }
+            };
+          });
+        }
+      });
+    }
+  }
+
+  function openWaybillModal(list) {
+    if (!list.length) { toast('请先勾选需要打单的订单', 'warn'); return; }
+    var o = list[0];
+    openModal({
+      wide: true,
+      title: '电子面单预览',
+      desc: list.length > 1 ? ('共 ' + list.length + ' 张，预览第 1 张 · ' + o.id) : (o.id + ' · ' + o.express),
+      body: '<div style="display:grid;grid-template-columns:1fr 240px;gap:18px;align-items:start">' +
+          '<div>' + waybillHTML(o) + '</div>' +
+          '<div>' +
+            '<div class="kv"><span class="k">订单号</span><span class="v" style="font-size:13px">' + o.id + '</span></div>' +
+            '<div class="kv"><span class="k">承运商</span><span class="v" style="font-size:13px">' + o.express + '</span></div>' +
+            '<div class="kv"><span class="k">仓库</span><span class="v" style="font-size:13px">' + o.warehouse + '</span></div>' +
+            '<div class="kv"><span class="k">内件数</span><span class="v" style="font-size:13px">' + o.qty + ' 件</span></div>' +
+            '<div class="kv"><span class="k">面单张数</span><span class="v" style="font-size:13px">' + list.length + ' 张</span></div>' +
+            '<div class="printer-tip" style="margin-top:14px"><span>请确认打印机已装纸，面单为热敏纸不可重复打印</span></div>' +
+            '<div class="printer-tip off" style="margin-top:9px"><span>打印完成后请交寄，并在列表中点击「发货」回填物流状态</span></div>' +
+          '</div>' +
+        '</div>',
+      foot: '<button class="btn-plain" data-close="1">关闭</button>' +
+            '<button class="btn-go" id="mdPrint">打印 ' + list.length + ' 张面单</button>',
+      mount: function () {
+        document.getElementById('mdPrint').onclick = function () {
+          closeModal();
+          doPrint(list, true);
+          clearSelection();
+          renderAll();
+          toast('已发送 ' + list.length + ' 张面单至打印机');
+        };
+      }
+    });
+  }
+
+  function openPrintSettings() {
+    openModal({
+      title: '打印设置',
+      desc: '设置默认打印机、面单模板与交寄偏好',
+      body:
+        '<div style="display:grid;grid-template-columns:1fr;gap:13px">' +
+          '<div><label style="display:block;font-size:12px;font-weight:700;color:var(--text-2);margin-bottom:6px">打印机</label>' +
+            '<select class="sel" style="width:100%;height:38px">' +
+            '<option>顺丰云打印 · SP-RT300（在线）</option><option>菜鸟电子面单打印机 · 已就绪</option><option>系统默认打印机</option></select></div>' +
+          '<div><label style="display:block;font-size:12px;font-weight:700;color:var(--text-2);margin-bottom:6px">面单模板</label>' +
+            '<select class="sel" style="width:100%;height:38px">' +
+            '<option>标准三联单 100×180mm</option><option>顺丰专用单 100×150mm</option><option>京东物流单 100×180mm</option></select></div>' +
+          '<div><label style="display:block;font-size:12px;font-weight:700;color:var(--text-2);margin-bottom:6px">打印后自动发货</label>' +
+            '<select class="sel" style="width:100%;height:38px"><option>关闭（需手动确认发货）</option><option>开启（打单即发货）</option></select>' +
+            '<div class="hint" style="font-size:11px;color:var(--text-3);margin-top:5px">开启后打单成功即自动标记发货，适合标准化履约</div></div>' +
+          '<div><label style="display:block;font-size:12px;font-weight:700;color:var(--text-2);margin-bottom:6px">电子面单充值提醒</label>' +
+            '<select class="sel" style="width:100%;height:38px"><option>余额低于 200 张时提醒</option><option>余额低于 500 张时提醒</option><option>不提醒</option></select></div>' +
+        '</div>',
+      foot: '<button class="btn-plain" data-close="1">取消</button><button class="btn-go" id="psOk">保存设置</button>',
+      mount: function () {
+        document.getElementById('psOk').onclick = function () { closeModal(); toast('打印设置已保存'); };
+      }
+    });
+  }
+
+  /* ---------------------------- 事件 ---------------------------- */
+  document.getElementById('sBody').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-act]');
+    if (b) { e.stopPropagation(); doAct(b.getAttribute('data-id'), b.getAttribute('data-act')); return; }
+    if (e.target.closest('[data-exp]') || e.target.closest('[data-check]')) return;
+    var row = e.target.closest('.s-row');
+    if (row) doAct(row.getAttribute('data-id'), 'detail');
+  });
+
+  document.getElementById('sBody').addEventListener('change', function (e) {
+    var sel = e.target.closest('[data-exp]');
+    if (sel) {
+      var o = byId(sel.getAttribute('data-exp'));
+      if (o) { o.express = sel.value; toast('已将 ' + o.id + ' 的承运商改为 ' + sel.value); renderAll(); }
+      return;
+    }
+    var cb = e.target.closest('[data-check]');
+    if (!cb) return;
+    var id = cb.getAttribute('data-check');
+    selected[id] = cb.checked;
+    var row = cb.closest('.s-row');
+    if (row) row.classList.toggle('checked', cb.checked);
+    syncBulk();
+    syncCheckAll(filtered());
+    refreshWaybill();
+  });
+
+  document.getElementById('tabs').addEventListener('click', function (e) {
+    var t = e.target.closest('.tab');
+    if (!t) return;
+    state.tab = t.getAttribute('data-tab');
+    state.page = 1;
+    clearSelection();
+    render();
+  });
+
+  ['fExp', 'fWh', 'fSort'].forEach(function (id) {
+    document.getElementById(id).addEventListener('change', function () {
+      state.exp = document.getElementById('fExp').value;
+      state.wh = document.getElementById('fWh').value;
+      state.sort = document.getElementById('fSort').value;
+      state.page = 1;
+      render();
+    });
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', function () {
+    state.tab = 'all'; state.q = ''; state.exp = 'all'; state.wh = 'all'; state.sort = 'late'; state.page = 1;
+    ['fExp', 'fWh'].forEach(function (id) { document.getElementById(id).value = 'all'; });
+    document.getElementById('fSort').value = 'late';
+    document.getElementById('topSearch').value = '';
+    clearSelection();
+    renderAll();
+    toast('筛选条件已重置');
+  });
+
+  document.getElementById('topSearch').addEventListener('input', function (e) {
+    state.q = e.target.value.trim();
+    state.page = 1;
+    renderList();
+  });
+
+  document.getElementById('pager').addEventListener('click', function (e) {
+    var b = e.target.closest('.pg');
+    if (!b || b.disabled) return;
+    var p = parseInt(b.getAttribute('data-page'), 10);
+    if (p < 1 || p > Math.ceil(filtered().length / state.size)) return;
+    state.page = p;
+    renderList();
+  });
+
+  document.getElementById('checkAll').addEventListener('change', function (e) {
+    var list = filtered();
+    var ids = list.slice((state.page - 1) * state.size, state.page * state.size).map(function (o) { return o.id; });
+    ids.forEach(function (id) { selected[id] = e.target.checked; });
+    renderList();
+  });
+
+  document.getElementById('bulkClear').addEventListener('click', clearSelection);
+  document.getElementById('bulkWaybill').addEventListener('click', function () {
+    var list = printTargets();
+    if (!list.length) { toast('请先勾选待打单的订单', 'warn'); return; }
+    var n = doPrint(list);
+    openWaybillModal(list);
+    if (n) toast('已生成 ' + list.length + ' 张面单', 'ok');
+  });
+  document.getElementById('bulkPrint').addEventListener('click', function () {
+    var list = printTargets();
+    if (!list.length) { toast('请先勾选待打单的订单', 'warn'); return; }
+    doPrint(list, true);
+    toast('已发送 ' + list.length + ' 张面单至打印机');
+  });
+  document.getElementById('bulkShip').addEventListener('click', function () {
+    var list = printTargets();
+    if (!list.length) { toast('请先勾选需要发货的订单', 'warn'); return; }
+    confirmModal('批量确认发货', '已选 ' + list.length + ' 笔订单将标记为已发出并同步物流信息。', '确认发货', function () {
+      doShip(list);
+    });
+  });
+
+  document.getElementById('sidePrint').addEventListener('click', function () {
+    var list = printTargets();
+    if (!list.length) { toast('当前没有可打单的订单', 'warn'); return; }
+    doPrint(list, true);
+    toast('已打印 ' + list.length + ' 张面单');
+  });
+  document.getElementById('sidePreview').addEventListener('click', function () {
+    var list = printTargets();
+    openWaybillModal(list.length ? list : [filtered()[0] || orders[0]]);
+  });
+
+  document.getElementById('oneKeyBtn').addEventListener('click', function () {
+    var waits = orders.filter(function (o) { return o.status === 'wait'; });
+    if (!waits.length) { toast('没有待发货的订单', 'warn'); return; }
+    confirmModal('一键打单发货',
+      '将为 ' + waits.length + ' 笔待发货订单自动获取面单、打印并标记发货。', '开始处理', function () {
+        doPrint(waits, true);
+        var printed = orders.filter(function (o) { return o.status === 'printed'; });
+        var n = doShip(printed, true);
+        clearSelection();
+        renderAll();
+        toast('已完成 ' + n + ' 笔订单的打单与发货');
+      });
+  });
+
+  document.getElementById('printerSel').addEventListener('change', function () {
+    var tip = document.getElementById('printerTip');
+    var txt = document.getElementById('printerTipTxt');
+    var online = this.value.indexOf('系统默认') < 0;
+    tip.classList.toggle('off', !online);
+    txt.textContent = online
+      ? '打印机已连接，电子面单余额 186 张，可正常打单'
+      : '系统默认打印机可能不支持热敏面单，建议切换为云打印机';
+    toast(online ? '已切换打印机' : '该打印机可能不兼容面单规格', online ? 'ok' : 'warn');
+  });
+  document.getElementById('tplSel').addEventListener('change', function () {
+    toast('面单模板已切换为 ' + this.value.split(' ')[0]);
+  });
+  document.getElementById('whSel').addEventListener('change', function () {
+    toast('默认发货仓库已设置为 ' + this.value.split('（')[0]);
+  });
+
+  document.getElementById('templateBtn').addEventListener('click', openPrintSettings);
+  document.getElementById('refreshBtn').addEventListener('click', function () {
+    renderAll();
+    toast('已同步最新待发货订单');
+  });
+  document.getElementById('bell').addEventListener('click', function (e) {
+    e.stopPropagation();
+    document.getElementById('pop').classList.toggle('open');
+  });
+  document.addEventListener('click', function (e) {
+    var pop = document.getElementById('pop');
+    if (!pop.contains(e.target)) pop.classList.remove('open');
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { closeModal(); document.getElementById('pop').classList.remove('open'); }
+  });
+  document.getElementById('burger').addEventListener('click', function () {
+    document.getElementById('rail').classList.toggle('open');
+  });
+
+  /* ---------------------------- 启动 ---------------------------- */
+  document.addEventListener('DOMContentLoaded', function () { renderAll(); });
+})();
+</script>
+</body>
+</html>

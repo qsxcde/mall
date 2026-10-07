@@ -1,0 +1,44 @@
+# 测试专用配置。
+#
+# 数据源与 Redis 连接由 AbstractIntegrationTest 通过 @DynamicPropertySource 指向
+# Testcontainers 容器，这里只配置与外部环境无关的行为开关。
+spring:
+  flyway:
+    enabled: true
+    clean-disabled: false
+  task:
+    scheduling:
+      pool:
+        size: 1
+
+mall:
+  # 演示数据初始化器在测试库中是期望的：它们幂等，可提供登录账号与优惠券模板。
+  # 买家：13800000000 / 123456；商家：merchant / 123456（店铺 id=1）
+  init-demo-user: true
+  init-demo-merchant: true
+  rate-limit:
+    # 功能用例（下单/商家接口等）验证的是业务流程，而限流会在「同一 IP 连续登录几十次」
+    # 这类场景下把测试打断，产生与业务无关的红灯，因此这里关闭。
+    # 限流自身的行为由 RateLimitIntegrationTest 在开启状态下单独验证。
+    enabled: false
+  # 开启联调模拟接口（模拟发货），用于跑通「支付 → 发货 → 收货 → 评价」链路
+  mock:
+    enabled: true
+  sms:
+    # 测试需要拿到验证码才能完成注册，故回显
+    expose-code: true
+  order:
+    # 把订单超时关闭任务的首次延迟拉到 1 小时，避免定时任务在测试过程中改写订单状态
+    timeout-scan-initial-delay-ms: 3600000
+    timeout-scan-ms: 3600000
+  storage:
+    # 测试不依赖 MinIO：走本地磁盘实现，避免创建 MinioClient
+    type: local
+    local-dir: ./target/test-uploads
+  minio:
+    enabled: false
+
+logging:
+  level:
+    root: warn
+    com.geekmall: info
