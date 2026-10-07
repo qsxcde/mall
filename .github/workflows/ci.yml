@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支的旧流水线在新提交到达时自动取消，避免排队浪费额度
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ------------------------------------------------------------
+  # 后端：编译 + 全量测试
+  # 集成测试用 Testcontainers 自起真实 MySQL 8 / Redis 7，
+  # GitHub 托管 runner 自带 Docker，无需额外起 docker-compose。
+  # ------------------------------------------------------------
+  backend:
+    name: 后端 · 构建与测试
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: 运行测试
+        run: mvn -B -ntp test
+
+      # 测试失败时也上传，便于在 Actions 页面直接看用例明细
+      - name: 上传测试报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-surefire-reports
+          path: backend/target/surefire-reports/
+          if-no-files-found: ignore
+
+  # ------------------------------------------------------------
+  # 前端：两个子工程并行构建（vite build）
+  # ------------------------------------------------------------
+  frontend:
+    name: 前端 · ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [ frontend, frontendMerchant ]
+    defaults:
+      run:
+        working-directory: ${{ matrix.app }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建
+        run: npm run build
