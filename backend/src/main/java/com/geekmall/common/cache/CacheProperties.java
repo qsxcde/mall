@@ -53,10 +53,13 @@ public class CacheProperties {
     /** 击穿防护：热点 key 失效瞬间只放一个线程回源重建。 */
     private Lock lock = new Lock();
 
-    /** Redis 故障时的降级策略。 */
-    private Breaker breaker = new Breaker();
-
-    /** 本地一级缓存（Caffeine）。 */
+    /**
+     * 本地一级缓存（Caffeine）。
+     *
+     * <p>Redis 故障时的熔断降级参数已迁到 {@code mall.resilience}（见
+     * {@link com.geekmall.common.resilience.ResilienceProperties}），
+     * 由缓存层与业务级共用同一个熔断状态机，避免同一依赖出现两套计数。</p>
+     */
     private Local local = new Local();
 
     @Data
@@ -78,19 +81,6 @@ public class CacheProperties {
 
         /** 等待期间的轮询间隔。 */
         private Duration retryInterval = Duration.ofMillis(50);
-    }
-
-    @Data
-    public static class Breaker {
-
-        /** 熔断开关。关闭后 Redis 异常会直接向上抛出。 */
-        private boolean enabled = true;
-
-        /** 连续失败多少次后打开熔断。 */
-        private int failureThreshold = 5;
-
-        /** 熔断打开时长，此后进入半开状态放一个请求试探。 */
-        private Duration openDuration = Duration.ofSeconds(10);
     }
 
     @Data

@@ -1,5 +1,7 @@
 package com.geekmall.common.cache;
 
+import com.geekmall.common.resilience.CircuitBreaker;
+import com.geekmall.common.resilience.ResilienceProperties;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -31,7 +33,7 @@ import static org.mockito.Mockito.when;
  * <ul>
  *   <li>读失败 → 降级为「未命中」，由调用方回源，不向上抛异常；</li>
  *   <li>写失败 → 吞掉异常，业务正常返回；</li>
- *   <li>连续失败达阈值 → 熔断，后续请求<b>不再</b>触碰 Redis（避免每个请求都等满 timeout）。</li>
+ *   <li>失败率达阈值 → 熔断，后续请求<b>不再</b>触碰 Redis（避免每个请求都等满 timeout）。</li>
  * </ul>
  */
 @DisplayName("ResilientRedisCache 降级与熔断")
@@ -52,9 +54,17 @@ class ResilientRedisCacheTest {
     }
 
     private ResilientRedisCache cache() {
+        return cache(newCircuitBreaker(new ResilienceProperties.Resource()));
+    }
+
+    private ResilientRedisCache cache(CircuitBreaker breaker) {
         return new ResilientRedisCache(CACHE_NAME, writer,
                 RedisCacheConfiguration.defaultCacheConfig().entryTtl(Duration.ofMinutes(1)),
-                properties, mock(StringRedisTemplate.class), metrics);
+                properties, mock(StringRedisTemplate.class), metrics, breaker);
+    }
+
+    private static CircuitBreaker newCircuitBreaker(ResilienceProperties.Resource config) {
+        return new CircuitBreaker(CACHE_NAME, config, null);
     }
 
     private void failAllReads() {
@@ -108,11 +118,15 @@ class ResilientRedisCacheTest {
     class Breaker {
 
         @Test
-        @DisplayName("连续失败达阈值后跳过 Redis，不再让每个请求都等满 timeout")
+        @DisplayName("失败率达阈值后跳过 Redis，不再让每个请求都等满 timeout")
         void shouldStopTouchingRedisAfterRepeatedFailures() {
-            properties.getBreaker().setFailureThreshold(3);
+            ResilienceProperties.Resource config = new ResilienceProperties.Resource();
+            config.setMinimumCalls(3);
+            config.setFailureRateThreshold(50f);
+            config.setSlowCallRateThreshold(0f);
+            config.setSlidingWindow(Duration.ofSeconds(30));
+            ResilientRedisCache cache = cache(newCircuitBreaker(config));
             failAllReads();
-            ResilientRedisCache cache = cache();
 
             // 前 3 次仍会真实访问 Redis（失败并累计）
             cache.get("k1");
@@ -125,7 +139,7 @@ class ResilientRedisCacheTest {
             cache.get("k5");
             verify(writer, times(3)).get(anyString(), any(byte[].class));
 
-            assertThat(cache.getBreaker().isOpen()).isTrue();
+            assertThat(cache.getBreaker().getState()).isEqualTo(CircuitBreaker.State.OPEN);
         }
     }
 

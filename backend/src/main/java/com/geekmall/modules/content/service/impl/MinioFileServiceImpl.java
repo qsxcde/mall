@@ -1,6 +1,7 @@
 package com.geekmall.modules.content.service.impl;
 
 import com.geekmall.common.exception.BizException;
+import com.geekmall.common.resilience.ResilienceGuard;
 import com.geekmall.common.result.ResultCode;
 import com.geekmall.config.MinioProperties;
 import com.geekmall.modules.content.service.FileService;
@@ -22,6 +23,10 @@ import java.io.InputStream;
 
 /**
  * 对象存储实现（MinIO / 兼容 S3 的服务）。默认实现。
+ *
+ * <p>对外部依赖的调用全部包在 {@link ResilienceGuard} 内，从而具备业务级熔断降级能力：
+ * 对象存储变慢或不可用时，展示型附件（头像 / 评价图）自动改存本地磁盘，
+ * 而售后凭证这类必须可靠落库的场景则明确报错，让用户重试。</p>
  */
 @Slf4j
 @Service
@@ -29,8 +34,13 @@ import java.io.InputStream;
 @ConditionalOnProperty(name = "mall.storage.type", havingValue = "minio", matchIfMissing = true)
 public class MinioFileServiceImpl implements FileService {
 
+    /** 熔断资源名，对应 {@code mall.resilience.resources.minio-upload}。 */
+    static final String RESOURCE = "minio-upload";
+
     private final MinioClient minioClient;
     private final MinioProperties properties;
+    private final ResilienceGuard resilienceGuard;
+    private final LocalDiskFileStore localDiskFileStore;
 
     /** 桶初始化只做一次，避免每次上传都探测 */
     private volatile boolean bucketReady = false;
@@ -40,10 +50,27 @@ public class MinioFileServiceImpl implements FileService {
         if (!properties.isEnabled()) {
             throw new BizException(ResultCode.BIZ_ERROR, "对象存储未启用（mall.minio.enabled=false）");
         }
+        // 参数校验刻意放在熔断保护之外：用户传错格式不该被计成「依赖失败」，
+        // 更不能因此把一个非法文件降级写进本地磁盘
         FileValidator.validate(file);
         String contentType = FileValidator.contentTypeOf(file);
         String objectName = FileValidator.buildObjectName(biz, contentType);
 
+        ResilienceGuard.Action<UploadResultVO> primary = () -> putObject(file, objectName, contentType);
+        if (properties.getDegradableBiz().contains(biz)) {
+            // 展示型附件：对象存储不可用时改存本地磁盘，用户无感（响应里会带 degraded 标记）
+            return resilienceGuard.execute(RESOURCE, primary,
+                    () -> localDiskFileStore.storeValidated(file, contentType, objectName, true));
+        }
+        // 不可降级的业务（如售后凭证）：熔断打开时直接失败，让用户稍后重试，
+        // 而不是静默写到一个多实例部署下并不共享的本地目录里
+        return resilienceGuard.execute(RESOURCE, primary);
+    }
+
+    /* ------------------------------ 私有方法 ------------------------------ */
+
+    /** 真正的外部调用：建桶（仅首次）+ 上传。异常统一交给 ResilienceGuard 判定。 */
+    private UploadResultVO putObject(MultipartFile file, String objectName, String contentType) throws Exception {
         ensureBucket();
         try (InputStream inputStream = file.getInputStream()) {
             minioClient.putObject(PutObjectArgs.builder()
@@ -57,10 +84,13 @@ public class MinioFileServiceImpl implements FileService {
             throw new BizException(ResultCode.SYSTEM_ERROR, "文件上传失败，请稍后重试");
         }
         log.info("文件上传成功：{}（{} bytes）", objectName, file.getSize());
-        return new UploadResultVO(publicUrl(objectName), objectName, file.getSize(), contentType);
+        return UploadResultVO.builder()
+                .url(publicUrl(objectName))
+                .objectName(objectName)
+                .size(file.getSize())
+                .contentType(contentType)
+                .build();
     }
-
-    /* ------------------------------ 私有方法 ------------------------------ */
 
     /**
      * 建桶 + 设置匿名只读策略。
