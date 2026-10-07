@@ -196,6 +196,8 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
 
 脚本会重置环境、批量创建压测账号并渲染指标到 `loadtest/results/`。
 
+> 压测账号数据（`loadtest/data/users.csv` 及其派生的 `loadtest/k6/data/users.js`）**含 JWT，不入库**，已加入 `.gitignore`；首次压测前需先跑 `prepare_data.py`（`run_tests.sh` 已包含该步）现场换取令牌。
+
 > ⚠️ 压测账号的 JWT **有效期只有 2 小时**。若拿到的是旧账号数据，所有请求会因 401 被统计成「业务拒绝」，看起来很像「已抢光」——遇到大批量失败先检查 token 是否过期。
 
 ### 2.8 常见问题
@@ -249,7 +251,7 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
 
 - **业务补全**：真实支付渠道、真实物流轨迹、真实短信通道（当前均为 mock）
 - **稳定性纵深**：缓存层已有独立熔断器，但下游调用（如 MinIO）还没有业务级熔断保护，可考虑统一到 Resilience4j；订单超时关闭目前靠轮询扫描，可改为延迟队列/时间轮
-- **工程化**：补 CI（GitHub Actions 跑 `mvn test` 与前端构建）、把压测纳入回归、把压测账号数据（含令牌）从仓库移出并加入 `.gitignore`
+- **工程化**：✅ 已补 CI（`.github/workflows/ci.yml`：后端 `mvn test`（含 Testcontainers 集成测试）+ 双前端 `vite build`）；✅ 压测账号令牌（`users.csv` / 派生 `users.js`）与 `node_modules` / `dist` 已移出仓库并加入 `.gitignore`；待办：把 k6 压测纳入 CI 回归
 
 ### 3.4 一句话
 
