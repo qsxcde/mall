@@ -3,6 +3,7 @@ import { cleanParams } from './helpers'
 import {
   toCouponTemplate,
   toPointsGoods,
+  toSeckillGrabResult,
   toSeckillItem,
   toSeckillSession,
   toUserCoupon
@@ -46,9 +47,27 @@ export const seckillApi = {
     return (list || []).map(toSeckillItem)
   },
 
-  /** 抢购：成功返回订单号 */
+  /**
+   * 抢购。
+   *
+   * 返回值取决于后端的 `mall.seckill.async.enabled`：
+   * - 关闭（默认）：直接返回待付款订单号（GM 开头）
+   * - 开启（削峰）：返回 32 位抢购请求号，需再调 `grabResult` 轮询最终结果
+   * 两种模式成功码都是 0，前端按返回值格式区分即可，无需额外的模式开关。
+   */
   grab(itemId, addressId) {
     return request.post(`/seckill/${itemId}/order`, { addressId })
+  },
+
+  /**
+   * 轮询抢购结果（仅削峰模式需要）。
+   *
+   * silent：轮询期间的瞬时失败不弹提示 —— 否则一次网络抖动会连弹多条错误，
+   * 也会把「排队中」这种并非失败的中间态渲染成报错。
+   */
+  async grabResult(requestId) {
+    const res = await request.get(`/seckill/result/${encodeURIComponent(requestId)}`, { silent: true })
+    return toSeckillGrabResult(res)
   }
 }
 

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { seckillApi } from '@/api/marketing'
@@ -15,6 +15,30 @@ const sessions = ref([])
 const seckillItems = ref([])
 const sessionIndex = ref(0)
 const grabbing = ref(0)
+/** 已受理、等待落库的商品 ID：削峰模式下按钮需要显示「排队中」 */
+const queueingItemId = ref(0)
+
+/**
+ * 削峰模式下抢购接口返回的是 32 位十六进制请求号，而同步模式返回 GM 开头的订单号。
+ * 用它来分辨当前后端处于哪种模式 —— 这样前端不需要读后端配置，两种模式都能跑。
+ */
+const REQUEST_ID_PATTERN = /^[0-9a-f]{32}$/i
+
+/** 轮询节奏：与后端抢购接口的 10s 超时对齐（14 × 700ms ≈ 9.8s） */
+const POLL_INTERVAL_MS = 700
+const POLL_MAX_ATTEMPTS = 14
+
+let pollTimer = null
+
+const stopPolling = () => {
+  if (pollTimer) {
+    clearTimeout(pollTimer)
+    pollTimer = null
+  }
+}
+
+// 离开页面必须停掉轮询：否则定时器仍会触发跳转，把已经离开的用户拽走
+onUnmounted(stopPolling)
 
 const loadItems = async () => {
   const current = sessions.value[sessionIndex.value]
@@ -47,9 +71,51 @@ const switchSession = async (i) => {
   await loadItems()
 }
 
+/** 抢购成功：统一走收银台 */
+const goPay = (orderNo) => {
+  ElMessage.success('抢购成功，请在 15 分钟内完成支付')
+  router.push({ name: 'payment', query: { orderNo } })
+}
+
 /**
- * 立即抢购：由后端 Redis 原子预扣 + 一人一单，成功直接生成待付款订单。
- * 秒杀不走购物车，所以需要先确定收货地址。
+ * 削峰模式：轮询抢购结果直到终态。
+ *
+ * 「已受理」不再等于「已抢到」，必须拿到终态才能决定是跳收银台还是提示失败。
+ */
+const pollGrabResult = (requestId) =>
+  new Promise((resolve) => {
+    let attempts = 0
+    const tick = async () => {
+      attempts += 1
+      try {
+        const res = await seckillApi.grabResult(requestId)
+        if (res.status === 'SUCCESS') {
+          goPay(res.orderNo)
+          return resolve()
+        }
+        if (res.status === 'FAILED') {
+          ElMessage.error(res.message || '抢购失败')
+          return resolve()
+        }
+      } catch (e) {
+        // 轮询期间的瞬时失败不打断流程：继续重试，最终由超时兜底
+      }
+      if (attempts >= POLL_MAX_ATTEMPTS) {
+        // 超时 ≠ 失败：消息可能仍在队列里，引导用户自查，避免误报「抢购失败」
+        ElMessage.warning('抢购结果仍在处理中，可稍后在「我的订单」查看')
+        router.push({ name: 'orders' })
+        return resolve()
+      }
+      pollTimer = setTimeout(tick, POLL_INTERVAL_MS)
+    }
+    tick()
+  })
+
+/**
+ * 立即抢购：由后端 Redis 原子预扣 + 一人一单。
+ *
+ * 秒杀不走购物车，所以需要先确定收货地址。成功后能否当场拿到订单号取决于后端模式：
+ * 同步模式直接返回订单号；削峰模式只返回受理请求号，需轮询结果接口。
  */
 const grab = async (item) => {
   if (!user.isLoggedIn) {
@@ -66,13 +132,20 @@ const grab = async (item) => {
 
   grabbing.value = item.id
   try {
-    const orderNo = await seckillApi.grab(item.id, user.defaultAddress.id)
-    ElMessage.success('抢购成功，请在 15 分钟内完成支付')
-    router.push({ name: 'payment', query: { orderNo } })
+    const data = await seckillApi.grab(item.id, user.defaultAddress.id)
+    if (REQUEST_ID_PATTERN.test(data || '')) {
+      // 削峰模式：先明确告知已受理，避免用户以为按钮没响应而反复点击
+      queueingItemId.value = item.id
+      ElMessage.info('抢购请求已受理，正在排队处理…')
+      await pollGrabResult(data)
+    } else {
+      goPay(data)
+    }
   } catch (e) {
     /* 抢光 / 重复抢购等由拦截器提示 */
   } finally {
     grabbing.value = 0
+    queueingItemId.value = 0
     // 无论成功失败都刷新一次，保证库存与进度是最新的
     await loadItems()
   }
@@ -129,8 +202,17 @@ const remind = () => ElMessage.success('已开启开抢提醒')
             <span v-else>14:00 开抢</span>
             <span>{{ item.tip }}</span>
           </div>
-          <button v-if="!item.notStart" class="sk-btn" :disabled="grabbing === item.id || item.soldout" @click="grab(item)">
-            {{ item.soldout ? '已抢光' : grabbing === item.id ? '抢购中…' : '马上抢' }}
+          <!-- 抢购与排队期间禁用全部按钮：轮询期间若允许再次抢购，会同时挂起两个轮询 -->
+          <button v-if="!item.notStart" class="sk-btn" :disabled="grabbing !== 0 || item.soldout" @click="grab(item)">
+            {{
+              item.soldout
+                ? '已抢光'
+                : queueingItemId === item.id
+                  ? '排队中…'
+                  : grabbing === item.id
+                    ? '抢购中…'
+                    : '马上抢'
+            }}
           </button>
           <button v-else class="sk-btn not-start" @click="remind">提醒我</button>
         </div>

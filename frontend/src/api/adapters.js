@@ -247,6 +247,26 @@ export function toSeckillItem(vo) {
   }
 }
 
+/**
+ * 秒杀抢购结果（削峰模式下轮询用）。
+ *
+ * 后端 SeckillGrabResult：{ requestId, userId, status, orderNo, message, finished }
+ * status 为 QUEUED / SUCCESS / FAILED。前端只关心「是否终态」与「终态是哪种」，
+ * 这里一并归一，避免视图里散落字符串比较。
+ */
+export function toSeckillGrabResult(vo) {
+  // 缺省按 QUEUED 处理：宁可持续轮询到超时兜底，也不要把未知状态误判成失败
+  const status = String(vo?.status || 'QUEUED').toUpperCase()
+  return {
+    requestId: vo?.requestId || '',
+    status,
+    orderNo: vo?.orderNo || '',
+    message: vo?.message || '',
+    // 终态判定以 status 为准，不依赖后端可能缺省的 finished 字段
+    finished: status === 'SUCCESS' || status === 'FAILED'
+  }
+}
+
 /** 积分商品 */
 export function toPointsGoods(vo) {
   return {
