@@ -3,11 +3,16 @@ package com.geekmall.modules.marketing.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.geekmall.common.constant.RedisKeys;
 import com.geekmall.common.exception.BizException;
+import com.geekmall.common.resilience.ResilienceGuard;
 import com.geekmall.common.result.ResultCode;
 import com.geekmall.modules.marketing.entity.SeckillItem;
 import com.geekmall.modules.marketing.entity.SeckillSession;
 import com.geekmall.modules.marketing.mapper.SeckillItemMapper;
 import com.geekmall.modules.marketing.mapper.SeckillSessionMapper;
+import com.geekmall.modules.marketing.queue.SeckillGrabResult;
+import com.geekmall.modules.marketing.queue.SeckillOrderMessage;
+import com.geekmall.modules.marketing.queue.SeckillOrderQueue;
+import com.geekmall.modules.marketing.queue.SeckillResultStore;
 import com.geekmall.modules.marketing.service.SeckillService;
 import com.geekmall.modules.marketing.vo.SeckillItemVO;
 import com.geekmall.modules.marketing.vo.SeckillSessionVO;
@@ -27,6 +32,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -71,6 +78,9 @@ public class SeckillServiceImpl implements SeckillService {
     /** 一人一单标记的保留时长，按「每日一场」的运营节奏设置 */
     private static final Duration BOUGHT_TTL = Duration.ofHours(24);
 
+    /** 队列在熔断体系中的资源名（对应 mall.resilience.resources.seckill-queue）。 */
+    static final String QUEUE_RESOURCE = "seckill-queue";
+
     private final SeckillSessionMapper seckillSessionMapper;
     private final SeckillItemMapper seckillItemMapper;
     private final ProductMapper productMapper;
@@ -78,6 +88,12 @@ public class SeckillServiceImpl implements SeckillService {
     private final StringRedisTemplate redisTemplate;
     /** 自引用代理：让 grabInTx 真正开启独立事务，Redis 预扣才不会被包进事务 */
     private final ObjectProvider<SeckillServiceImpl> selfProvider;
+    /** 削峰队列（异步模式使用）。 */
+    private final SeckillOrderQueue seckillOrderQueue;
+    /** 抢购结果存取（异步模式使用）。 */
+    private final SeckillResultStore seckillResultStore;
+    /** 队列是新增的下游依赖，用熔断 + 并发上限保护它的写入。 */
+    private final ResilienceGuard resilienceGuard;
 
     /**
      * 秒杀商品元数据本地缓存（3s）。
@@ -114,7 +130,7 @@ public class SeckillServiceImpl implements SeckillService {
     }
 
     /**
-     * 抢购（非事务）。
+     * 同步抢购（默认模式，非事务）。
      *
      * <p>P2-6：Redis 预扣在本方法（事务外）完成，落库交给 {@link #grabInTx} 的独立事务。
      * 这样 DB 事务里不再夹带 Redis 往返，行锁持有时间显著缩短；失败时在事务<b>之外</b>回补预扣，
@@ -122,6 +138,67 @@ public class SeckillServiceImpl implements SeckillService {
      */
     @Override
     public String grab(Long userId, Long itemId, Long addressId) {
+        reserve(userId, itemId);
+        try {
+            String orderNo = selfProvider.getObject().grabInTx(userId, itemId, addressId, null);
+            log.info("用户 {} 秒杀成功：itemId={}, 订单号={}", userId, itemId, orderNo);
+            return orderNo;
+        } catch (RuntimeException e) {
+            // DB 事务已回滚：在事务之外回补 Redis 预扣，否则库存被永久占用
+            releaseReservation(itemId, userId);
+            throw e;
+        }
+    }
+
+    /**
+     * 异步抢购（削峰模式，由 {@code mall.seckill.async.enabled} 决定是否启用）。
+     *
+     * <p>与同步路径共享同一段「资格判定」（{@link #reserve}），区别只在拿到资格之后：
+     * 同步路径当场落库，这里改为入队后立即返回。用户延迟因此从「DB 事务耗时」
+     * 压缩到「预扣 + 入队耗时」。</p>
+     *
+     * <p><b>注意削峰不提升吞吐</b>：数据库的落库能力没有任何变化，这里只是把脉冲摊平、
+     * 并把「行锁争抢」转化为「队列排队」。要真正提高吞吐得靠批量落库或库存分桶。</p>
+     *
+     * @return 抢购请求号，前端凭它轮询 {@link #grabResult}
+     */
+    @Override
+    public String grabAsync(Long userId, Long itemId, Long addressId) {
+        reserve(userId, itemId);
+        String requestId = UUID.randomUUID().toString().replace("-", "");
+        // 先落「排队中」：用户入队后立刻能查到状态，不会出现「查不到结果」的空窗期
+        seckillResultStore.save(SeckillGrabResult.queued(requestId, userId));
+        try {
+            // 队列是新增的下游依赖：用熔断 + 并发上限保护，避免队列卡住时把调用线程拖满
+            resilienceGuard.execute(QUEUE_RESOURCE, () -> {
+                seckillOrderQueue.enqueue(new SeckillOrderMessage(requestId, userId, itemId, addressId));
+                return requestId;
+            });
+        } catch (RuntimeException ex) {
+            // 入队失败：资格已经预扣了，必须立刻回补，否则库存被「黑洞」吞掉
+            releaseReservation(itemId, userId);
+            seckillResultStore.save(SeckillGrabResult.failed(requestId, userId, "系统繁忙，请稍后再试"));
+            log.error("秒杀请求入队失败，已回补预扣：userId={}, itemId={}", userId, itemId, ex);
+            throw new BizException(ResultCode.SYSTEM_ERROR, "系统繁忙，请稍后再试");
+        }
+        log.info("用户 {} 秒杀请求已入队：itemId={}, requestId={}", userId, itemId, requestId);
+        return requestId;
+    }
+
+    @Override
+    public SeckillGrabResult grabResult(Long userId, String requestId) {
+        return seckillResultStore.find(requestId)
+                // 校验归属：越权查询一律按「不存在」返回，不泄露该 requestId 是否存在
+                .filter(result -> Objects.equals(result.userId(), userId))
+                .orElseThrow(() -> new BizException(ResultCode.NOT_FOUND, "抢购记录不存在或已过期"));
+    }
+
+    /**
+     * 资格判定：Redis Lua 原子预扣（判库存 + 判一人一单 + 扣减 + 续期）。
+     *
+     * <p>同步与异步两条路径共用，保证「谁能买到」的口径只有一处定义。</p>
+     */
+    private void reserve(Long userId, Long itemId) {
         SeckillItem item = loadItem(itemId);
         if (item == null) {
             throw new BizException(ResultCode.NOT_FOUND, "秒杀商品不存在");
@@ -144,25 +221,28 @@ public class SeckillServiceImpl implements SeckillService {
             case -3 -> throw new BizException(ResultCode.BIZ_ERROR, "每人限购 1 件，您已经抢到过啦");
             default -> throw new BizException(ResultCode.BIZ_ERROR, "秒杀尚未开始，请稍后再试");
         }
-
-        try {
-            String orderNo = selfProvider.getObject().grabInTx(userId, itemId, addressId);
-            log.info("用户 {} 秒杀成功：itemId={}, 订单号={}", userId, itemId, orderNo);
-            return orderNo;
-        } catch (RuntimeException e) {
-            // DB 事务已回滚：在事务之外回补 Redis 预扣，否则库存被永久占用
-            releaseReservation(itemId, userId);
-            throw e;
-        }
     }
 
     /**
      * 秒杀落库事务：DB 层再扣一次活动库存 + 建单。
      *
      * <p>作为 Redis 预扣之后的第二道防线，即便 Redis 计数与 DB 不一致也不会超卖。</p>
+     *
+     * @param requestId 幂等键。异步落库时传入队列消息里的 requestId，重复消费会被
+     *                  {@code uk_user_request} 唯一索引拦下并返回已有订单号；
+     *                  同步路径传 {@code null}（由 Redis「一人一单」保证不重复）。
      */
     @Transactional(rollbackFor = Exception.class, timeout = 10)
-    public String grabInTx(Long userId, Long itemId, Long addressId) {
+    public String grabInTx(Long userId, Long itemId, Long addressId, String requestId) {
+        // 幂等前置检查必须在扣活动库存「之前」：唯一键冲突会在交易域内部被消化成「返回已有订单号」，
+        // 事务因此照常提交 —— 若先扣库存再被拦下，活动库存就被多扣了一次，且不会有任何异常提示
+        if (requestId != null) {
+            String settled = tradeService.findOrderNoByRequestId(userId, requestId);
+            if (settled != null) {
+                log.info("[秒杀幂等] 该 requestId 已建单 {}，跳过扣减与建单：requestId={}", settled, requestId);
+                return settled;
+            }
+        }
         SeckillItem item = loadItem(itemId);
         if (item == null) {
             throw new BizException(ResultCode.NOT_FOUND, "秒杀商品不存在");
@@ -171,7 +251,7 @@ public class SeckillServiceImpl implements SeckillService {
             throw new BizException(ResultCode.OUT_OF_STOCK, "手慢了，本场已抢光");
         }
         return tradeService.createOrderWithFixedPrice(userId, addressId, item.getProductId(),
-                item.getSeckillPrice(), 1, "限时秒杀成交");
+                item.getSeckillPrice(), 1, "限时秒杀成交", requestId);
     }
 
     /* ------------------------------ 私有方法 ------------------------------ */
@@ -194,7 +274,7 @@ public class SeckillServiceImpl implements SeckillService {
         }
     }
 
-    private void releaseReservation(Long itemId, Long userId) {
+    public void releaseReservation(Long itemId, Long userId) {
         try {
             redisTemplate.opsForSet().remove(RedisKeys.SECKILL_BOUGHT + itemId, String.valueOf(userId));
             redisTemplate.opsForValue().increment(RedisKeys.SECKILL_STOCK + itemId);

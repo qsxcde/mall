@@ -9,13 +9,16 @@
 用法： python3 prepare_data.py [用户数] [手机号起始序号]
 """
 import json
+import os
 import subprocess
 import sys
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-BASE_URL = "http://localhost:8080"
+# 可用 BASE_URL 环境变量覆盖：压测实例常常关掉限流，批量登录 1000 个账号会撞上
+# 登录接口的 IP 维度限流（FAIL_CLOSED，直接 429），需要用关限流的实例来造账号。
+BASE_URL = os.environ.get("BASE_URL", "http://localhost:8080")
 MYSQL_CONTAINER = "geek-mall-mysql"
 MYSQL_USER = "root"
 MYSQL_PASSWORD = "root"

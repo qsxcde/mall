@@ -127,6 +127,39 @@ mall:
         wait-duration-in-open: 15s
         permitted-calls-in-half-open: 2
         max-concurrent-calls: 20
+      # 秒杀削峰队列（Redis Stream）：入队是毫秒级操作，因此慢调用阈值压得很低——
+      # 队列一旦变慢，必须在用户等待之前就熔断，并把预扣回补掉
+      seckill-queue:
+        minimum-calls: 5
+        failure-rate-threshold: 50
+        slow-call-duration: 200ms
+        slow-call-rate-threshold: 50
+        sliding-window: 30s
+        wait-duration-in-open: 5s
+        permitted-calls-in-half-open: 2
+        max-concurrent-calls: 32
+  # 秒杀
+  seckill:
+    async:
+      # 削峰模式：Redis Lua 预扣成功后只入队、不等落库，由后台消费者异步建单。
+      # 默认关闭 —— 它改变了接口契约（抢购返回「请求号」而非订单号），
+      # 前端需配套轮询 /api/v1/seckill/result/{requestId}，默认关闭可保证行为完全不变
+      enabled: false
+      # 消费者线程数：⚠️ 必须以数据库写能力为上限。开得远超 DB 承载，
+      # 只是把雪崩点从 Tomcat 平移到数据库——削峰摊平脉冲，不提升吞吐
+      consumer-threads: 4
+      batch-size: 16
+      # 无消息时的阻塞等待时长
+      block: 2s
+      # 未确认消息闲置多久后可被回收重投（消费者崩溃兜底），以及扫描间隔
+      reclaim-min-idle: 1m
+      reclaim-interval: 30s
+      # 抢购结果保留时长（前端轮询窗口）
+      result-ttl: 30m
+      # 轮询各实例应显式配置唯一名；留空则自动生成，多实例下可能撞名
+      consumer-name: ""
+      # 消息流最大长度（近似裁剪），防止 Redis 内存无限增长
+      max-stream-length: 100000
   mock:
     # 是否注册联调用的模拟接口（如模拟发货），生产必须为 false
     enabled: false

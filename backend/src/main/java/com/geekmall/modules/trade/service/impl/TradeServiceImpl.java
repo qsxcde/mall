@@ -418,7 +418,7 @@ public class TradeServiceImpl implements TradeService {
     @Override
     @Transactional(rollbackFor = Exception.class, timeout = 10)
     public String createOrderWithFixedPrice(Long userId, Long addressId, Long productId,
-                                           BigDecimal unitPrice, int qty, String remark) {
+                                           BigDecimal unitPrice, int qty, String remark, String requestId) {
         if (unitPrice == null || unitPrice.compareTo(BigDecimal.ZERO) < 0 || qty <= 0) {
             throw new BizException(ResultCode.PARAM_ERROR, "订单参数不合法");
         }
@@ -429,8 +429,21 @@ public class TradeServiceImpl implements TradeService {
         }
         List<OrderItemDraft> drafts = List.of(new OrderItemDraft(product, product.getSpec(), qty, unitPrice));
         // 与普通下单一致：先落订单，再在事务尾段扣库存
-        String orderNo = persistOrder(userId, address, drafts, BigDecimal.ZERO, BigDecimal.ZERO,
-                null, null, remark, null);
+        String orderNo;
+        try {
+            orderNo = persistOrder(userId, address, drafts, BigDecimal.ZERO, BigDecimal.ZERO,
+                    null, null, remark, requestId);
+        } catch (DuplicateKeyException ex) {
+            // 幂等命中：同一 (userId, requestId) 已建过单 —— 秒杀异步落库的重复消费会走到这里。
+            // 唯一键冲突只影响这一条语句、不会让整个事务失效，因此可以安全地回查并返回已有订单号。
+            String existing = findOrderNoByRequestId(userId, requestId);
+            if (existing == null) {
+                throw ex;
+            }
+            log.warn("特殊通道下单命中幂等：userId={}, requestId={}, 返回已有订单 {}",
+                    userId, requestId, existing);
+            return existing;
+        }
         int rows = productMapper.deductStock(productId, qty);
         if (rows == 0) {
             throw new BizException(ResultCode.OUT_OF_STOCK, "商品「" + product.getTitle() + "」库存不足");
@@ -611,9 +624,13 @@ public class TradeServiceImpl implements TradeService {
     }
 
     /**
-     * 按 (userId, requestId) 查已存在的订单号，用于唯一索引命中后的幂等返回（P1-4 兜底）。
+     * 按 (userId, requestId) 查已存在的订单号。
+     *
+     * <p>两个用途：① 唯一索引命中后的幂等返回（P1-4 兜底）；
+     * ② 秒杀异步落库在扣减之前的幂等前置检查（见接口注释）。</p>
      */
-    private String findOrderNoByRequestId(Long userId, String requestId) {
+    @Override
+    public String findOrderNoByRequestId(Long userId, String requestId) {
         if (!StringUtils.hasText(requestId)) {
             return null;
         }
