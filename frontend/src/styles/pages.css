@@ -249,6 +249,35 @@
 .sk-btn:hover { filter: brightness(1.05); }
 .sk-btn.not-start { background: #fff; color: var(--seckill); border: 1px solid var(--seckill); }
 
+/* 秒杀抢购确认弹窗 */
+.sk-confirm { color: #333; }
+.skc-goods { display: flex; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.skc-img { width: 84px; height: 84px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: rgba(0,0,0,.18); }
+.skc-main { flex: 1; min-width: 0; }
+.skc-title { font-size: 14px; line-height: 1.5; color: #333; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.skc-spec { font-size: 12px; color: var(--text-light); margin-top: 4px; }
+.skc-price-row { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; }
+.skc-price { color: var(--seckill); font-size: 20px; font-weight: bold; }
+.skc-price small { font-size: 12px; font-weight: normal; }
+.skc-old { color: var(--text-light); font-size: 12px; text-decoration: line-through; }
+.skc-tag { margin-left: auto; align-self: center; font-size: 11px; color: var(--seckill); border: 1px solid var(--seckill); border-radius: 4px; padding: 1px 6px; }
+.skc-row { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+.skc-label { width: 72px; flex-shrink: 0; font-size: 13px; color: var(--text-light); }
+.skc-addr { flex: 1; min-width: 0; }
+.skc-addr .nm { font-size: 13.5px; font-weight: 600; color: #333; }
+.skc-addr .nm .ph { font-weight: normal; color: var(--text-light); margin-left: 8px; }
+.skc-addr .dt { font-size: 12.5px; color: var(--text-light); margin-top: 3px; line-height: 1.5; }
+.skc-edit { flex-shrink: 0; font-size: 12.5px; color: var(--primary); cursor: pointer; }
+.skc-edit:hover { opacity: .8; }
+.skc-qty { font-size: 13.5px; color: #333; }
+.skc-total { font-size: 18px; font-weight: bold; color: var(--seckill); }
+.skc-note { font-size: 12px; font-weight: normal; color: var(--text-light); }
+.skc-tips { margin-top: 14px; padding: 10px 12px; background: #fff6f3; border-radius: 8px; }
+.skc-tips p { font-size: 12.5px; line-height: 1.7; color: #a15a45; }
+.skc-tips b { color: var(--seckill); }
+.skc-submit.el-button--danger { background: linear-gradient(135deg, #ff7a45, #ff4d2e); border-color: transparent; }
+.skc-submit.el-button--danger:hover { filter: brightness(1.05); }
+
 /* ============================ 新品页 ============================ */
 .np-hero { background: linear-gradient(120deg, #4da3ff 0%, #1a6dff 55%, #0a3fa8 100%); border-radius: 12px; padding: 30px 34px; color: #fff; display: flex; align-items: center; justify-content: space-between; position: relative; overflow: hidden; }
 .np-hero::after { content: ""; position: absolute; right: -60px; bottom: -120px; width: 320px; height: 320px; background: rgba(255,255,255,.1); border-radius: 50%; }
@@ -661,6 +690,8 @@
   .pd-rec { grid-template-columns: repeat(2, 1fr); }
   .sk-grid, .np-grid { grid-template-columns: repeat(2, 1fr); }
   .sk-img, .np-card .np-img, .product-img { height: 150px; }
+  .skc-img { width: 64px; height: 64px; }
+  .skc-label { width: 60px; }
   .coming-grid, .cp-grid { grid-template-columns: 1fr; }
   .addr-grid { grid-template-columns: 1fr; }
   .auth-aside { display: none; }

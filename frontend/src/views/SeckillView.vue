@@ -1,9 +1,10 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { seckillApi } from '@/api/marketing'
 import { useUserStore } from '@/stores/user'
+import { fmtMoney } from '@/utils/format'
 import CountdownTimer from '@/components/CountdownTimer.vue'
 
 const route = useRoute()
@@ -17,6 +18,12 @@ const sessionIndex = ref(0)
 const grabbing = ref(0)
 /** 已受理、等待落库的商品 ID：削峰模式下按钮需要显示「排队中」 */
 const queueingItemId = ref(0)
+
+/** 抢购确认弹窗：pendingItem 为待确认的商品，null 表示弹窗内容已清空 */
+const confirmVisible = ref(false)
+const pendingItem = ref(null)
+/** 弹窗展示的收货地址：默认地址优先，无默认则取第一条 */
+const confirmAddress = computed(() => user.defaultAddress)
 
 /**
  * 削峰模式下抢购接口返回的是 32 位十六进制请求号，而同步模式返回 GM 开头的订单号。
@@ -112,12 +119,14 @@ const pollGrabResult = (requestId) =>
   })
 
 /**
- * 立即抢购：由后端 Redis 原子预扣 + 一人一单。
+ * 点击「马上抢」：前置校验通过后打开确认弹窗，不产生任何订单。
  *
- * 秒杀不走购物车，所以需要先确定收货地址。成功后能否当场拿到订单号取决于后端模式：
- * 同步模式直接返回订单号；削峰模式只返回受理请求号，需轮询结果接口。
+ * 秒杀不走购物车也没有结算页，这里补一层轻量确认：让用户在下单前
+ * 看清商品、收货地址与实付金额，避免误购和地址错误。
+ * 只有点了弹窗里的「确认抢购」才会真正调用下单接口。
  */
-const grab = async (item) => {
+const openConfirm = async (item) => {
+  if (item.soldout) return
   if (!user.isLoggedIn) {
     ElMessage.warning('请先登录后再抢购')
     return router.push({ name: 'login', query: { redirect: route.fullPath } })
@@ -129,10 +138,34 @@ const grab = async (item) => {
     ElMessage.warning('请先添加收货地址')
     return router.push({ name: 'user', query: { tab: 'address' } })
   }
+  pendingItem.value = item
+  confirmVisible.value = true
+}
+
+/** 弹窗内「更换地址」：去地址管理，返回后再次抢购即使用新地址 */
+const goAddress = () => {
+  confirmVisible.value = false
+  router.push({ name: 'user', query: { tab: 'address' } })
+}
+
+/**
+ * 立即抢购：由后端 Redis 原子预扣 + 一人一单。
+ *
+ * 成功后的返回取决于后端模式：同步模式直接给订单号；
+ * 削峰模式只给受理请求号，需轮询结果接口。
+ */
+const doGrab = async (item) => {
+  // 兜底防重：弹窗按钮可能被快速双击，保证同一时刻只有一个抢购请求
+  if (grabbing.value) return
+  const addressId = user.defaultAddress?.id
+  if (!addressId) {
+    ElMessage.warning('请先添加收货地址')
+    return router.push({ name: 'user', query: { tab: 'address' } })
+  }
 
   grabbing.value = item.id
   try {
-    const data = await seckillApi.grab(item.id, user.defaultAddress.id)
+    const data = await seckillApi.grab(item.id, addressId)
     if (REQUEST_ID_PATTERN.test(data || '')) {
       // 削峰模式：先明确告知已受理，避免用户以为按钮没响应而反复点击
       queueingItemId.value = item.id
@@ -149,6 +182,14 @@ const grab = async (item) => {
     // 无论成功失败都刷新一次，保证库存与进度是最新的
     await loadItems()
   }
+}
+
+/** 确认抢购：关掉弹窗后立即下单（后端生成订单 → 收银台） */
+const confirmGrab = async () => {
+  const item = pendingItem.value
+  if (!item || grabbing.value) return
+  confirmVisible.value = false
+  await doGrab(item)
 }
 
 const remind = () => ElMessage.success('已开启开抢提醒')
@@ -203,7 +244,7 @@ const remind = () => ElMessage.success('已开启开抢提醒')
             <span>{{ item.tip }}</span>
           </div>
           <!-- 抢购与排队期间禁用全部按钮：轮询期间若允许再次抢购，会同时挂起两个轮询 -->
-          <button v-if="!item.notStart" class="sk-btn" :disabled="grabbing !== 0 || item.soldout" @click="grab(item)">
+          <button v-if="!item.notStart" class="sk-btn" :disabled="grabbing !== 0 || item.soldout" @click="openConfirm(item)">
             {{
               item.soldout
                 ? '已抢光'
@@ -218,5 +259,60 @@ const remind = () => ElMessage.success('已开启开抢提醒')
         </div>
       </div>
     </div>
+
+    <!-- 抢购确认：下单前的最后一道确认，避免误购与地址错误 -->
+    <el-dialog
+      v-model="confirmVisible"
+      title="确认抢购"
+      width="520px"
+      @closed="pendingItem = null"
+    >
+      <div v-if="pendingItem" class="sk-confirm">
+        <div class="skc-goods">
+          <div class="skc-img" :class="pendingItem.product.c">商品图</div>
+          <div class="skc-main">
+            <div class="skc-title">{{ pendingItem.product.title }}</div>
+            <div v-if="pendingItem.product.spec" class="skc-spec">{{ pendingItem.product.spec }}</div>
+            <div class="skc-price-row">
+              <span class="skc-price"><small>¥</small>{{ fmtMoney(pendingItem.price) }}</span>
+              <span class="skc-old">¥{{ fmtMoney(pendingItem.oldPrice) }}</span>
+              <span class="skc-tag">限时秒杀</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="skc-row">
+          <span class="skc-label">收货地址</span>
+          <div class="skc-addr">
+            <div class="nm">
+              {{ confirmAddress?.name }}
+              <span class="ph">{{ confirmAddress?.phone }}</span>
+            </div>
+            <div class="dt">{{ confirmAddress?.region }} {{ confirmAddress?.detail }}</div>
+          </div>
+          <span class="skc-edit" @click="goAddress">更换 ›</span>
+        </div>
+
+        <div class="skc-row">
+          <span class="skc-label">购买数量</span>
+          <div class="skc-qty">1 件 <span class="skc-note">秒杀限购 1 件</span></div>
+        </div>
+
+        <div class="skc-row">
+          <span class="skc-label">实付金额</span>
+          <div class="skc-total">¥{{ fmtMoney(pendingItem.price) }} <span class="skc-note">包邮</span></div>
+        </div>
+
+        <div class="skc-tips">
+          <p>确认后将立即锁定库存，请在 <b>15 分钟</b>内完成支付，超时订单将自动取消。</p>
+          <p>当前仅剩 <b>{{ pendingItem.stock }}</b> 件，手慢无。</p>
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button @click="confirmVisible = false">再想想</el-button>
+        <el-button type="danger" class="skc-submit" @click="confirmGrab">确认抢购</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
