@@ -43,6 +43,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seckill-item", type=int, default=2)
     ap.add_argument("--seckill-stock", type=int, default=50)
+    ap.add_argument("--items", default=None,
+                    help="多 SKU 校验（D3）：逗号分隔的活动商品 id，如 101,102,103；"
+                         "给出后 C 段对每个 SKU 各校验一遍，优先于 --seckill-item")
     ap.add_argument("--skip-seckill", action="store_true", help="跳过 C（秒杀防超卖）检查")
     ap.add_argument("--skip-cancel", action="store_true", help="跳过 B（库存回退幂等）检查")
     ap.add_argument("--skip-idempotent", action="store_true", help="跳过 A（下单幂等）检查")
@@ -76,20 +79,25 @@ SELECT o.order_no FROM oms_order o
             check(f"B 取消测试订单 {cancel_order} 状态为已取消(5)", cancel_status, "5", cancel_status == "5")
             check("B 库存回退日志行数（该订单仅 1 个商品）", rollbacks, 1, rollbacks == 1)
 
-    # C. 秒杀不超卖
+    # C. 秒杀不超卖（支持多 SKU：--items 101,102,103 时逐个 SKU 各校验一遍）
     if not args.skip_seckill:
-        item = args.seckill_item
-        stock = int(scalar(f"SELECT stock FROM mkt_seckill_item WHERE id={item};"))
-        sold = int(scalar(f"SELECT sold FROM mkt_seckill_item WHERE id={item};"))
-        total = int(scalar(f"SELECT total FROM mkt_seckill_item WHERE id={item};"))
-        product_id = int(scalar(f"SELECT product_id FROM mkt_seckill_item WHERE id={item};"))
-        seckill_orders = int(scalar(f"""
+        item_ids = ([int(x) for x in args.items.split(",") if x.strip()]
+                    if args.items else [args.seckill_item])
+        for item in item_ids:
+            row = scalar(f"SELECT stock, sold, total, product_id FROM mkt_seckill_item WHERE id={item};")
+            if not row:
+                # 多 SKU 时最常见的原因是场景没准备（prepare_seckill_scenario.py 未跑）
+                check(f"C 活动商品 {item} 存在", "未找到", "1 行", False)
+                continue
+            stock, sold, total, product_id = (int(x) for x in row.split("\t"))
+            tag = f"C[item {item}/product {product_id}]"
+            seckill_orders = int(scalar(f"""
 SELECT COUNT(*) FROM oms_order_item i
   JOIN oms_order o ON o.order_no = i.order_no
   JOIN sys_user u ON u.id = o.user_id
  WHERE i.product_id = {product_id} AND u.phone LIKE '139%';"""))
-        product_sales = int(scalar(f"SELECT sales FROM pms_product WHERE id={product_id};"))
-        one_per_user = int(scalar(f"""
+            product_sales = int(scalar(f"SELECT sales FROM pms_product WHERE id={product_id};"))
+            one_per_user = int(scalar(f"""
 SELECT COUNT(*) FROM (
   SELECT o.user_id FROM oms_order o
     JOIN oms_order_item i ON i.order_no = o.order_no
@@ -97,11 +105,11 @@ SELECT COUNT(*) FROM (
    WHERE i.product_id = {product_id} AND u.phone LIKE '139%'
    GROUP BY o.user_id HAVING COUNT(*) > 1) t;"""))
 
-        check("C 秒杀活动库存扣减到 0", stock, 0, stock == 0)
-        check("C 秒杀 sold == total", f"{sold}/{total}", f"{total}/{total}", sold == total)
-        check("C 秒杀订单数 == 发放库存（不超卖）", seckill_orders, total, seckill_orders == total)
-        check("C 商品销量增量 == 发放库存", product_sales, total, product_sales == total)
-        check("C 一人一单（无用户重复成单）", one_per_user, 0, one_per_user == 0)
+            check(f"{tag} 活动库存扣减到 0", stock, 0, stock == 0)
+            check(f"{tag} sold == total", f"{sold}/{total}", f"{total}/{total}", sold == total)
+            check(f"{tag} 订单数 == 发放库存（不超卖）", seckill_orders, total, seckill_orders == total)
+            check(f"{tag} 商品销量增量 == 发放库存", product_sales, total, product_sales == total)
+            check(f"{tag} 一人一单（无用户重复成单）", one_per_user, 0, one_per_user == 0)
 
     print("-" * 68)
     failed = [r for r in results if not r[1]]

@@ -13,6 +13,14 @@
 #   RATE_LIMIT_ENABLED=false  压测口径默认关闭限流（否则批量登录/读链路会 429）
 #   SECKILL_ASYNC_ENABLED=false  秒杀削峰队列开关：true=用队列异步落库，false=同步落库
 #                                （同一台脚本跑两遍即可做「用/不用削峰」A/B 对比）
+#   CONSUMER_THREADS=4        削峰消费者线程数 —— 做 MQ 对比时**必须显式指定**：
+#                             非MQ 侧是 seckillExecutor 的 64 线程并发落库，若异步侧只给 4 个
+#                             消费线程，比的是「配置」而不是「架构」，即文档里的缺陷 D1。
+#                             扫描建议：4 / 8 / 16 / 32 / 64（对齐同步侧的有效并行度）
+#   SECKILL_PROFILE=single    秒杀场景档位：single=现状（item1=200、item2=50 单热点）；
+#                             multi12=12 个 SKU（item101..112 → product 2..13），破解 D3
+#   SECKILL_STOCK=            覆盖档位自带库存（不传则 single=200/50、multi12=200）
+#   SECKILL_ITEMS=            完全自定义：itemId:productId:stock 逗号分隔（优先于上面两项）
 #   LOG_LEVEL=info            业务日志级别
 #   STORAGE_TYPE=local        文件存储实现（minio / local）
 #   SPRING_PROFILES=          可选，如 dev
@@ -29,6 +37,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$ROOT_DIR/backend"
 PORT="${PORT:-8080}"
 MANAGE_BACKEND="${MANAGE_BACKEND:-1}"
@@ -38,6 +47,10 @@ LOG_LEVEL="${LOG_LEVEL:-info}"
 STORAGE_TYPE="${STORAGE_TYPE:-local}"
 RATE_LIMIT_ENABLED="${RATE_LIMIT_ENABLED:-false}"
 SECKILL_ASYNC_ENABLED="${SECKILL_ASYNC_ENABLED:-false}"
+CONSUMER_THREADS="${CONSUMER_THREADS:-4}"
+SECKILL_PROFILE="${SECKILL_PROFILE:-single}"
+SECKILL_STOCK="${SECKILL_STOCK:-}"
+SECKILL_ITEMS="${SECKILL_ITEMS:-}"
 SPRING_PROFILES="${SPRING_PROFILES:-}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-40}"
 FORCE_KILL_AFTER="${FORCE_KILL_AFTER:-10}"
@@ -94,12 +107,9 @@ stop_backend() {
   pkill -f "$(basename "$JAR")" 2>/dev/null || true
 }
 
-# 秒杀商品基线（与 docs/benchmark/第一次压力测试.md 的说明保持一致）
-ITEM1_STOCK=200      # 压力测试用：mkt_seckill_item.id=1 → pms_product.id=1
-ITEM1_PRODUCT=1
-ITEM2_STOCK=50       # 并发正确性测试用：mkt_seckill_item.id=2 → pms_product.id=6
-ITEM2_PRODUCT=6
-
+# 秒杀库存基线不再硬编码在脚本里，改由 prepare_seckill_scenario.py 按 profile 落库：
+#   single（默认）→ item1=200（压力测试主场景）、item2=50（并发正确性场景）
+#   multi12        → 12 个 SKU 各 SECKILL_STOCK，用于破解「单热点 SKU 掩盖收益」
 mysql_exec() {
   docker exec -i geek-mall-mysql mysql -uroot -proot -N geek_mall -e "$1"
 }
@@ -130,13 +140,15 @@ DELETE r FROM inventory_rollback_log r JOIN oms_order o ON o.order_no = r.order_
 DELETE FROM oms_order WHERE request_id LIKE 'IDEM-%' OR request_id LIKE 'CANCEL-PREP-%';
 " >/dev/null
 
-echo "[2/5] 重置秒杀活动库存与商品库存..."
-mysql_exec "
-UPDATE mkt_seckill_item SET stock=$ITEM1_STOCK, total=$ITEM1_STOCK, sold=0, not_start=0 WHERE id=1;
-UPDATE mkt_seckill_item SET stock=$ITEM2_STOCK, total=$ITEM2_STOCK, sold=0, not_start=0 WHERE id=2;
-UPDATE pms_product SET stock=100000, sales=0 WHERE id=$ITEM1_PRODUCT;
-UPDATE pms_product SET stock=100000, sales=0 WHERE id=$ITEM2_PRODUCT;
-" >/dev/null
+echo "[2/5] 准备秒杀场景数据（profile=$SECKILL_PROFILE${SECKILL_STOCK:+, stock=$SECKILL_STOCK}${SECKILL_ITEMS:+, items=$SECKILL_ITEMS}）..."
+SCENARIO_ARGS=(--profile "$SECKILL_PROFILE")
+if [[ -n "$SECKILL_STOCK" ]]; then
+  SCENARIO_ARGS+=(--stock "$SECKILL_STOCK")
+fi
+if [[ -n "$SECKILL_ITEMS" ]]; then
+  SCENARIO_ARGS+=(--items "$SECKILL_ITEMS")
+fi
+python3 "$SCRIPT_DIR/prepare_seckill_scenario.py" "${SCENARIO_ARGS[@]}"
 
 echo "[3/5] 清理 Redis 状态（秒杀计数 / 一人一单 / 下单幂等键）..."
 docker exec geek-mall-redis sh -c "redis-cli --scan --pattern 'mall:seckill:*' | xargs -r redis-cli del" >/dev/null
@@ -179,6 +191,8 @@ ARGS=(
   "--mybatis-plus.configuration.log-impl=org.apache.ibatis.logging.nologging.NoLoggingImpl"
   "--mall.rate-limit.enabled=$RATE_LIMIT_ENABLED"
   "--mall.seckill.async.enabled=$SECKILL_ASYNC_ENABLED"
+  # 消费线程数显式下发：做 MQ 对比时用来对齐两组的有效并行度（缺陷 D1）
+  "--mall.seckill.async.consumer-threads=$CONSUMER_THREADS"
 )
 if [[ -n "$SPRING_PROFILES" ]]; then
   ARGS+=("--spring.profiles.active=$SPRING_PROFILES")
@@ -186,7 +200,7 @@ fi
 
 STORAGE_TYPE="$STORAGE_TYPE" nohup java -jar "$JAR" "${ARGS[@]}" > "$LOG_FILE" 2>&1 &
 NEW_PID=$!
-echo "      pid=$NEW_PID  端口=$PORT  限流=$RATE_LIMIT_ENABLED  秒杀削峰=$SECKILL_ASYNC_ENABLED  日志：$LOG_FILE"
+echo "      pid=$NEW_PID  端口=$PORT  限流=$RATE_LIMIT_ENABLED  秒杀削峰=$SECKILL_ASYNC_ENABLED  消费线程=$CONSUMER_THREADS  日志：$LOG_FILE"
 
 echo "[5/5] 等待健康检查通过（并确认新进程真的接管了端口）..."
 for i in $(seq 1 "$HEALTH_TIMEOUT"); do

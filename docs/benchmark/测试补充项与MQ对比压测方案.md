@@ -201,6 +201,8 @@ P2-7 超时关单积压、购物车清理竞态完全消除、商家端 34 接�
 
 ### 阶段 0 —— 先对齐口径与配置（**不换机也能先做**）
 
+> ✅ **本节 4 项已全部落地**（含 P0-2/P0-3/P0-4/D3 与 P0-5），落地方式与命令见第十节。
+
 1. `loadtest/k6/seckill.js` 增加**端到端**度量：受理耗时 + 轮询到 SUCCESS 的耗时（P0-3）。
 2. 参数化 `mall.seckill.async.consumer-threads`，跑 **4 / 8 / 16 / 32 / 64** 扫描（P0-2）。
 3. 造数脚本支持**多 SKU + 可配库存**，加入"单热点 / 12 SKU / 分桶"三档（D3）。
@@ -240,3 +242,73 @@ P2-7 超时关单积压、购物车清理竞态完全消除、商家端 34 接�
 4. **但换机是必要条件而非充分条件**：必须**先修 D1（并行度对等）、D2（端到端统一口径）、D3（多 SKU）**，
    否则换机只是换一种噪声，结论依旧不可引用。
 5. **推荐顺序**：对齐口径/配置 → 换机正式对比 → 多实例 + 长稳 → 商家端与 prod 参数。
+
+---
+
+## 十、阶段 0 落地情况（换机前的前置改造，已完成）
+
+> 阶段 0 的目标是消除 D1/D2/D3 —— **不换机也不影响做，但不做则换机白跑**。以下为落地记录。
+
+| 对应缺陷 / 测试项 | 落地方式 | 文件 | 用法 |
+| --- | --- | --- | --- |
+| **D2 / P0-3** 口径不同 | 秒杀脚本改为「点击 → 轮询到终态」统一端到端计时；`order_latency` 现为端到端，新增 `accept_latency`（受理，两组同口径）、`queue_wait_latency`（排队）、`poll_requests`（读放大）、`e2e_success/failed/missing`、`poll_timeout` | `loadtest/k6/seckill.js` | `ASYNC=true k6 run ... seckill.js`（`ASYNC=auto` 时按返回体自动判定） |
+| **D1 / P0-2** 并行度不对等 | 消费线程数可配并随重启下发，便于扫 4/8/16/32/64 对齐同步侧 64 线程 | `loadtest/scripts/reset_env.sh` | `CONSUMER_THREADS=32 SECKILL_ASYNC_ENABLED=true bash reset_env.sh` |
+| **D3** 单热点 SKU | 新增场景准备脚本，`single`（现状 200/50）与 `multi12`（12 SKU × 可配库存）两档，可自定义 `itemId:productId:stock` | `loadtest/scripts/prepare_seckill_scenario.py`（`reset_env.sh` 第 2 步自动调用） | `SECKILL_PROFILE=multi12 SECKILL_STOCK=200 bash reset_env.sh` |
+| **P0-4** 队列积压 / 排空 / 死信 | 新增采集脚本：`XLEN`、`pending`/`lag`/消费者数、结果按 SUCCESS/QUEUED/FAILED 分类（FAILED ≈ 死信）、Redis 内存；支持持续采集出排空曲线 | `loadtest/scripts/queue_metrics.py` | `python3 queue_metrics.py --watch --interval 2 --duration 300 --csv results/queue-drain.csv` |
+| **P0-5** 结果查询接口读放大 | 三个脚本：① 采集器把 Redis 里的 `requestId` + 属主 token 导出成 k6 数据模块；② `live` 模式先抢购再轮询到终态，测**真实放大倍数**与单次 GET 延迟；③ 纯读模式用到达率模型压接口承载上限（`constant-arrival-rate`） | `loadtest/scripts/collect_seckill_results.py`、`loadtest/k6/seckill-result.js`、`loadtest/k6/seckill-result-read.js` | 见下方 P0-5 命令 |
+| 配套：多 SKU 校验 | 一致性校验支持多 SKU 逐个核对（库存归零 / sold==total / 订单数==库存 / 销量增量 / 一人一单） | `loadtest/scripts/verify_results.py --items 101,102,...` | 压测后运行 |
+| 配套：报告渲染 | k6 报告新增「受理 / 排队 / 端到端」三档对比表、端到端终态分布、读放大倍数与结果查询接口专项 | `loadtest/scripts/k6_summary.py` | 无需额外参数 |
+
+**阶段 0 已全部落地，无遗留项。**
+
+### P0-5：结果查询接口（轮询读放大）怎么压
+
+```bash
+# A 机 —— 前提：先跑过一轮削峰模式秒杀压测（否则 Redis 里没有结果可轮询）
+
+# ① live：真实链路，一次抢购 + 按 200ms 间隔轮询到终态，得出「每单放大多少倍」
+#    B 机：
+VUS=100 ITERATIONS=1 k6 run -e BASE_URL=http://<A_IP>:8080 \
+  --summary-export=results/seckill-result-live.json loadtest/k6/seckill-result.js
+#    报告里看 poll_requests / grab_ok = 读放大倍数；result_latency = 单次轮询延迟
+#    ⚠️ sync_mode_detected > 0 说明后端没开削峰，此时没有中间态，压不出轮询路径
+
+# ② replay：纯读压测，标定接口承载上限（必须先采集 requestId）
+#    A 机：
+python3 loadtest/scripts/collect_seckill_results.py            # → k6/data/seckill-results.js
+#    把该文件拷到 B 机后（与 users.js 同样属于 gitignore 产物）：
+RATE=500 DURATION=60s k6 run -e BASE_URL=http://<A_IP>:8080 \
+  --summary-export=results/seckill-result-read.json loadtest/k6/seckill-result-read.js
+```
+
+判读要点：
+
+| 现象 | 含义 |
+| --- | --- |
+| `result_server_error > 0` | 查询接口出 5xx —— 已设为 threshold，k6 会直接判失败 |
+| `result_not_found` 占比高 | 结果 key 已过期（TTL 默认 30m），重新采集即可，**不是接口问题** |
+| `result_rate_limited` 出现 | 打到限流保护线（保护生效），需要区分「接口上限」与「限流阈值」 |
+| `poll_requests` / `grab_ok` 偏高 | 前端轮询策略过于激进，读放大代价大 —— 可用它反推合理的轮询间隔 |
+
+**阶段 1 的两轮命令（换机后）**
+
+```bash
+# A 机（服务端）—— 第一轮：非MQ
+CONSUMER_THREADS=64 SECKILL_ASYNC_ENABLED=false bash loadtest/scripts/reset_env.sh
+# A 机 —— 第二轮：MQ，消费线程与同步侧对齐（或按 4/8/16/32/64 扫描）
+CONSUMER_THREADS=64 SECKILL_ASYNC_ENABLED=true  bash loadtest/scripts/reset_env.sh
+
+# B 机（压测机）—— 两轮用同一条命令，只有 ASYNC 不同
+ASYNC=false k6 run -e BASE_URL=http://<A_IP>:8080 -e ITEM_ID=1 -e VUS=200 -e ITERATIONS=100 \
+  --summary-export=results/seckill-sync.json loadtest/k6/seckill.js
+ASYNC=true  k6 run -e BASE_URL=http://<A_IP>:8080 -e ITEM_ID=1 -e VUS=200 -e ITERATIONS=100 \
+  --summary-export=results/seckill-async.json loadtest/k6/seckill.js
+
+# B 机 —— 多 SKU（D3）：VU 按序号轮流打 12 个 SKU
+k6 run -e BASE_URL=http://<A_IP>:8080 -e ITEM_IDS=101,102,103,104,105,106,107,108,109,110,111,112 \
+  -e VUS=4800 -e ITERATIONS=1 -e ASYNC=true --summary-export=results/seckill-multi12.json loadtest/k6/seckill.js
+
+# A 机 —— 压测后校验 + 队列排空
+python3 loadtest/scripts/verify_results.py --items 101,102,103,104,105,106,107,108,109,110,111,112
+python3 loadtest/scripts/queue_metrics.py --label "MQ 多SKU 排空" --markdown results/queue-multi12.md
+```
