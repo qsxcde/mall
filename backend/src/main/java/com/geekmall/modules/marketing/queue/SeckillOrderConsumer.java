@@ -189,22 +189,23 @@ public class SeckillOrderConsumer implements SmartLifecycle {
         }
 
         try {
+            // bucketNo 必须原样传下去：分桶商品的落库对象是「预扣时选中的那一桶」
             String orderNo = seckillService.grabInTx(message.userId(), message.itemId(),
-                    message.addressId(), requestId);
+                    message.addressId(), requestId, message.bucketNo());
             resultStore.save(SeckillGrabResult.success(requestId, message.userId(), orderNo));
             queue.ack(delivery);
-            log.info("[秒杀削峰] 落库成功：requestId={}, 订单号={}", requestId, orderNo);
+            log.info("[秒杀削峰] 落库成功：requestId={}, 桶={}, 订单号={}", requestId, message.bucketNo(), orderNo);
         } catch (BizException ex) {
             // 业务性失败：重投也不会变好 → 回补预扣 + 写终态 + 丢弃
-            seckillService.releaseReservation(message.itemId(), message.userId());
+            seckillService.releaseReservation(message.itemId(), message.userId(), message.bucketNo());
             resultStore.save(SeckillGrabResult.failed(requestId, message.userId(), ex.getMessage()));
             queue.discard(delivery);
-            log.warn("[秒杀削峰] 落库业务失败，已回补预扣：requestId={}, 原因={}",
-                    requestId, ex.getMessage());
+            log.warn("[秒杀削峰] 落库业务失败，已回补预扣：requestId={}, 桶={}, 原因={}",
+                    requestId, message.bucketNo(), ex.getMessage());
         } catch (Exception ex) {
             // 系统性故障：不确认，留在 pending 等回收重投（用户会继续看到「排队中」）
-            log.error("[秒杀削峰] 落库异常，等待重投：requestId={}, itemId={}",
-                    requestId, message.itemId(), ex);
+            log.error("[秒杀削峰] 落库异常，等待重投：requestId={}, itemId={}, 桶={}",
+                    requestId, message.itemId(), message.bucketNo(), ex);
         }
     }
 
@@ -225,10 +226,10 @@ public class SeckillOrderConsumer implements SmartLifecycle {
 
         // ① 回补预扣：尽力而为，失败仅记录 —— 不能因为回补失败就让消息继续留在 pending 里打转
         try {
-            seckillService.releaseReservation(message.itemId(), message.userId());
+            seckillService.releaseReservation(message.itemId(), message.userId(), message.bucketNo());
         } catch (Exception ex) {
-            log.error("[秒杀削峰] 死信回补预扣失败，需人工核对库存：requestId={}, itemId={}",
-                    requestId, message.itemId(), ex);
+            log.error("[秒杀削峰] 死信回补预扣失败，需人工核对库存：requestId={}, itemId={}, 桶={}",
+                    requestId, message.itemId(), message.bucketNo(), ex);
         }
 
         // ② 写失败终态：用户轮询能拿到明确结论，而不是永远「排队中」

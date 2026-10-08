@@ -33,6 +33,38 @@ class SeckillOrderMessageTest {
     }
 
     @Test
+    @DisplayName("分桶消息：bucketNo 往返一致")
+    void shouldRoundTripBucketNo() {
+        SeckillOrderMessage message = new SeckillOrderMessage("req-abc", 8L, 100L, 200L, "trace-001", 3);
+
+        assertThat(SeckillOrderMessage.fromFields(new HashMap<>(message.toFields())))
+                .isEqualTo(message);
+        assertThat(message.toFields()).containsEntry("bucketNo", "3");
+    }
+
+    @Test
+    @DisplayName("不分桶消息：bucketNo 为 null 且不落字段（否则消费端会去扣一个不存在的桶）")
+    void shouldNotWriteNullBucketNo() {
+        SeckillOrderMessage message = new SeckillOrderMessage("req-abc", 8L, 100L, 200L, "trace-001");
+
+        assertThat(message.bucketNo()).isNull();
+        assertThat(message.toFields()).doesNotContainKey("bucketNo");
+        assertThat(SeckillOrderMessage.fromFields(new HashMap<>(message.toFields())).bucketNo()).isNull();
+    }
+
+    @Test
+    @DisplayName("缺少 bucketNo 的老消息仍可解析")
+    void shouldTolerateMissingBucketNo() {
+        Map<Object, Object> legacy = new HashMap<>();
+        legacy.put("requestId", "req-abc");
+        legacy.put("userId", "8");
+        legacy.put("itemId", "100");
+        legacy.put("addressId", "200");
+
+        assertThat(SeckillOrderMessage.fromFields(legacy).bucketNo()).isNull();
+    }
+
+    @Test
     @DisplayName("缺少 traceId 的老消息仍可解析，且不写入空字段")
     void shouldTolerateMissingTraceId() {
         Map<Object, Object> legacy = new HashMap<>();

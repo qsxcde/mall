@@ -2,6 +2,7 @@ package com.geekmall.modules.marketing.init;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.geekmall.common.constant.RedisKeys;
+import com.geekmall.modules.marketing.bucket.SeckillBucketManager;
 import com.geekmall.modules.marketing.entity.SeckillItem;
 import com.geekmall.modules.marketing.mapper.SeckillItemMapper;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +43,7 @@ public class SeckillStockWarmUp implements ApplicationRunner {
 
     private final SeckillItemMapper seckillItemMapper;
     private final StringRedisTemplate redisTemplate;
+    private final SeckillBucketManager bucketManager;
 
     @Override
     public void run(ApplicationArguments args) {
@@ -50,14 +52,22 @@ public class SeckillStockWarmUp implements ApplicationRunner {
             return;
         }
         int seeded = 0;
+        int bucketed = 0;
         for (SeckillItem item : items) {
+            if (bucketManager.isBucketed(item)) {
+                // 分桶商品：逐桶 setIfAbsent 预热；桶行缺失时会按 item.stock 均分补建
+                bucketManager.warmUp(item);
+                bucketed++;
+                continue;
+            }
             String key = RedisKeys.SECKILL_STOCK + item.getId();
             String stock = String.valueOf(item.getStock() == null ? 0 : item.getStock());
             if (Boolean.TRUE.equals(redisTemplate.opsForValue().setIfAbsent(key, stock))) {
                 seeded++;
             }
         }
-        log.info("秒杀库存预热完成：共 {} 个商品，本次写入 {} 个（已存在的不覆盖，避免滚动发布把进行中的扣减复位）",
-                items.size(), seeded);
+        log.info("秒杀库存预热完成：共 {} 个商品（其中分桶 {} 个），单键本次写入 {} 个"
+                        + "（已存在的不覆盖，避免滚动发布把进行中的扣减复位）",
+                items.size(), bucketed, seeded);
     }
 }

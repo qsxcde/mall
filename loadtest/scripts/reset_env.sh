@@ -21,6 +21,8 @@
 #                             multi12=12 个 SKU（item101..112 → product 2..13），破解 D3
 #   SECKILL_STOCK=            覆盖档位自带库存（不传则 single=200/50、multi12=200）
 #   SECKILL_ITEMS=            完全自定义：itemId:productId:stock 逗号分隔（优先于上面两项）
+#   SECKILL_BUCKETS=1         秒杀库存桶数（P2-5）：1=不分桶（旧链路）；>=2 启用分桶，
+#                             用于验证单热点 SKU 下「落库并行度 1 → N」的收益
 #   LOG_LEVEL=info            业务日志级别
 #   STORAGE_TYPE=local        文件存储实现（minio / local）
 #   SPRING_PROFILES=          可选，如 dev

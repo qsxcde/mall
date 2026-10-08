@@ -6,7 +6,8 @@
 
 A. 下单幂等      —— 同一 requestId 并发 100 次只生成 1 张订单
 B. 库存回退幂等  —— 同一订单并发取消 100 次，库存只回退 1 次
-C. 秒杀不超卖    —— 秒杀活动库存 0 且订单数 == 发放库存（不多不少）
+C. 秒杀不超卖    —— 秒杀活动库存 0 且订单数 == 发放库存（不多不少）；
+                    分桶商品（bucket_count > 1）改用 SUM(mkt_seckill_bucket.*) 断言
 D. 无系统错误    —— 不存在 code=9999 的落库脏数据（订单数/状态一致性）
 
 用法： python3 verify_results.py [--seckill-item 2] [--seckill-stock 50]
@@ -80,16 +81,19 @@ SELECT o.order_no FROM oms_order o
             check("B 库存回退日志行数（该订单仅 1 个商品）", rollbacks, 1, rollbacks == 1)
 
     # C. 秒杀不超卖（支持多 SKU：--items 101,102,103 时逐个 SKU 各校验一遍）
+    #    分桶商品（mkt_seckill_item.bucket_count > 1）的权威口径是 SUM(mkt_seckill_bucket.*)：
+    #    它的 stock/sold 自启用分桶起不再逐单更新（否则又退回单行热点），因此断言必须换口径。
     if not args.skip_seckill:
         item_ids = ([int(x) for x in args.items.split(",") if x.strip()]
                     if args.items else [args.seckill_item])
         for item in item_ids:
-            row = scalar(f"SELECT stock, sold, total, product_id FROM mkt_seckill_item WHERE id={item};")
+            row = scalar(f"SELECT stock, sold, total, product_id, bucket_count "
+                         f"FROM mkt_seckill_item WHERE id={item};")
             if not row:
                 # 多 SKU 时最常见的原因是场景没准备（prepare_seckill_scenario.py 未跑）
                 check(f"C 活动商品 {item} 存在", "未找到", "1 行", False)
                 continue
-            stock, sold, total, product_id = (int(x) for x in row.split("\t"))
+            stock, sold, total, product_id, bucket_count = (int(x) for x in row.split("\t"))
             tag = f"C[item {item}/product {product_id}]"
             seckill_orders = int(scalar(f"""
 SELECT COUNT(*) FROM oms_order_item i
@@ -105,8 +109,18 @@ SELECT COUNT(*) FROM (
    WHERE i.product_id = {product_id} AND u.phone LIKE '139%'
    GROUP BY o.user_id HAVING COUNT(*) > 1) t;"""))
 
-            check(f"{tag} 活动库存扣减到 0", stock, 0, stock == 0)
-            check(f"{tag} sold == total", f"{sold}/{total}", f"{total}/{total}", sold == total)
+            if bucket_count > 1:
+                buckets = int(scalar(f"SELECT COUNT(1) FROM mkt_seckill_bucket WHERE item_id={item};"))
+                initial = int(scalar(f"SELECT COALESCE(SUM(total), 0) FROM mkt_seckill_bucket WHERE item_id={item};"))
+                remaining = int(scalar(f"SELECT COALESCE(SUM(stock), 0) FROM mkt_seckill_bucket WHERE item_id={item};"))
+                check(f"{tag} 桶数 == bucket_count", buckets, bucket_count, buckets == bucket_count)
+                check(f"{tag} SUM(桶初始量) == 发放库存", initial, total, initial == total)
+                check(f"{tag} 桶余量扣减到 0（SUM(桶)）", remaining, 0, remaining == 0)
+                check(f"{tag} 桶口径成交数 == 发放库存", initial - remaining, total, initial - remaining == total)
+            else:
+                check(f"{tag} 活动库存扣减到 0", stock, 0, stock == 0)
+                check(f"{tag} sold == total", f"{sold}/{total}", f"{total}/{total}", sold == total)
+
             check(f"{tag} 订单数 == 发放库存（不超卖）", seckill_orders, total, seckill_orders == total)
             check(f"{tag} 商品销量增量 == 发放库存", product_sales, total, product_sales == total)
             check(f"{tag} 一人一单（无用户重复成单）", one_per_user, 0, one_per_user == 0)
