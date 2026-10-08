@@ -30,7 +30,7 @@
 | 运行时 | JDK 21 |
 | 框架 | Spring Boot 3.3.5 |
 | 安全 | Spring Security 6 + JWT 无状态（Redis 保存会话，支持登出踢下线） |
-| 持久层 | MyBatis-Plus + MySQL 8 + Flyway（9 个版本化迁移，代码与库结构同源） |
+| 持久层 | MyBatis-Plus + MySQL 8 + Flyway（10 个版本化迁移，代码与库结构同源） |
 | 缓存 | Redis 7（分级 TTL + 本地 Caffeine L1） |
 | 分布式 | Redis Stream（秒杀削峰队列）、ShedLock（定时任务互斥） |
 | 可观测性 | Actuator + Micrometer/Prometheus + 结构化 JSON 日志 + TraceId 全链路（跨线程 / 跨队列） |
@@ -108,9 +108,15 @@
 | 依赖 | 版本 | 说明 |
 | --- | --- | --- |
 | JDK | 21 | 后端编译运行 |
-| Maven | 3.9+ | 构建 |
-| Node.js | 18+ | 前端构建 |
-| Docker | 任意较新版本 | 起中间件；**跑集成测试也需要它** |
+| Maven | 3.9+ | 构建；**仓库未提供 `mvnw`，需自行安装 Maven** |
+| Node.js | 20 / 22（18 亦可） | 前端构建；`vite@6` 要求 Node `^18` / `^20` / `>=22`，Node 18 已 EOL，建议 20/22 |
+| Docker | 任意较新版本 | 起中间件；**跑集成测试也需要它**；命令为 Compose V2 的 `docker compose`（非 `docker-compose`） |
+
+> **换一台电脑时，除上面 4 个运行时外无需额外配置**：后端 `dev` 所需的 MySQL / Redis / MinIO 连接信息全部有默认值（见 `application-dev.yml`），`infra/.env` 是可选的（`docker-compose.yml` 均使用默认值兜底）。
+>
+> **首次启动需要联网**：`mvn` 拉取依赖、`npm install` 安装 `node_modules`（未入库）、Docker 拉取 `mysql:8.0` / `redis:7-alpine` / `minio` 镜像。
+>
+> **启动前确认端口空闲**：`8080`（后端）、`3306`（MySQL）、`6379`（Redis）、`9000` / `9001`（MinIO）、`5173` / `5174`（前端）。新机器若已装本地 MySQL 或 Redis，会与容器抢占 `3306` / `6379`。
 
 ### 2.2 启动基础设施
 
@@ -125,7 +131,7 @@ docker compose -f infra/docker-compose.yml --profile observability up -d
 docker compose -f infra/docker-compose.yml ps
 ```
 
-**表结构与演示数据不在这里初始化**，而是由后端启动时的 Flyway 自动执行（`V1__init.sql` ~ `V9__merchant_consistency.sql`），保证代码与库结构始终同源。
+**表结构与演示数据不在这里初始化**，而是由后端启动时的 Flyway 自动执行（`V1__init.sql` ~ `V10__digital_product_release_seed.sql`），保证代码与库结构始终同源。
 
 > 若 MinIO 镜像因网络问题拉取失败：**不影响后端启动**，只是图片上传会提示失败。可让后端改用本地磁盘存储：`--mall.storage.type=local`，文件落在 `backend/uploads/`。
 
@@ -207,6 +213,8 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
 | 接口返回 401 | 登录态失效或令牌过期；前端拦截器会自动跳登录页 |
 | 接口返回 429 | 触发了限流（防刷接口为 `FAIL_CLOSED`）；规则见 `docs/接口限流策略说明.md` |
 | 提示连接不上 MySQL/Redis | 中间件未启动：`docker compose -f infra/docker-compose.yml up -d` |
+| 宿主机 3306 / 6379 端口被占用 | 本机已装 MySQL / Redis 与容器冲突：停掉本地服务，或改 `.env` 里的 `MYSQL_PORT` / `REDIS_PORT` 并同步后端环境变量 |
+| 前端 `npm run dev` 报 Node 版本不支持 | `vite@6` 要求 Node `^18` / `^20` / `>=22`，升级到 Node 20/22 |
 | `mvn test` 失败且报容器相关错误 | Docker 未运行，或 Testcontainers 版本过低（项目已固定为 1.21.4） |
 | 图片上传失败 | MinIO 未就绪；改用 `--mall.storage.type=local` |
 | 压测大面积失败 | 大概率是压测账号 token 过期（见 2.7 提示） |

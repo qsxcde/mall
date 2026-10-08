@@ -96,7 +96,7 @@ backend/
             ├── V1__init.sql         # 建表脚本（21 张表）
             ├── V2__seed.sql         # 演示数据
             ├── V3__payment.sql      # 支付单表
-            └── …                    # 共 9 个版本化迁移（V1 ~ V9__merchant_consistency.sql）
+            └── …                    # 共 10 个版本化迁移（V1 ~ V10__digital_product_release_seed.sql）
 ```
 
 每个业务域内部统一分层：`controller → service(+impl) → mapper`，配合 `entity / dto / vo / converter`。
