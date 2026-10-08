@@ -8,8 +8,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.SmartLifecycle;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
+import java.net.InetAddress;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -56,6 +58,11 @@ public class SeckillOrderConsumer implements SmartLifecycle {
     private final SeckillResultStore resultStore;
     private final SeckillServiceImpl seckillService;
     private final SeckillProperties properties;
+    /** 用于取 {@code server.port} 参与消费者命名（同机多实例必须可区分）。 */
+    private final Environment environment;
+
+    /** 消费者基准名，首次使用时解析并缓存（主机名解析有开销，且结果不变）。 */
+    private volatile String consumerBase;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicInteger threadCounter = new AtomicInteger();
@@ -175,6 +182,12 @@ public class SeckillOrderConsumer implements SmartLifecycle {
             return;
         }
 
+        // 已达最大投递次数仍未成功 → 转死信，不再无限重投
+        if (delivery.deliveries() > properties.getAsync().getMaxDeliveries()) {
+            deadLetter(delivery, message);
+            return;
+        }
+
         try {
             String orderNo = seckillService.grabInTx(message.userId(), message.itemId(),
                     message.addressId(), requestId);
@@ -195,13 +208,73 @@ public class SeckillOrderConsumer implements SmartLifecycle {
         }
     }
 
+    /**
+     * 死信处理：消息重投已达上限仍未成功，终止重试。
+     *
+     * <p><b>为什么必须有这一步</b>：只靠 {@code reclaimStale} 回收重投，遇到持续性的系统故障
+     * （DB 长时间不可用、消息触发的确定性异常）会变成<b>无限重投</b> ——
+     * 那条消息永久占用 pending、每轮都白跑一次，用户也永远停在「排队中」，给不出确定结果。</p>
+     *
+     * <p>处理三件事：① 回补抢购预扣（消息不再重投，不回补就是永久少卖）；
+     * ② 写 FAILED 终态（让用户拿到明确结果）；③ ack 丢弃（从 pending 摘除）。</p>
+     */
+    private void deadLetter(SeckillOrderQueue.Delivery delivery, SeckillOrderMessage message) {
+        String requestId = message.requestId();
+        log.error("[秒杀削峰] 消息重投 {} 次仍未成功，转入死信并终止重试：requestId={}, itemId={}, userId={}",
+                delivery.deliveries(), requestId, message.itemId(), message.userId());
+
+        // ① 回补预扣：尽力而为，失败仅记录 —— 不能因为回补失败就让消息继续留在 pending 里打转
+        try {
+            seckillService.releaseReservation(message.itemId(), message.userId());
+        } catch (Exception ex) {
+            log.error("[秒杀削峰] 死信回补预扣失败，需人工核对库存：requestId={}, itemId={}",
+                    requestId, message.itemId(), ex);
+        }
+
+        // ② 写失败终态：用户轮询能拿到明确结论，而不是永远「排队中」
+        resultStore.save(SeckillGrabResult.failed(requestId, message.userId(), "系统繁忙，抢购未完成，请重试"));
+
+        // ③ 丢弃消息，从 pending 摘除
+        queue.discard(delivery);
+    }
+
     private String consumerName() {
+        if (consumerBase == null) {
+            consumerBase = resolveConsumerName();
+        }
+        return consumerBase;
+    }
+
+    /**
+     * 解析消费者基准名（各消费线程再追加序号，见 {@link #start()}）。
+     *
+     * <p><b>多实例必须唯一</b>：消费者名是 Redis Stream pending 的归属标识，撞名会让
+     * 「谁还没确认」产生歧义，{@code reclaimStale} 可能把消息从正常消费的实例上抢走。</p>
+     *
+     * <p>用「主机名 + 端口」而不再是基于 {@code identityHashCode} 的随机串，原因：</p>
+     * <ul>
+     *   <li><b>主机名</b>区分机器（容器 / k8s 下即 Pod 名），跨机器天然唯一；</li>
+     *   <li><b>端口</b>区分同一台机器上的多实例（本地验证多实例就是靠端口区分）；</li>
+     *   <li>两者都在重启后<b>保持不变</b>，不会每次重启都往消费者组里注册一个「僵尸消费者」。</li>
+     * </ul>
+     */
+    private String resolveConsumerName() {
         String configured = properties.getAsync().getConsumerName();
         if (configured != null && !configured.isBlank()) {
             return configured;
         }
-        // 多实例部署时应显式配置，否则不同实例可能撞名（撞名会让 pending 归属混淆）
-        return "seckill-" + Integer.toHexString(System.identityHashCode(this));
+        String port = environment.getProperty("server.port", "0");
+        return "seckill-" + hostName() + "-" + port;
+    }
+
+    private String hostName() {
+        try {
+            return InetAddress.getLocalHost().getHostName();
+        } catch (Exception ex) {
+            // 取不到主机名时退化为进程号，仍能保证同机多实例之间不撞名
+            log.warn("获取主机名失败，消费者名改用进程号：{}", ex.getMessage());
+            return "pid" + ProcessHandle.current().pid();
+        }
     }
 
     private void sleepQuietly() {

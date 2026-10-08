@@ -65,9 +65,15 @@ backend/
     │   │   ├── enums/               # OrderStatus（订单状态机）
     │   │   ├── constant/            # RedisKeys / SecurityConstants
     │   │   ├── filter/              # TraceIdFilter
+    │   │   ├── cache/               # 缓存三防（布隆 / 互斥重建 / TTL 抖动 / L1）
+    │   │   ├── ratelimit/           # 集中式限流（策略表 / 拦截器 / 本地 + 分布式）
+    │   │   ├── resilience/          # 熔断降级（CircuitBreaker / ResilienceGuard）
+    │   │   ├── cluster/             # 多实例容量（实例数切分 / 连接池校验）
+    │   │   ├── event/               # 事务事件（下单 / 状态变更解耦）
+    │   │   ├── log/                 # 慢 SQL 拦截器 / 重复日志节流
     │   │   └── util/                # JwtUtil
-    │   ├── config/                  # Security / MyBatis-Plus / CORS / Redis / OpenAPI
-    │   ├── security/                # JWT 过滤器、登录用户上下文、401/403 处理
+    │   ├── config/                  # Security / MyBatis-Plus / Redis / ShedLock / MinIO / 会话广播 / OpenAPI
+    │   ├── security/                # 双端 JWT 过滤器、登录用户上下文、会话本地缓存与失效广播、401/403
     │   └── modules/                 # 按业务域分包
     │       ├── auth/                # ✅ 已实现：注册 / 登录 / 验证码 / 找回密码
     │       ├── user/                # ✅ 已实现：资料 / 地址 / 签到 / 演示账号初始化
@@ -79,16 +85,18 @@ backend/
     │       ├── review/              # ✅ 已实现：发表评价 / 我的评价 / 商品评价
     │       ├── aftersale/           # ✅ 已实现：申请售后 / 列表 / 详情 / 取消
     │       ├── message/             # ✅ 已实现：消息中心 + 订单状态变更自动投递（事务事件解耦）
-    │       └── content/             # ✅ 已实现：FAQ / 政策 / 关于我们 / 图片上传（MinIO 或本地磁盘）
+    │       ├── content/             # ✅ 已实现：FAQ / 政策 / 关于我们 / 图片上传（MinIO 或本地磁盘）
+    │       └── merchant/            # ✅ 已实现：商家认证 / 工作台 / 商品 / 订单 / 发货 / 售后 / 财务 / 营销 / 评价
     └── resources/
         ├── application.yml          # 公共配置
         ├── application-dev.yml      # 本地环境
         ├── application-prod.yml     # 生产环境
         ├── logback-spring.xml       # 日志：控制台文本 + JSON 文件（含 traceId，见 docs/日志规范.md）
         └── db/migration/
-            ├── V1__init.sql         # 建表脚本（20 张表）
+            ├── V1__init.sql         # 建表脚本（21 张表）
             ├── V2__seed.sql         # 演示数据
-            └── V3__payment.sql      # 支付单表
+            ├── V3__payment.sql      # 支付单表
+            └── …                    # 共 9 个版本化迁移（V1 ~ V9__merchant_consistency.sql）
 ```
 
 每个业务域内部统一分层：`controller → service(+impl) → mapper`，配合 `entity / dto / vo / converter`。
@@ -181,6 +189,11 @@ backend/
 | `mall.init-demo-user` | 是否初始化演示账号 | dev=true |
 | `mall.sms.expose-code` | 是否回显验证码 | dev=true，生产必须 false |
 | `mall.mock.enabled` | 是否注册模拟发货等联调接口 | dev=true，生产必须 false |
+| `MYSQL_POOL_SIZE` | Hikari 单实例最大连接数 | dev 50 / prod 100 |
+| `mall.cluster.instance-count` | 本服务实例数（LOCAL 限流按此切分、启动做连接池容量校验） | 1 |
+| `mall.cluster.mysql-max-connections` | 与 MySQL `max_connections` 对齐，供启动容量校验 | 300 |
+| `mall.seckill.async.enabled` | 秒杀削峰（Redis Stream）开关 | false |
+| `mall.seckill.async.max-deliveries` | 削峰消息最大投递次数，超限转死信 | 3 |
 | `mall.storage.type` | 文件存储实现：`minio` 对象存储 / `local` 本地磁盘 | minio |
 | `mall.storage.local-dir` | local 模式的落盘目录 | ./uploads |
 | `MINIO_ENDPOINT/ACCESS_KEY/SECRET_KEY/BUCKET` | 对象存储连接信息 | localhost:9000 |
@@ -200,11 +213,11 @@ backend/
 2. **P1 营销与评价** ✅ 已完成：领券中心、秒杀（Redis Lua 预扣 + 一人一单 + 失败补偿）、积分商城、评价
 3. **P2 售后与内容** ✅ 已完成：售后申请/详情/取消、消息中心（订单状态变更自动投递）、CMS 接口、图片上传
 4. **P3 后台与增强**：
-   - **商家后台**：发货、售后审核/驳回、订单列表管理（需引入 ROLE_ADMIN 与后台模块）
+   - **商家后台** ✅ 已完成：`/api/v1/merchant/**` 覆盖认证、工作台、商品、订单、发货、售后、财务、营销、评价（9 个 Controller），独立 `ROLE_MERCHANT` 过滤器链
    - **运营后台**：商品/分类/优惠券/秒杀场次的增删改，FAQ 与政策维护
    - 三方登录（微信/QQ/支付宝）、在线客服/工单
    - 短信与 App 推送通道、消息模板化
-   - 商品评分回写（评价后更新 `pms_product.rating`）、秒杀抢购结果轮询接口
+   - 商品评分回写（评价后更新 `pms_product.rating`）
    - 真实物流轨迹接入；订单超时改用延迟队列替代轮询扫描
 
 详细设计与取舍（秒杀是否需要 MQ、可观测性分档、中间件全景）见 `docs/后端脚手架搭建方案.md`。
@@ -222,4 +235,4 @@ server: {
 }
 ```
 
-随后把前端 `src/data/shop.js` 的静态导入替换为 `src/api/` 下的 axios 调用即可。
+前端已通过 `src/api/` 直连本后端（axios 统一封装，`/api` 由 Vite 代理到 8080），无需再做静态数据替换。

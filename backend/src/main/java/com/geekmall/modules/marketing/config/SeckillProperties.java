@@ -40,6 +40,15 @@ public class SeckillProperties {
         /** 单次拉取条数。 */
         private int batchSize = 16;
 
+        /**
+         * 单条消息允许的最大投递次数。
+         *
+         * <p>超过后转入<b>死信</b>：回补预扣 + 写失败终态 + 丢弃，不再无限重投。
+         * 否则系统性故障（如 DB 持续不可用）会让那条消息永久占用 pending，
+         * 用户也永远停在「排队中」——既占资源，又给不出确定结果。</p>
+         */
+        private int maxDeliveries = 3;
+
         /** 无消息时的阻塞等待时长。 */
         private Duration block = Duration.ofSeconds(2);
 

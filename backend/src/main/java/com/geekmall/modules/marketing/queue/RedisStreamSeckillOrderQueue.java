@@ -79,8 +79,9 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
         List<Delivery> deliveries = new ArrayList<>(records.size());
         for (MapRecord<String, Object, Object> record : records) {
             try {
+                // 首次投递：次数记 1
                 deliveries.add(new Delivery(record.getId().getValue(),
-                        SeckillOrderMessage.fromFields(record.getValue())));
+                        SeckillOrderMessage.fromFields(record.getValue()), 1L));
             } catch (Exception ex) {
                 // 毒消息（字段损坏）：直接丢弃并记录，否则它会被反复重投、永远处理不完
                 log.error("秒杀消息解析失败，已丢弃：id={}, fields={}", record.getId(), record.getValue(), ex);
@@ -110,13 +111,18 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
         if (pending == null || pending.isEmpty()) {
             return List.of();
         }
-        List<RecordId> stale = pending.stream()
-                .filter(item -> item.getElapsedTimeSinceLastDelivery().compareTo(minIdle) >= 0)
-                .map(PendingMessage::getId)
-                .toList();
-        if (stale.isEmpty()) {
+        // 先记下每条待回收消息「本次 claim 之前」的投递次数；XCLAIM 之后实际次数为 +1。
+        // 消费端要靠这个数字判断是否已达上限（转死信），否则故障消息会被无限重投。
+        Map<String, Long> deliveredBefore = new LinkedHashMap<>();
+        for (PendingMessage item : pending) {
+            if (item.getElapsedTimeSinceLastDelivery().compareTo(minIdle) >= 0) {
+                deliveredBefore.put(item.getId().getValue(), item.getTotalDeliveryCount());
+            }
+        }
+        if (deliveredBefore.isEmpty()) {
             return List.of();
         }
+        List<RecordId> stale = deliveredBefore.keySet().stream().map(RecordId::of).toList();
         List<MapRecord<String, Object, Object>> claimed = redisTemplate.opsForStream()
                 .claim(RedisKeys.SECKILL_ORDER_STREAM, GROUP, consumer, minIdle,
                         stale.toArray(new RecordId[0]));
@@ -131,9 +137,10 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
                 redisTemplate.opsForStream().acknowledge(RedisKeys.SECKILL_ORDER_STREAM, GROUP, record.getId());
                 continue;
             }
+            long attempts = deliveredBefore.getOrDefault(record.getId().getValue(), 0L) + 1;
             try {
                 deliveries.add(new Delivery(record.getId().getValue(),
-                        SeckillOrderMessage.fromFields(record.getValue())));
+                        SeckillOrderMessage.fromFields(record.getValue()), attempts));
             } catch (Exception ex) {
                 log.error("回收消息解析失败，已丢弃：id={}", record.getId(), ex);
                 redisTemplate.opsForStream().acknowledge(RedisKeys.SECKILL_ORDER_STREAM, GROUP, record.getId());

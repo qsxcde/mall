@@ -6,9 +6,11 @@ spring:
     password: ${MYSQL_PASSWORD}
     hikari:
       pool-name: GeekMallHikariCP
-      minimum-idle: 20
-      # P0-1：连接池按数据库可承受并发写反推，配合快速失败
-      maximum-pool-size: 100
+      minimum-idle: ${MYSQL_POOL_MIN_IDLE:20}
+      # P0-1：连接池按数据库可承受并发写反推，配合快速失败。
+      # 多实例部署必须满足「实例数 × 本值 ≤ MySQL max_connections」，
+      # 启动时由 mall.cluster 的容量校验打印结论（超限会 WARN）。
+      maximum-pool-size: ${MYSQL_POOL_SIZE:100}
       # 3s 快速失败：宁可返回繁忙，也不要挂起 30s 拖垮线程池
       connection-timeout: 3000
       idle-timeout: 600000

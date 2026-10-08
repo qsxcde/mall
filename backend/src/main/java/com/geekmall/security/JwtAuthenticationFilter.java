@@ -3,8 +3,6 @@ package com.geekmall.security;
 import com.geekmall.common.constant.RedisKeys;
 import com.geekmall.common.constant.SecurityConstants;
 import com.geekmall.common.util.JwtUtil;
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -23,7 +21,6 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
 
@@ -42,22 +39,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final StringRedisTemplate redisTemplate;
 
     /**
-     * 登录令牌本地短缓存（P1-2）。
+     * 登录令牌本地短缓存（P1-2 / P1-6）。
      *
-     * <p>此前每个带令牌的请求都要同步访问一次 Redis；这里加 30s 本地缓存，
-     * 命中后完全不走网络，把鉴权路径的 Redis QPS 降一个数量级。
-     * 代价是登出/踢下线最多延迟 30s 生效，属于可接受的权衡。</p>
-     *
-     * <p><b>缓存键必须是令牌本身，不能是 userId。</b>按 userId 缓存时会有一个致命缺陷：
-     * 同一用户在 30s 内重新登录，Redis 已被写入新令牌，但本地缓存仍持有旧令牌且命中后
-     * <b>不会回源 Redis</b>，于是刚签发的新令牌被判为失效 —— 表现为「登录成功却满屏 401」，
-     * 前端 401 处理会清令牌跳登录页，形成最长 30s 的登录死循环。
-     * 以令牌为键后，新令牌天然是缓存未命中，会回源校验，行为正确。</p>
+     * <p>此前每个带令牌的请求都要同步访问一次 Redis；本地缓存命中后完全不走网络，
+     * 把鉴权路径的 Redis QPS 降一个数量级。键与失效语义封装在
+     * {@link LoginTokenLocalCache}：以<b>令牌</b>为键（避免「同一用户 30s 内重登导致新令牌
+     * 被判失效」的 401 死循环），同时支持按 userId 失效，供登出 / 顶下线 / 改密
+     * 通过 Redis Pub/Sub 广播后<b>跨实例立即生效</b>。</p>
      */
-    private final Cache<String, LoginUser> tokenCache = Caffeine.newBuilder()
-            .maximumSize(100_000)
-            .expireAfterWrite(Duration.ofSeconds(30))
-            .build();
+    private final LoginTokenLocalCache tokenCache;
 
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
