@@ -1,0 +1,23 @@
+# Grafana 数据源自动装载（provisioning）。
+# 固定 uid，供 dashboards/*.json 引用 —— 否则看板导入后会因 uid 不匹配而显示「Datasource not found」。
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s
+
+  # 日志侧：Promtail 已把 backend/logs 的 JSON 日志采集进 Loki（见 infra/promtail/promtail-config.yml）。
+  # 在 Explore 里按 traceId / userId 过滤即可串起同一条链路（字段语义见 docs/spec/日志规范.md）。
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false

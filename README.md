@@ -256,12 +256,20 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
 
 多规格 SKU（当前是单商品模式）、Elasticsearch 搜索与联想（当前是数据库 LIKE）、服务筛选。这是业务完整度上最明显的空白。
 
-**④ 可观测性从「有配置」走到「有看板」**
+**④ 可观测性从「有配置」走到「有看板」** —— ✅ 已完成
 
-`infra/` 里已经编排好 Prometheus + Grafana + Loki + Promtail，但只有配置、没有看板与告警。缓存命中率、限流触发次数、消费队列滞后、熔断状态这些指标已在代码里埋好（Micrometer），把它们画出来才能在日常就发现问题，而不是等压测。
+`infra/` 里编排了 Prometheus + Grafana + Loki + Promtail，现已接上**看板与告警**：
+
+- Grafana 通过 provisioning 自动装载数据源（Prometheus + Loki）与看板 `Geek Mall · 总览`
+  （14 个面板：QPS、延迟分位、限流拒绝、缓存命中/回源、熔断状态、秒杀队列积压、HikariCP、慢 SQL/死信、JVM、正在触发的告警）；
+- Prometheus 加载 `infra/prometheus/rules/mall-alerts.yml`（**7 条 / 5 组**：秒杀队列积压、有积压但无消费者、
+  死信、熔断打开、缓存回源激增、限流拒绝激增、慢 SQL）；规则已求值并暴露 `ALERTS`，接 Alertmanager 即可发通知；
+- 补齐缺失指标：限流拒绝（`mall_rate_limit_rejected_total`）、秒杀队列积压（`mall_seckill_queue_*`）、
+  死信（`mall_seckill_dead_letter_total`）；并新增自定义 `SeckillQueueHealthIndicator` 并入 `/actuator/health`。
 
 > **进展**：日志侧已先行落地——结构化 JSON、traceId 跨线程/跨队列贯通、慢 SQL 阈值化、重复异常收敛、敏感信息脱敏，
-> 并有自动化断言守住（见 `docs/spec/日志规范.md`）。看板、告警与限流/秒杀队列指标仍未落地，详见 `docs/spec/可观测性现状分析与改进方案.md`。
+> 并有自动化断言守住（见 `docs/spec/日志规范.md`）。看板、告警与限流/秒杀队列指标亦已落地；
+> 仍未做的是 Alertmanager 通知渠道与业务漏斗指标，详见 `docs/spec/可观测性现状分析与改进方案.md`。
 
 ### 3.3 更远的想法
 

@@ -52,17 +52,19 @@ docker compose -f infra/docker-compose.yml down -v
 
 - 数据库由 MySQL 容器自动创建（`MYSQL_DATABASE=geek_mall`）。
 - **表结构与演示数据不在这里初始化**，而是由后端启动时的 Flyway 自动执行
-  `backend/src/main/resources/db/migration/` 下的 10 个版本化迁移（`V1__init.sql` … `V10__digital_product_release_seed.sql`）。
+  `backend/src/main/resources/db/migration/` 下的 12 个版本化迁移（`V1__init.sql` … `V12__seckill_stock_bucketing.sql`）。
 - 这样保证「代码与库结构」始终同源，避免手工导入 SQL 造成漂移。
 
 ## 可观测性使用
 
 1. 先启动后端（`mvn spring-boot:run`），确保 `backend/logs/geek-mall.json.log` 已生成（一行一条 JSON）。
 2. 启动 observability profile，等待 Prometheus 抓取到 `geek-mall-server` 目标（State = UP）。
-3. **Grafana 接入数据源**：
-   - Prometheus：`http://prometheus:9090`
-   - Loki：`http://loki:3100`
-4. 常用查询：
+3. **Grafana 无需手工配置**：数据源与看板都已由 provisioning 自动装载
+   （`grafana/provisioning/`、`grafana/dashboards/mall-overview.json`）。
+   打开 http://localhost:3000 （`admin/admin`）→ Dashboards → **Geek Mall · 总览**（14 面板）。
+4. **告警规则**：`prometheus/rules/mall-alerts.yml`（7 条）在 Prometheus 内求值，
+   见 http://localhost:9090/alerts ；要发通知需另接 Alertmanager（本项目未编排）。
+5. 常用查询：
    - 接口 QPS：`rate(http_server_requests_seconds_count{application="geek-mall-server"}[1m])`
    - P99 延迟：`histogram_quantile(0.99, sum(rate(http_server_requests_seconds_bucket[5m])) by (le))`
    - JVM 堆使用：`jvm_memory_used_bytes{area="heap"}`

@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
  * 而这恰恰是业务级熔断最核心的价值。</p>
  *
  * <ul>
- *   <li>{@code mall_circuit_state}：0=CLOSED / 1=HALF_OPEN / 2=OPEN（Gauge）</li>
+ *   <li>{@code mall_circuit_state}：0=CLOSED / 1=OPEN / 2=HALF_OPEN（Gauge）</li>
  *   <li>{@code mall_circuit_opened_total}：熔断器打开次数</li>
  *   <li>{@code mall_circuit_rejected_total}：被熔断/并发上限直接挡掉的请求数</li>
  *   <li>{@code mall_resilience_failure_total}：主路径失败次数</li>
@@ -27,11 +27,21 @@ public class ResilienceMetrics {
 
     private final MeterRegistry meterRegistry;
 
-    /** 注册熔断状态 Gauge；每个资源只应调用一次（由 Guard 在创建熔断器时触发）。 */
+    /**
+     * 注册熔断状态 Gauge；每个资源只应调用一次（由 Guard 在创建熔断器时触发）。
+     *
+     * <p>状态码<b>显式映射</b>而不是取 {@code State#ordinal()}：枚举顺序是
+     * {@code CLOSED, OPEN, HALF_OPEN}，直接取序号得到的是「0=CLOSED, 1=OPEN, 2=HALF_OPEN」，
+     * 一旦有人调整枚举顺序，所有依赖该数值的告警表达式会静默失效。显式映射把它钉死。</p>
+     */
     void registerStateGauge(String resource, CircuitBreaker breaker) {
-        Gauge.builder("mall_circuit_state", breaker, b -> b.snapshot().state().ordinal())
+        Gauge.builder("mall_circuit_state", breaker, b -> switch (b.snapshot().state()) {
+                    case CLOSED -> 0d;
+                    case OPEN -> 1d;
+                    case HALF_OPEN -> 2d;
+                })
                 .tag("resource", resource)
-                .description("熔断器状态：0=CLOSED, 1=HALF_OPEN, 2=OPEN")
+                .description("熔断器状态：0=CLOSED, 1=OPEN, 2=HALF_OPEN")
                 .strongReference(true)
                 .register(meterRegistry);
     }
