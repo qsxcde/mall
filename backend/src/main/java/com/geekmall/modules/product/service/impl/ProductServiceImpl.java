@@ -191,16 +191,17 @@ public class ProductServiceImpl implements ProductService {
      * <p>{@code sync = true}：与 {@code categoryTree} 同理，多实例下把并发未命中收敛到
      * {@code ResilientRedisCache} 的跨实例互斥重建。</p>
      *
-     * <p><b>已知边界（未在本次修改范围内）</b>：下面的 {@code categoryTree()} 属于<b>自调用</b>，
-     * 不经过 Spring 缓存代理，因此本方法内部这一支拿不到 {@code CATEGORY_TREE} 缓存 ——
-     * 每当本方法缓存失效（5 分钟一次）都会直接查库取分类。若要复用缓存，
-     * 需改为 {@code selfProvider.getObject().categoryTree()}（同类中 {@code detail} 已是这个写法）。</p>
+     * <p><b>自调用陷阱</b>：下面取分类树必须走 {@code selfProvider.getObject().categoryTree()}。
+     * 直接写 {@code categoryTree()} 是<b>同类内自调用</b>，不经过 Spring 缓存代理，
+     * {@code CATEGORY_TREE} 缓存会完全失效 —— 每当本方法缓存过期（5 分钟一次）都会直接查库取分类。
+     * （本次由多实例验证发现，见 {@code docs/benchmark/多实例部署验证-2026-10-08.md} §三.2。）</p>
      */
     @Override
     @Cacheable(cacheNames = CacheNames.HOME_FLOORS, sync = true)
     public HomeFloorVO homeFloors() {
         HomeFloorVO vo = new HomeFloorVO();
-        vo.setCategories(categoryTree());
+        // 必须经代理调用，否则 @Cacheable(CATEGORY_TREE) 不生效（同类自调用绕过缓存切面）
+        vo.setCategories(selfProvider.getObject().categoryTree());
         vo.setHotProducts(productMapper.selectList(new LambdaQueryWrapper<Product>()
                         .eq(Product::getStatus, ON_SHELF)
                         .orderByDesc(Product::getSales)
