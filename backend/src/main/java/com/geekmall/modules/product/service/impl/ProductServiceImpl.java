@@ -51,8 +51,16 @@ public class ProductServiceImpl implements ProductService {
     /** 自引用代理：detail 需要走带缓存的内部方法，自调用不会经过 Spring 缓存切面。 */
     private final ObjectProvider<ProductServiceImpl> selfProvider;
 
+    /**
+     * 分类树（全站导航用）。
+     *
+     * <p>{@code sync = true} 让并发未命中走 {@code Cache#get(key, Callable)}，
+     * 即 {@link com.geekmall.common.cache.ResilientRedisCache} 的<b>跨实例互斥重建</b>路径。
+     * 不加则只有进程内锁：多实例下同一瞬间会有 N 个实例各自回源一次
+     * （见 {@code docs/benchmark/多实例部署验证-2026-10-08.md} §三.1）。</p>
+     */
     @Override
-    @Cacheable(cacheNames = CacheNames.CATEGORY_TREE)
+    @Cacheable(cacheNames = CacheNames.CATEGORY_TREE, sync = true)
     public List<CategoryVO> categoryTree() {
         List<Category> all = categoryMapper.selectList(new LambdaQueryWrapper<Category>()
                 .orderByAsc(Category::getSort)
@@ -149,9 +157,12 @@ public class ProductServiceImpl implements ProductService {
      * <p>嵌套位置不受影响：属性的声明类型是 {@code List}（非 final），写的时候会带上类型 id，
      * 读回来自然正常。所以只有「根节点是集合」的 {@code @Cacheable} 方法需要显式返回可变集合，
      * 本类的 {@code categoryTree} 一直返回 {@code new ArrayList<>()} 就是这个原因。</p>
+     *
+     * <p>{@code sync = true}：与 {@code categoryTree} 同理，把并发未命中收敛到
+     * {@code ResilientRedisCache} 的跨实例互斥重建，避免多实例同时回源。</p>
      */
     @Override
-    @Cacheable(cacheNames = CacheNames.PRODUCT_RECOMMEND, key = "#id + ':' + #limit")
+    @Cacheable(cacheNames = CacheNames.PRODUCT_RECOMMEND, key = "#id + ':' + #limit", sync = true)
     public List<ProductCardVO> recommend(Long id, int limit) {
         // 不存在的商品返回空列表（会被缓存），同样先过布隆过滤器避免无效 id 打库
         if (id == null || !productBloomFilter.mightContain(String.valueOf(id))) {
@@ -174,8 +185,19 @@ public class ProductServiceImpl implements ProductService {
         return result;
     }
 
+    /**
+     * 首页楼层（分类 + 热销 + 新品）。
+     *
+     * <p>{@code sync = true}：与 {@code categoryTree} 同理，多实例下把并发未命中收敛到
+     * {@code ResilientRedisCache} 的跨实例互斥重建。</p>
+     *
+     * <p><b>已知边界（未在本次修改范围内）</b>：下面的 {@code categoryTree()} 属于<b>自调用</b>，
+     * 不经过 Spring 缓存代理，因此本方法内部这一支拿不到 {@code CATEGORY_TREE} 缓存 ——
+     * 每当本方法缓存失效（5 分钟一次）都会直接查库取分类。若要复用缓存，
+     * 需改为 {@code selfProvider.getObject().categoryTree()}（同类中 {@code detail} 已是这个写法）。</p>
+     */
     @Override
-    @Cacheable(cacheNames = CacheNames.HOME_FLOORS)
+    @Cacheable(cacheNames = CacheNames.HOME_FLOORS, sync = true)
     public HomeFloorVO homeFloors() {
         HomeFloorVO vo = new HomeFloorVO();
         vo.setCategories(categoryTree());

@@ -141,19 +141,38 @@ def v2_order_no(item_id, n):
 
 
 # ---------------------------------------------------------- V3 缓存互斥
+# (缓存名, 请求路径, 是否有本地 L1)  —— L1 白名单见 mall.cache.local.names
+CACHE_CASES = [
+    ("categoryTree",     "/api/v1/categories/tree",      True),
+    ("homeFloors",       "/api/v1/home/floors",          True),
+    ("productDetail",    "/api/v1/products/1",           False),
+    ("productRecommend", "/api/v1/products/1/recommend", False),
+]
+
+
 def v3_cache_mutex(n):
-    print("\n=== V3 缓存击穿互斥（productDetail：唯一使用 sync=true 的缓存）===")
-    key = "mall:cache:productDetail::1"
-    before = cache_metrics()
-    redis("DEL", key)
-    blast(n, lambda i: http("GET", "/api/v1/products/1", port=PORTS[i % 3]))
-    time.sleep(1)
-    after = cache_metrics()
-    dr = tot(after, "mall_cache_rebuild_total") - tot(before, "mall_cache_rebuild_total")
-    lw = tot(after, "mall_cache_lock_wait_total") - tot(before, "mall_cache_lock_wait_total")
-    print(f"  清空 {key} 后并发 {n} 请求（轮流打 3 实例）")
-    print(f"  全局回源重建增量={dr}  锁等待增量={lw}"
-          f"  → {'✅ 3 实例并发只回源 DB 一次' if dr == 1 else f'❌ 期望 1，实际 {dr}'}")
+    print(f"\n=== V3 缓存击穿互斥（逐缓存，{n} 并发跨 3 实例）===")
+    print(f"  {'缓存':<17}{'实际 key':<42}{'重建增量':>9}{'锁等待':>8}  结果")
+    for name, path, has_l1 in CACHE_CASES:
+        prefix = f"mall:cache:{name}"
+        # 先预热一次，确保 key 真的存在（同时暴露真实 key 形态）
+        http("GET", path, port=PORTS[0])
+        time.sleep(0.3)
+        keys = [k for k in redis("--scan", "--pattern", prefix + "*").splitlines() if k.strip()]
+        before = cache_metrics()
+        for k in keys:
+            redis("DEL", k)
+        if has_l1:
+            # 两个 L1 缓存（categoryTree / homeFloors）需等本地 3s 过期，否则读到 L1 测不到互斥
+            time.sleep(4)
+        blast(n, lambda i: http("GET", path, port=PORTS[i % 3]))
+        time.sleep(0.5)
+        after = cache_metrics()
+        dr = tot(after, "mall_cache_rebuild_total") - tot(before, "mall_cache_rebuild_total")
+        lw = tot(after, "mall_cache_lock_wait_total") - tot(before, "mall_cache_lock_wait_total")
+        shown = keys[0] if keys else "(未找到 key)"
+        print(f"  {name:<17}{shown:<42}{dr:>9.0f}{lw:>8.0f}  "
+              f"{'✅ 只回源一次' if dr == 1 else f'❌ 期望 1，实际 {dr:.0f}'}")
 
 
 def main():
