@@ -77,6 +77,9 @@ public class Product implements Serializable {
 
     private Integer isNew;
 
+    /** 发布时间（厂商公开发布/开售时间，区别于入库时间 createTime） */
+    private LocalDateTime releaseTime;
+
     /** 1 上架 0 下架（买家侧可见性） */
     private Integer status;
 
