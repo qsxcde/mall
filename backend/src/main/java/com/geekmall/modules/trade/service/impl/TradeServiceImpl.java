@@ -11,6 +11,8 @@ import com.geekmall.modules.cart.service.CartService;
 import com.geekmall.modules.cart.vo.CartItemVO;
 import com.geekmall.modules.marketing.service.CouponService;
 import com.geekmall.modules.marketing.vo.UserCouponVO;
+import com.geekmall.modules.inventory.dto.BucketDeductDTO;
+import com.geekmall.modules.inventory.service.InventoryBucketService;
 import com.geekmall.modules.product.entity.Product;
 import com.geekmall.modules.product.mapper.ProductMapper;
 import com.geekmall.modules.trade.converter.OrderConverter;
@@ -126,6 +128,13 @@ public class TradeServiceImpl implements TradeService {
     private final UserService userService;
     private final CouponService couponService;
     private final ProductMapper productMapper;
+    /**
+     * 库存分桶服务（P2-5）。
+     *
+     * <p>商品若已分桶，库存扣减 / 回退改走「桶级 CAS」路径；未分桶商品继续用
+     * {@link ProductMapper} 的单行扣减。两条路径共用同一事务与同一业务语义。</p>
+     */
+    private final InventoryBucketService inventoryBucketService;
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
     private final OrderStatusLogMapper orderStatusLogMapper;
@@ -357,13 +366,17 @@ public class TradeServiceImpl implements TradeService {
         String orderNo = persistOrder(userId, address, drafts, shippingFee, discount,
                 dto.getCouponId(), dto.getPayMethod(), dto.getRemark(), dto.getRequestId());
 
-        // 2) 扣库存：带 stock >= qty 条件，受影响行数为 0 即库存不足，整体回滚
+        // 2) 扣库存：同一商品可能出现在多个结算项，先按商品合并数量 —— 既避免分桶路径下
+        //    「同商品重复调用命中幂等」漏扣，也减少对同一行的锁获取次数
+        Map<Long, Integer> qtyByProduct = new LinkedHashMap<>();
+        Map<Long, String> titleByProduct = new LinkedHashMap<>();
         for (OrderItemDraft draft : drafts) {
-            int rows = productMapper.deductStock(draft.product().getId(), draft.qty());
-            if (rows == 0) {
-                throw new BizException(ResultCode.OUT_OF_STOCK,
-                        "商品「" + draft.product().getTitle() + "」库存不足");
-            }
+            qtyByProduct.merge(draft.product().getId(), draft.qty(), Integer::sum);
+            titleByProduct.putIfAbsent(draft.product().getId(), draft.product().getTitle());
+        }
+        // 分桶商品走桶级 CAS（多行并行），未分桶商品保持单行扣减；任一失败整体回滚
+        for (Map.Entry<Long, Integer> entry : qtyByProduct.entrySet()) {
+            deductProductStock(entry.getKey(), entry.getValue(), titleByProduct.get(entry.getKey()), orderNo);
         }
 
         // 3) 核销优惠券
@@ -492,10 +505,7 @@ public class TradeServiceImpl implements TradeService {
                     userId, requestId, existing);
             return existing;
         }
-        int rows = productMapper.deductStock(productId, qty);
-        if (rows == 0) {
-            throw new BizException(ResultCode.OUT_OF_STOCK, "商品「" + product.getTitle() + "」库存不足");
-        }
+        deductProductStock(productId, qty, product.getTitle(), orderNo);
         log.info("用户 {} 通过特殊通道下单成功：{}，单价 ¥{}", userId, orderNo, unitPrice);
         return orderNo;
     }
@@ -690,16 +700,27 @@ public class TradeServiceImpl implements TradeService {
     }
 
     /**
-     * 回退库存（P0-4）。
+     * 回退库存（P0-4 / P2-5）。
      *
-     * <p>回退前先在 {@code inventory_rollback_log} 登记 {@code (orderNo, productId)}，
-     * 唯一索引保证每笔回退最多生效一次；即便状态机出现意外，也不会把库存退回两次。</p>
+     * <p>回退路径按「该单该商品是否走过桶级出库」二选一：</p>
+     * <ul>
+     *   <li><b>分桶商品</b>：交回 {@code InventoryBucketService}，把数量还回**原来那些桶**，
+     *       幂等由桶审计流水的 {@code (单号, 商品)} 判据保证；</li>
+     *   <li><b>未分桶商品</b>：先在 {@code inventory_rollback_log} 登记 {@code (orderNo, productId)}，
+     *       唯一索引保证每笔回退最多生效一次。</li>
+     * </ul>
+     * <p>两条路径都保证「即便状态机出现意外，也不会把库存退回两次」。</p>
      */
     private void restoreStock(String orderNo) {
         List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
                 .eq(OrderItem::getOrderNo, orderNo));
         for (OrderItem item : items) {
             int qty = item.getQty() == null ? 0 : item.getQty();
+            // 分桶商品：交回桶服务，把数量还回「原来那些桶」，幂等由桶审计流水保证
+            if (inventoryBucketService.hasOutbound(orderNo, item.getProductId())) {
+                inventoryBucketService.rollbackProduct(orderNo, item.getProductId());
+                continue;
+            }
             int firstTime = rollbackLogMapper.tryInsert(orderNo, item.getProductId(), qty);
             if (firstTime == 0) {
                 log.warn("库存回退已执行过，跳过幂等回退：orderNo={}, productId={}",
@@ -707,6 +728,35 @@ public class TradeServiceImpl implements TradeService {
                 continue;
             }
             productMapper.restoreStock(item.getProductId(), qty);
+        }
+    }
+
+    /**
+     * 扣减商品库存（P2-5 分桶适配）。
+     *
+     * <p>商品已分桶时走「桶级 CAS + 商品总库存 CAS」，未分桶时保持原有单行扣减；
+     * 两条路径在库存不足时都抛 {@code OUT_OF_STOCK}，由外层事务统一回滚。</p>
+     */
+    private void deductProductStock(Long productId, int qty, String title, String orderNo) {
+        if (inventoryBucketService.isBucketed(productId)) {
+            BucketDeductDTO dto = new BucketDeductDTO();
+            dto.setProductId(productId);
+            dto.setQty(qty);
+            dto.setOrderNo(orderNo);
+            dto.setOperator("trade");
+            try {
+                inventoryBucketService.deduct(dto);
+            } catch (BizException e) {
+                if (e.getCode() == ResultCode.OUT_OF_STOCK.getCode()) {
+                    throw new BizException(ResultCode.OUT_OF_STOCK, "商品「" + title + "」库存不足");
+                }
+                throw e;
+            }
+            return;
+        }
+        int rows = productMapper.deductStock(productId, qty);
+        if (rows == 0) {
+            throw new BizException(ResultCode.OUT_OF_STOCK, "商品「" + title + "」库存不足");
         }
     }
 

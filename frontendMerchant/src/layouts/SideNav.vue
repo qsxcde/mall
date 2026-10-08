@@ -19,7 +19,10 @@ const NAV_GROUPS = [
   },
   {
     label: '商品',
-    items: [{ path: '/products', label: '商品管理', icon: 'Box', badge: 'productWarn' }]
+    items: [
+      { path: '/products', label: '商品管理', icon: 'Box', badge: 'productWarn' },
+      { path: '/inventory', label: '库存分桶', icon: 'Coin' }
+    ]
   },
   {
     label: '交易',
