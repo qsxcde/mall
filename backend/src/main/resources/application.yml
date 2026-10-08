@@ -224,3 +224,15 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+    distribution:
+      # 把 HTTP 指标从 Summary 换成 Histogram：
+      #   · Summary 只有 {quantile=...} 快照，**无法跨实例聚合**（多实例下 P99 只能看单个实例）；
+      #   · Histogram 产出 _bucket{le=...}，可以用 histogram_quantile(sum by (le)) 做全局分位 ——
+      #     Grafana 看板的延迟面板依赖它（见 infra/grafana/dashboards/mall-overview.json）。
+      percentiles-histogram:
+        http.server.requests: true
+      # 给出合理的桶边界范围，避免默认桶把亚毫秒与数十秒都糊在一起
+      minimum-expected-value:
+        http.server.requests: 1ms
+      maximum-expected-value:
+        http.server.requests: 10s
