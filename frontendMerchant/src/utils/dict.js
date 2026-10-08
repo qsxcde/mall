@@ -185,3 +185,53 @@ export const AVATAR_TONES = ['brand', 'coral', 'teal', 'gold', 'violet']
 export function pick(dict, key) {
   return dict[key] || { text: key || '—', tone: 'neutral' }
 }
+
+/* ------------------------------ 库存分桶 ------------------------------ */
+
+/** 分桶维度 */
+export const BUCKET_DIMENSION = {
+  WAREHOUSE: { text: '按仓库', tone: 'brand' },
+  BATCH: { text: '按批次', tone: 'teal' },
+  EXPIRY: { text: '按效期', tone: 'amber' },
+  REGION: { text: '按地区', tone: 'violet' }
+}
+
+/** 出库挑桶优先级 */
+export const DEDUCT_POLICY = {
+  FIFO: { text: '先进先出', tone: 'brand' },
+  EXPIRY_FIRST: { text: '效期优先', tone: 'amber' },
+  MANUAL: { text: '人工优先级', tone: 'violet' }
+}
+
+/** 出库策略下拉选项 */
+export const DEDUCT_POLICY_OPTIONS = [
+  { value: 'FIFO', label: '先进先出（先入桶先出）' },
+  { value: 'EXPIRY_FIRST', label: '效期优先（最快到期先出）' },
+  { value: 'MANUAL', label: '人工优先级（按设定的优先级）' }
+]
+
+/** 维度下拉选项 */
+export const BUCKET_DIMENSION_OPTIONS = [
+  { value: 'WAREHOUSE', label: '按仓库' },
+  { value: 'BATCH', label: '按批次' },
+  { value: 'EXPIRY', label: '按效期' },
+  { value: 'REGION', label: '按地区' }
+]
+
+/** 审计流水业务类型 */
+export const BUCKET_BIZ_TYPE = {
+  ALLOCATE: { text: '分配入桶', tone: 'brand' },
+  OUTBOUND: { text: '出库扣减', tone: 'coral' },
+  TRANSFER_IN: { text: '调拨入库', tone: 'green' },
+  TRANSFER_OUT: { text: '调拨出库', tone: 'amber' },
+  MERGE_IN: { text: '合并入库', tone: 'green' },
+  MERGE_OUT: { text: '合并出库', tone: 'amber' },
+  ROLLBACK: { text: '出库回滚', tone: 'teal' },
+  ADJUST: { text: '盘点调整', tone: 'neutral' }
+}
+
+/** 审计流水类型下拉选项 */
+export const BUCKET_BIZ_TYPE_OPTIONS = Object.entries(BUCKET_BIZ_TYPE).map(([value, v]) => ({
+  value,
+  label: v.text
+}))

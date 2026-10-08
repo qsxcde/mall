@@ -7,6 +7,7 @@ import com.geekmall.modules.cart.service.CartService;
 import com.geekmall.modules.cart.vo.CartItemVO;
 import com.geekmall.modules.marketing.service.CouponService;
 import com.geekmall.modules.marketing.vo.UserCouponVO;
+import com.geekmall.modules.inventory.service.InventoryBucketService;
 import com.geekmall.modules.product.mapper.ProductMapper;
 import com.geekmall.modules.trade.dto.PreOrderDTO;
 import com.geekmall.modules.trade.dto.SubmitOrderDTO;
@@ -73,6 +74,9 @@ class TradeServiceImplTest {
     private CouponService couponService;
     @Mock
     private ProductMapper productMapper;
+    /** 分桶服务：默认 isBucketed=false / hasOutbound=false，即走原有的单行扣减路径。 */
+    @Mock
+    private InventoryBucketService inventoryBucketService;
     @Mock
     private OrderMapper orderMapper;
     @Mock
@@ -99,7 +103,7 @@ class TradeServiceImplTest {
     @BeforeEach
     void setUp() {
         tradeService = new TradeServiceImpl(cartService, userService, couponService, productMapper,
-                orderMapper, orderItemMapper, orderStatusLogMapper, rollbackLogMapper,
+                inventoryBucketService, orderMapper, orderItemMapper, orderStatusLogMapper, rollbackLogMapper,
                 orderStateMachine, orderNoGenerator, redisTemplate, eventPublisher, selfProvider);
     }
 

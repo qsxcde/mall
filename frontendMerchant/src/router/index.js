@@ -43,6 +43,12 @@ const routes = [
         meta: { title: '商品管理', group: '商品', label: '商品管理', badge: 'productWarn' }
       },
       {
+        path: 'inventory',
+        name: 'inventory',
+        component: () => import('@/views/InventoryBucketView.vue'),
+        meta: { title: '库存分桶', group: '商品', label: '库存分桶' }
+      },
+      {
         path: 'orders',
         name: 'orders',
         component: () => import('@/views/OrderListView.vue'),
