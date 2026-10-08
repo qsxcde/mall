@@ -28,7 +28,15 @@ public final class RedisKeys {
     /** 秒杀库存：mall:seckill:stock:{itemId} */
     public static final String SECKILL_STOCK = "mall:seckill:stock:";
 
-    /** 秒杀一人一单标记：mall:seckill:bought:{itemId}:{userId} */
+    /**
+     * 秒杀库存桶：mall:seckill:bucket:{itemId}:{bucketNo}
+     *
+     * <p>分桶后库存被拆成 N 个 key，Lua 一次原子调用内「挑有货的桶 + DECR」；
+     * 未分桶商品（bucket_count = 1）仍使用 {@link #SECKILL_STOCK} 单 key。</p>
+     */
+    public static final String SECKILL_BUCKET = "mall:seckill:bucket:";
+
+    /** 秒杀一人一单标记：mall:seckill:bought:{itemId} */
     public static final String SECKILL_BOUGHT = "mall:seckill:bought:";
 
     /** 秒杀待落库订单消息流（削峰队列）：mall:seckill:order:stream */
@@ -58,6 +66,11 @@ public final class RedisKeys {
 
     public static String smsCode(String scene, String phone) {
         return SMS_CODE + scene + ":" + phone;
+    }
+
+    /** 秒杀某商品某个桶的库存 key。 */
+    public static String seckillBucketStock(Long itemId, int bucketNo) {
+        return SECKILL_BUCKET + itemId + ":" + bucketNo;
     }
 
     public static String loginToken(Long userId) {

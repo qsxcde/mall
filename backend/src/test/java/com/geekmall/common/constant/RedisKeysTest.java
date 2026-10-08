@@ -46,6 +46,19 @@ class RedisKeysTest {
     }
 
     @Test
+    @DisplayName("秒杀库存桶 key 带桶号，且不与非分桶库存 key 冲突")
+    void shouldBuildSeckillBucketKey() {
+        assertThat(RedisKeys.seckillBucketStock(7L, 0)).isEqualTo("mall:seckill:bucket:7:0");
+        assertThat(RedisKeys.seckillBucketStock(7L, 99)).isEqualTo("mall:seckill:bucket:7:99");
+        assertThat(RedisKeys.seckillBucketStock(7L, 0))
+                .as("分桶 key 必须与单键库存 key 前缀隔离，否则会互相覆盖")
+                .isNotEqualTo(RedisKeys.SECKILL_STOCK + 7L);
+        assertThat(RedisKeys.seckillBucketStock(7L, 0))
+                .as("不同桶必须是不同 key，否则分桶毫无意义")
+                .isNotEqualTo(RedisKeys.seckillBucketStock(7L, 1));
+    }
+
+    @Test
     @DisplayName("下单幂等键前缀固定")
     void shouldExposeIdempotentPrefix() {
         assertThat(RedisKeys.ORDER_IDEMPOTENT).isEqualTo("mall:order:idempotent:");

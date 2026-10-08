@@ -39,6 +39,14 @@ public class SeckillItem implements Serializable {
     /** 已售 */
     private Integer sold;
 
+    /**
+     * 库存桶数：1 = 不分桶（沿用 {@link #stock} 单行扣减），&gt;= 2 启用库存分桶。
+     *
+     * <p>分桶后每单只扣 {@code mkt_seckill_bucket} 中的一行，{@link #stock}/{@link #sold}
+     * 不再逐单更新（否则又退回单行热点），展示与对账口径改为 {@code SUM(桶)}。</p>
+     */
+    private Integer bucketCount;
+
     private String tip;
 
     private Integer notStart;
