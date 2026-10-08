@@ -53,6 +53,7 @@ CONSUMER_THREADS="${CONSUMER_THREADS:-4}"
 SECKILL_PROFILE="${SECKILL_PROFILE:-single}"
 SECKILL_STOCK="${SECKILL_STOCK:-}"
 SECKILL_ITEMS="${SECKILL_ITEMS:-}"
+SECKILL_BUCKETS="${SECKILL_BUCKETS:-1}"
 SPRING_PROFILES="${SPRING_PROFILES:-}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-40}"
 FORCE_KILL_AFTER="${FORCE_KILL_AFTER:-10}"
@@ -142,7 +143,7 @@ DELETE r FROM inventory_rollback_log r JOIN oms_order o ON o.order_no = r.order_
 DELETE FROM oms_order WHERE request_id LIKE 'IDEM-%' OR request_id LIKE 'CANCEL-PREP-%';
 " >/dev/null
 
-echo "[2/5] 准备秒杀场景数据（profile=$SECKILL_PROFILE${SECKILL_STOCK:+, stock=$SECKILL_STOCK}${SECKILL_ITEMS:+, items=$SECKILL_ITEMS}）..."
+echo "[2/5] 准备秒杀场景数据（profile=$SECKILL_PROFILE${SECKILL_STOCK:+, stock=$SECKILL_STOCK}${SECKILL_ITEMS:+, items=$SECKILL_ITEMS}, buckets=${SECKILL_BUCKETS}）..."
 SCENARIO_ARGS=(--profile "$SECKILL_PROFILE")
 if [[ -n "$SECKILL_STOCK" ]]; then
   SCENARIO_ARGS+=(--stock "$SECKILL_STOCK")
@@ -150,6 +151,7 @@ fi
 if [[ -n "$SECKILL_ITEMS" ]]; then
   SCENARIO_ARGS+=(--items "$SECKILL_ITEMS")
 fi
+SCENARIO_ARGS+=(--buckets "$SECKILL_BUCKETS")
 python3 "$SCRIPT_DIR/prepare_seckill_scenario.py" "${SCENARIO_ARGS[@]}"
 
 echo "[3/5] 清理 Redis 状态（秒杀计数 / 一人一单 / 下单幂等键）..."
