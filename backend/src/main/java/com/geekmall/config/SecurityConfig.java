@@ -55,6 +55,12 @@ public class SecurityConfig {
                         .dispatcherTypeMatchers(DispatcherType.ASYNC, DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(SecurityConstants.WHITELIST).permitAll()
+                        // 商家端：白名单里的 /api/v1/merchant/auth/** 已放行，其余 /api/v1/merchant/** 必须持有
+                        // ROLE_MERCHANT（只有 scope=merchant 的令牌会被 MerchantJwtAuthenticationFilter 授予）。
+                        // 这是一道**声明式**闸门：不再依赖「每个商家 service 是否记得调
+                        // MerchantSecurityUtils.getShopId()」，买家令牌在此直接 403，而不是进到 service 才抛 401。
+                        .requestMatchers("/api/v1/merchant/**")
+                        .hasAuthority(SecurityConstants.ROLE_MERCHANT)
                         .anyRequest().authenticated())
                 .exceptionHandling(handler -> handler
                         .authenticationEntryPoint(authenticationEntryPoint)

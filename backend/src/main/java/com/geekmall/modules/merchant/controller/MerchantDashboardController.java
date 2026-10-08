@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -18,6 +19,7 @@ import java.util.Map;
  * 商家经营概览 / 数据看板 / 角标接口，对应前端 OverviewView / AnalyticsView 与侧栏角标。
  */
 @Tag(name = "11-商家经营", description = "角标 / 经营概览 / 数据看板")
+@PreAuthorize("hasRole('MERCHANT')")
 @RestController
 @RequestMapping("/api/v1/merchant")
 @RequiredArgsConstructor

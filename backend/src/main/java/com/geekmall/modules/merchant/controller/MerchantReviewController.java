@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -24,6 +25,7 @@ import java.util.Map;
  * 商家端评价管理接口，对应前端 ReviewView。
  */
 @Tag(name = "17-商家评价", description = "评价列表 / DSR 汇总 / 回复 / 忽略")
+@PreAuthorize("hasRole('MERCHANT')")
 @RestController
 @RequestMapping("/api/v1/merchant/review")
 @RequiredArgsConstructor
