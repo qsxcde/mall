@@ -155,7 +155,12 @@ mall:
         sliding-window: 30s
         wait-duration-in-open: 5s
         permitted-calls-in-half-open: 2
-        max-concurrent-calls: 32
+        # 并发上限必须 ≥ 峰值并发：200VU 压测时 32 个许可被瞬间抢空，
+        # 其余请求在 tryAcquire 处立即失败 → 预扣回补 + 用户看到「系统繁忙」
+        # （实测 2 万请求里 104 次被拒，mall_circuit_rejected_total{seckill-queue}=104）。
+        # 入队本身是毫秒级 Redis 命令，真正保护线程池的是 Tomcat 的 max-threads，
+        # 这里取 256（> Tomcat 200）保证它不会先于 Tomcat 成为「假瓶颈」。
+        max-concurrent-calls: 256
   # 秒杀
   seckill:
     async:
