@@ -9,7 +9,8 @@ const route = useRoute()
 const keyword = computed(() => route.query.q ?? 'iPhone')
 
 const categories = ref([])
-const filters = reactive({ cats: [], brands: [], services: [] })
+// 后端搜索只认分类 / 品牌 / 价格 / 排序，不做「服务」这类后端无法执行的筛选
+const filters = reactive({ cats: [], brands: [] })
 const price = reactive({ min: '', max: '' })
 // 与后端 brand_name 对齐
 const brandOptions = ['苹果', '华为', '小米', 'OPPO', '荣耀', '三星', '联想', '戴尔']
@@ -77,7 +78,7 @@ watch(
   }
 )
 watch(
-  [() => filters.cats.join(','), () => filters.brands.join(','), () => filters.services.join(','), price, sortParam],
+  [() => filters.cats.join(','), () => filters.brands.join(','), price, sortParam],
   () => {
     page.value = 1
     load()
@@ -116,14 +117,6 @@ const onSort = (key) => {
           <el-input v-model="price.max" placeholder="最高" type="number" />
         </div>
       </div>
-      <div class="filter-group">
-        <div class="filter-title">服务</div>
-        <el-checkbox-group v-model="filters.services">
-          <el-checkbox label="分期免息" value="分期免息" />
-          <el-checkbox label="顺丰包邮" value="顺丰包邮" />
-          <el-checkbox label="延保服务" value="延保服务" />
-        </el-checkbox-group>
-      </div>
     </aside>
 
     <!-- 结果区 -->
@@ -131,7 +124,7 @@ const onSort = (key) => {
       <div class="search-head">
         <div class="kw">“<b>{{ keyword }}</b>” 的搜索结果</div>
         <div class="meta">
-          共找到 <b>{{ total }}</b> 件商品 · 相关推荐：iPhone 17 Pro、iPhone 17、iPhone 16
+          共找到 <b>{{ total }}</b> 件商品
         </div>
       </div>
 

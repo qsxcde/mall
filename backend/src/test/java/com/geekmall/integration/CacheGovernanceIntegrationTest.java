@@ -157,6 +157,33 @@ class CacheGovernanceIntegrationTest extends AbstractIntegrationTest {
         assertThat(data.get("title").asText()).isEqualTo("新增商品可见性");
     }
 
+    /* ------------------------------ 缓存读写往返 --------------------------- */
+
+    @Test
+    @DisplayName("缓存往返：推荐位命中缓存仍能正常反序列化（根节点必须是可变集合）")
+    void recommendShouldSurviveCacheRoundTrip() {
+        Product product = createOnShelfProduct("缓存往返商品");
+        String key = cacheKey(CacheNames.PRODUCT_RECOMMEND, product.getId() + ":4");
+        stringRedisTemplate.delete(key);
+
+        // 第一次：未命中 → 回源并写缓存
+        JsonNode first = assertSuccess(get("/api/v1/products/" + product.getId() + "/recommend?limit=4", null));
+        assertThat(stringRedisTemplate.hasKey(key)).as("推荐结果必须写入缓存，否则本用例失去意义").isTrue();
+
+        // 回归点：缓存值的根节点必须带类型 id。
+        // Jackson 的 DefaultTyping.NON_FINAL 对 final 类不写类型 id，而 List.of()/Stream#toList()
+        // 返回的 ImmutableCollections$ListN 正是 final —— 那样的值写进去以后永远读不回来
+        // （读取时目标类型是 Object，反序列化器要求根节点带类型 id），表现为「首次正常、之后必 9999」。
+        assertThat(stringRedisTemplate.opsForValue().get(key))
+                .as("推荐缓存值的根节点必须是 ArrayList 这类非 final 集合")
+                .startsWith("[\"java.util.ArrayList\"");
+
+        // 第二次：命中缓存 → 反序列化；这里是原来会抛 SerializationException 的那一步
+        JsonNode second = assertSuccess(get("/api/v1/products/" + product.getId() + "/recommend?limit=4", null));
+        assertThat(second.isArray()).isTrue();
+        assertThat(second).as("命中缓存与回源的结果必须一致").isEqualTo(first);
+    }
+
     /* ------------------------------ 击穿 ---------------------------------- */
 
     @Test

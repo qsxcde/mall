@@ -11,7 +11,8 @@ const cart = useCartStore()
 const { items, allChecked, checkedQty, checkedAmount } = storeToRefs(cart)
 
 const tableRef = ref()
-const couponCode = ref('')
+/** 默认配送方式「标准配送」的运费为 0（与后端 SHIPPING_FEES.standard 一致） */
+const DEFAULT_SHIPPING_FEE = 0
 
 /**
  * 把服务端的勾选状态回填到表格。
@@ -74,6 +75,9 @@ const checkout = () => {
   if (!checkedQty.value) return ElMessage.info('请先勾选要结算的商品')
   router.push({ name: 'checkout' })
 }
+
+/** 优惠券是「领券 → 结算页选择」的模式，没有优惠码输入框，这里引导到领券中心 */
+const goCouponCenter = () => router.push({ name: 'coupon' })
 </script>
 
 <template>
@@ -87,7 +91,7 @@ const checkout = () => {
       >
         <el-table-column type="selection" width="48" />
 
-        <el-table-column label="商品" min-width="320">
+        <el-table-column label="商品" min-width="220">
           <template #default="{ row }">
             <div style="display:flex;gap:14px;align-items:center">
               <div class="c-thumb" :class="row.c">图</div>
@@ -100,7 +104,7 @@ const checkout = () => {
           </template>
         </el-table-column>
 
-        <el-table-column label="单价" width="120" align="center">
+        <el-table-column label="单价" width="110" align="center" class-name="cart-col-sm-hide">
           <template #default="{ row }">¥{{ fmtMoney(row.price) }}</template>
         </el-table-column>
 
@@ -143,18 +147,15 @@ const checkout = () => {
     <aside class="cart-side">
       <div class="side-title">结算摘要</div>
       <div class="side-row"><span>商品总额</span><b>¥{{ fmtMoney(checkedAmount) }}</b></div>
-      <div class="side-row"><span>优惠减免</span><b>-¥0.00</b></div>
-      <div class="side-row"><span>运费</span><b>¥0.00</b></div>
-      <div style="display:flex;gap:8px;margin:14px 0">
-        <el-input v-model="couponCode" placeholder="输入优惠码" />
-        <el-button type="primary" @click="applyCoupon">使用</el-button>
-      </div>
+      <div class="side-row"><span>运费</span><b>¥{{ fmtMoney(DEFAULT_SHIPPING_FEE) }}</b></div>
+      <div class="side-row"><span>优惠券</span><b class="side-hint">结算页选择</b></div>
+      <a class="side-coupon" @click="goCouponCenter">有优惠券？去领券中心 →</a>
       <div class="side-divider" />
       <div class="side-total">
-        <span class="label">应付总额</span>
-        <span class="amount"><small>¥</small>{{ fmtMoney(checkedAmount) }}</span>
+        <span class="label">预计应付</span>
+        <span class="amount"><small>¥</small>{{ fmtMoney(checkedAmount + DEFAULT_SHIPPING_FEE) }}</span>
       </div>
-      <div class="side-count">已选 {{ checkedQty }} 件，不含运费</div>
+      <div class="side-count">已选 {{ checkedQty }} 件 · 标准配送；优惠券与配送方式在结算页确定</div>
       <button class="checkout-btn" :disabled="!checkedQty" @click="checkout">去结算</button>
     </aside>
   </div>

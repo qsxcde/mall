@@ -134,16 +134,32 @@ public class ProductServiceImpl implements ProductService {
         return ProductConverter.toDetail(product);
     }
 
+    /**
+     * 「看了又看」推荐位。
+     *
+     * <p><b>为什么必须返回 {@link ArrayList}，不能用 {@code List.of()} / {@code Stream#toList()}：</b></p>
+     *
+     * <p>缓存值用 {@code GenericJackson2JsonRedisSerializer} 写 JSON，并开启了
+     * {@code DefaultTyping.NON_FINAL} 类型信息。<b>根节点是 final 类时不会写入类型 id</b>
+     * （{@code List.of()} / {@code Stream#toList()} 返回的 {@code ImmutableCollections$ListN} 是 final，
+     * {@code ArrayList} 不是），而读取时目标类型是 {@code Object}，反序列化器要求根节点必须带类型 id，
+     * 于是出现「首次调用回源并写缓存正常，第二次命中缓存必抛 SerializationException」的诡异现象
+     * ——线上表现就是推荐位空白 + 系统繁忙。</p>
+     *
+     * <p>嵌套位置不受影响：属性的声明类型是 {@code List}（非 final），写的时候会带上类型 id，
+     * 读回来自然正常。所以只有「根节点是集合」的 {@code @Cacheable} 方法需要显式返回可变集合，
+     * 本类的 {@code categoryTree} 一直返回 {@code new ArrayList<>()} 就是这个原因。</p>
+     */
     @Override
     @Cacheable(cacheNames = CacheNames.PRODUCT_RECOMMEND, key = "#id + ':' + #limit")
     public List<ProductCardVO> recommend(Long id, int limit) {
         // 不存在的商品返回空列表（会被缓存），同样先过布隆过滤器避免无效 id 打库
         if (id == null || !productBloomFilter.mightContain(String.valueOf(id))) {
-            return List.of();
+            return new ArrayList<>();
         }
         Product product = productMapper.selectById(id);
         if (product == null) {
-            return List.of();
+            return new ArrayList<>();
         }
         List<Product> list = productMapper.selectList(new LambdaQueryWrapper<Product>()
                 .eq(Product::getStatus, ON_SHELF)
@@ -151,7 +167,11 @@ public class ProductServiceImpl implements ProductService {
                 .ne(Product::getId, id)
                 .orderByDesc(Product::getSales)
                 .last("limit " + Math.max(1, limit)));
-        return list.stream().map(ProductConverter::toCard).toList();
+        List<ProductCardVO> result = new ArrayList<>(list.size());
+        for (Product p : list) {
+            result.add(ProductConverter.toCard(p));
+        }
+        return result;
     }
 
     @Override

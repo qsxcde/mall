@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import productApi from '@/api/product'
 import { useCartStore } from '@/stores/cart'
-import CountdownTimer from '@/components/CountdownTimer.vue'
 import { fmtMoney } from '@/utils/format'
 
 const router = useRouter()
@@ -23,13 +22,6 @@ const activeTab = ref('all')
 const featured = ref(null)
 const newList = ref([])
 const loading = ref(false)
-
-// 「即将发布」是预告位，没有对应的业务数据，保留为前端展示内容
-const comingList = [
-  { name: '折叠屏旗舰 新款', date: '10 月 12 日 10:00', c: 'c3' },
-  { name: '旗舰游戏本 2026 款', date: '10 月 15 日 14:00', c: 'c6' },
-  { name: '真无线降噪耳机 Pro', date: '10 月 18 日 20:00', c: 'c5' }
-]
 
 /** 新品首发直接复用商品列表接口的 isNew 条件，分类筛选也交给后端 */
 const loadList = async () => {
@@ -62,7 +54,6 @@ const buy = async (p) => {
   await cart.add(p, 1)
   ElMessage.success('已加入购物车')
 }
-const remind = () => ElMessage.success('已开启预约提醒')
 </script>
 
 <template>
@@ -75,8 +66,9 @@ const remind = () => ElMessage.success('已开启预约提醒')
         <p>抢先预约 · 享 12 期免息 · 晒单返积分 · 限量首发礼</p>
       </div>
       <div class="np-right">
-        <div class="np-label">距下一场发布还剩</div>
-        <CountdownTimer :hours="5" :minutes="42" :seconds="18" big />
+        <!-- 后端没有「下一次发布」的时间源，因此展示真实上新数量而不是编造的倒计时 -->
+        <div class="np-label">本次上新</div>
+        <div class="np-count">{{ newList.length }} 款</div>
       </div>
     </div>
 
@@ -92,15 +84,16 @@ const remind = () => ElMessage.success('已开启预约提醒')
         <span class="flag">🆕 首发</span>商品图
       </div>
       <div class="featured-info">
+        <!-- 标签取自后端 tags；没有 tags 时退回「新品」，不编造「限量首发 / 12 期免息」 -->
         <div class="tag-line">
-          <span class="tg-new">新品</span><span class="tg-first">限量首发</span><span class="tg-free">12 期免息</span>
+          <span v-if="!featured.tags || !featured.tags.length" class="tg-new">新品</span>
+          <span v-for="t in featured.tags || []" :key="t" class="tg-new">{{ t }}</span>
         </div>
         <h2>{{ featured.title }}</h2>
         <div class="spec">{{ featured.spec }} · 官方标配 · 全国联保</div>
         <div class="price"><small>¥</small>{{ fmtMoney(featured.price) }}<span class="old">¥{{ featured.oldPrice }}</span></div>
         <div class="featured-actions">
           <button class="btn-primary2" @click="router.push({ name: 'product', params: { id: featured.id } })">立即抢购</button>
-          <button class="btn-sub2" @click="remind">预约提醒</button>
         </div>
       </div>
     </div>
@@ -117,9 +110,8 @@ const remind = () => ElMessage.success('已开启预约提醒')
         <div class="np-info">
           <div class="np-title">{{ p.title }}</div>
           <div class="np-tags">
-            <span class="tg-new">新品</span>
-            <span v-if="p.tags.includes('限量首发')" class="tg-first">限量首发</span>
-            <span v-else class="tg-free">12 期免息</span>
+            <span v-for="t in p.tags" :key="t" class="tg-new">{{ t }}</span>
+            <span v-if="!p.tags || !p.tags.length" class="tg-new">新品</span>
           </div>
           <div class="np-price"><small>¥</small>{{ fmtMoney(p.price) }}<span class="np-old">¥{{ p.oldPrice }}</span></div>
           <button class="np-btn" @click.stop="buy(p)">立即抢购</button>
@@ -127,17 +119,9 @@ const remind = () => ElMessage.success('已开启预约提醒')
       </div>
     </div>
 
-    <!-- 即将首发 -->
+    <!-- 即将首发：后端没有「未来发布」的数据源（在售商品的 release_time 均已到达），
+         这里给空态而不是编造商品名 / 发布时间 / 预约按钮 -->
     <div class="section-title">即将首发</div>
-    <div class="coming-grid">
-      <div v-for="c in comingList" :key="c.name" class="coming-card">
-        <div class="c-img" :class="c.c">商品图</div>
-        <div class="c-info">
-          <div class="c-name">{{ c.name }}</div>
-          <div class="c-date">发布时间：<b>{{ c.date }}</b></div>
-          <button class="c-btn" @click="remind">预约提醒</button>
-        </div>
-      </div>
-    </div>
+    <el-empty description="暂无预告中的新品，敬请期待" />
   </div>
 </template>

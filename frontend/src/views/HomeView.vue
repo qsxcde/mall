@@ -1,12 +1,11 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useUserStore } from '@/stores/user'
 import productApi from '@/api/product'
 import { couponApi, seckillApi } from '@/api/marketing'
 import ProductCard from '@/components/ProductCard.vue'
-import CountdownTimer from '@/components/CountdownTimer.vue'
 import { homeBanners, homeEntryLinks } from '@/data/constants'
 
 const router = useRouter()
@@ -23,6 +22,22 @@ const hotProducts = ref([])
 const guessProducts = ref([])
 const seckillPreview = ref([])
 const couponsPreview = ref([])
+/** 当前秒杀场次（来自后端），用于公告栏与秒杀卡片标题 */
+const seckillSession = ref(null)
+
+/**
+ * 公告栏内容由真实数据推导：后端没有 CMS 公告接口，
+ * 与其写死「iPhone 17 系列首发」这种与在售商品不符的文案，不如展示当下真实的活动状态。
+ */
+const notice = computed(() => {
+  const first = seckillPreview.value[0]
+  if (first) {
+    return `限时秒杀进行中：${first.product?.title || '热销商品'} ¥${first.price} 起，仅剩 ${first.stock} 件。`
+  }
+  return seckillSession.value
+    ? `秒杀场次 ${seckillSession.value.time} 即将开始，敬请关注。`
+    : '今日暂无秒杀场次，可先逛逛热销榜。'
+})
 
 const hotTab = ref('综合')
 const hotTabs = ['综合', '销量', '价格', '好评']
@@ -62,6 +77,7 @@ onMounted(async () => {
     guessProducts.value = floors.newProducts
 
     const running = sessions.find((s) => s.state === 'running') || sessions[0]
+    seckillSession.value = running || null
     if (running) {
       seckillPreview.value = (await seckillApi.items(running.id)).slice(0, 4)
     }
@@ -125,7 +141,7 @@ onMounted(async () => {
         </div>
 
         <div class="side-notice">
-          <strong>公告：</strong>iPhone 17 系列首发，支持 12 期免息。
+          <strong>公告：</strong>{{ notice }}
         </div>
       </div>
     </div>
@@ -143,7 +159,9 @@ onMounted(async () => {
       <div class="promo-card">
         <div class="promo-head">
           <div class="promo-title"><em>限时</em>秒杀</div>
-          <CountdownTimer :hours="2" :minutes="15" :seconds="30" />
+          <span class="promo-session">
+            {{ seckillSession ? `${seckillSession.time} ${seckillSession.label || ''}` : '即将开始' }}
+          </span>
         </div>
         <div class="seckill-list">
           <div v-for="s in seckillPreview" :key="s.id" class="seckill-item" @click="router.push({ name: 'seckill' })">

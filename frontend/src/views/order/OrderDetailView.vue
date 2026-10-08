@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import tradeApi from '@/api/trade'
 import { useCartStore } from '@/stores/cart'
 import { fmtMoney } from '@/utils/format'
+import { useNarrow } from '@/utils/useNarrow'
 
 const route = useRoute()
 const router = useRouter()
@@ -44,7 +45,12 @@ const status = computed(() => ({ cls: order.value?.statusCls || '', text: order.
 
 // 金额直接取后端订单，日后再改价规则前端无需跟着改
 const goodsAmount = computed(() => order.value?.goodsAmount ?? 0)
+const shippingFee = computed(() => order.value?.shippingFee ?? 0)
+const discount = computed(() => order.value?.discount ?? 0)
 const payTotal = computed(() => order.value?.payAmount ?? 0)
+
+/** 窄屏下 el-descriptions 降为单列，否则 375px 宽度会挤压成两列 */
+const narrow = useNarrow()
 
 const go = (name, query) => router.push({ name, params: { no: route.params.no }, query })
 
@@ -162,14 +168,15 @@ const again = async () => {
     <!-- 金额 / 支付信息 -->
     <div class="co-card">
       <div class="ttl">订单信息</div>
-      <el-descriptions :column="2" border>
+      <el-descriptions :column="narrow ? 1 : 2" border>
         <el-descriptions-item label="订单号">{{ order.no }}</el-descriptions-item>
         <el-descriptions-item label="下单时间">{{ extra.createTime }}</el-descriptions-item>
         <el-descriptions-item label="支付方式">{{ extra.payMethod }}</el-descriptions-item>
         <el-descriptions-item label="支付时间">{{ extra.payTime }}</el-descriptions-item>
         <el-descriptions-item label="交易号">{{ extra.tradeNo }}</el-descriptions-item>
         <el-descriptions-item label="商品总额">¥{{ fmtMoney(goodsAmount) }}</el-descriptions-item>
-        <el-descriptions-item label="运费">¥0.00</el-descriptions-item>
+        <el-descriptions-item label="运费">¥{{ fmtMoney(shippingFee) }}</el-descriptions-item>
+        <el-descriptions-item label="优惠减免">-¥{{ fmtMoney(discount) }}</el-descriptions-item>
         <el-descriptions-item label="实付款">
           <b style="color:var(--price)">¥{{ fmtMoney(payTotal) }}</b>
         </el-descriptions-item>

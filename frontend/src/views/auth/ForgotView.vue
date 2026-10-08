@@ -1,41 +1,87 @@
 <script setup>
-import { reactive, ref } from 'vue'
+import { onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { useUserStore } from '@/stores/user'
 import AuthAside from '@/components/AuthAside.vue'
 
 const router = useRouter()
+const user = useUserStore()
 const step = ref(0)
 const counter = ref(0)
+const sending = ref(false)
+const submitting = ref(false)
+let timer = null
+
 const form = reactive({ phone: '', code: '', password: '', confirm: '' })
 
-const sendCode = () => {
-  if (!/^1\d{10}$/.test(form.phone)) {
+const phoneValid = () => /^1[3-9]\d{9}$/.test(form.phone)
+
+const startCountdown = (seconds) => {
+  counter.value = Number(seconds) > 0 ? Number(seconds) : 60
+  clearInterval(timer)
+  timer = setInterval(() => {
+    counter.value--
+    if (counter.value <= 0) clearInterval(timer)
+  }, 1000)
+}
+
+/** 发送重置验证码：走后端 /api/v1/auth/sms-code（scene=reset） */
+const sendCode = async () => {
+  if (!phoneValid()) {
     ElMessage.warning('请输入正确的手机号')
     return
   }
-  counter.value = 60
-  const t = setInterval(() => {
-    counter.value--
-    if (counter.value <= 0) clearInterval(t)
-  }, 1000)
-  ElMessage.success('验证码已发送（演示）')
+  sending.value = true
+  try {
+    const result = await user.sendSmsCode(form.phone, 'reset')
+    startCountdown(result?.cooldownSeconds)
+    if (result?.devCode) {
+      form.code = result.devCode
+      ElMessage.success(`验证码已发送（开发环境已自动填入 ${result.devCode}）`)
+    } else {
+      ElMessage.success('验证码已发送')
+    }
+  } catch (e) {
+    /* 失败信息由请求拦截器统一提示 */
+  } finally {
+    sending.value = false
+  }
 }
 
 const next = () => {
-  if (!/^1\d{10}$/.test(form.phone)) return ElMessage.warning('请输入正确的手机号')
-  if (!form.code) return ElMessage.warning('请输入短信验证码')
+  if (!phoneValid()) return ElMessage.warning('请输入正确的手机号')
+  if (!/^\d{6}$/.test(form.code)) return ElMessage.warning('请输入 6 位短信验证码')
   step.value = 1
 }
 
-const submit = () => {
+const back = () => {
+  step.value = 0
+}
+
+/** 重置密码：走后端 /api/v1/auth/password/reset，验证码在此处由后端校验 */
+const submit = async () => {
   if (!/(?=.*[a-zA-Z])(?=.*\d).{6,20}/.test(form.password)) {
     return ElMessage.warning('密码需为 6-20 位且同时包含字母和数字')
   }
   if (form.password !== form.confirm) return ElMessage.warning('两次输入的密码不一致')
-  step.value = 2
-  ElMessage.success('密码重置成功')
+  submitting.value = true
+  try {
+    await user.resetPassword({
+      phone: form.phone,
+      smsCode: form.code,
+      newPassword: form.password
+    })
+    step.value = 2
+    ElMessage.success('密码重置成功')
+  } catch (e) {
+    /* 拦截器已提示；验证码错误/过期时可返回上一步重新获取 */
+  } finally {
+    submitting.value = false
+  }
 }
+
+onUnmounted(() => clearInterval(timer))
 </script>
 
 <template>
@@ -62,7 +108,7 @@ const submit = () => {
         <el-form-item label="短信验证码">
           <el-input v-model="form.code" size="large" maxlength="6" placeholder="请输入验证码">
             <template #append>
-              <el-button :disabled="counter > 0" @click="sendCode">
+              <el-button :disabled="counter > 0" :loading="sending" @click="sendCode">
                 {{ counter > 0 ? `${counter}s 后重试` : '获取验证码' }}
               </el-button>
             </template>
@@ -80,8 +126,8 @@ const submit = () => {
           <el-input v-model="form.confirm" type="password" size="large" show-password placeholder="请再次输入新密码" />
         </el-form-item>
         <div style="display:flex;gap:10px">
-          <el-button size="large" style="flex:1" @click="step = 0">上一步</el-button>
-          <el-button type="primary" size="large" style="flex:2" @click="submit">重置密码</el-button>
+          <el-button size="large" style="flex:1" @click="back">上一步</el-button>
+          <el-button type="primary" size="large" style="flex:2" :loading="submitting" @click="submit">重置密码</el-button>
         </div>
       </el-form>
 

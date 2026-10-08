@@ -12,6 +12,7 @@ import org.springframework.data.redis.cache.RedisCacheConfiguration;
 import org.springframework.data.redis.cache.RedisCacheWriter;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
+import org.springframework.data.redis.serializer.SerializationException;
 
 import java.time.Duration;
 import java.util.List;
@@ -145,6 +146,10 @@ public class ResilientRedisCache extends RedisCache {
      *
      * <p>返回 {@code null} 仅表示「Redis 未命中或不可用」，此时调用方应回源；
      * 空值缓存命中会返回 {@code SimpleValueWrapper(null)}（非 null），两者语义不同。</p>
+     *
+     * <p>两类失败都按未命中处理，但区别对待：{@link DataAccessException}（连不上 / 超时）
+     * 记为熔断失败；{@link SerializationException}（值反序列化不回来，即「脏缓存」）不记熔断
+     * —— 一份坏数据不该让熔断器持续打开，回源覆盖它即可自愈。</p>
      */
     private ValueWrapper readRedis(Object key) {
         if (!breaker.tryAcquire()) {
@@ -160,6 +165,14 @@ public class ResilientRedisCache extends RedisCache {
             breaker.recordFailure(Duration.ofNanos(System.nanoTime() - startNanos));
             metrics.recordRedisError(getName(), ex);
             log.warn("读取缓存失败，本次按未命中处理：cache={}, error={}", getName(), ex.getMessage());
+            return null;
+        } catch (SerializationException ex) {
+            // 键在 Redis 里存在、但值反序列化不回来（历史格式、类型信息缺失等）。
+            // 这属于「脏缓存」而不是「Redis 不可用」：按未命中处理让调用方回源并覆盖该键，
+            // 不记为熔断失败（否则一份坏数据会一直把熔断器打不开），更不能把读缓存失败升级成 500。
+            metrics.recordRedisError(getName(), ex);
+            log.warn("缓存值反序列化失败，本次按未命中处理（回源后会覆盖该键）：cache={}, error={}",
+                    getName(), ex.getMessage());
             return null;
         }
     }

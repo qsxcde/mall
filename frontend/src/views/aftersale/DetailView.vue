@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { fmtMoney } from '@/utils/format'
 import { useAfterSaleStore } from '@/stores/aftersale'
+import { SERVICE_HOTLINE, SERVICE_HOURS } from '@/data/constants'
+import { useNarrow } from '@/utils/useNarrow'
 
 const route = useRoute()
 const router = useRouter()
@@ -27,6 +29,9 @@ onMounted(load)
 
 const isDoing = computed(() => record.value?.status === 'doing')
 
+/** 窄屏下 el-descriptions 降为单列 */
+const narrow = useNarrow()
+
 const cancel = () => {
   ElMessageBox.confirm('确定取消该售后申请吗？取消后需重新申请。', '提示', { type: 'warning' })
     .then(async () => {
@@ -36,7 +41,7 @@ const cancel = () => {
     })
     .catch(() => {})
 }
-const contact = () => ElMessage.info('在线客服功能开发中，可先拨打 400-888-8888')
+const contact = () => ElMessage.info(`客服热线 ${SERVICE_HOTLINE}（${SERVICE_HOURS}）`)
 </script>
 
 <template>
@@ -63,7 +68,7 @@ const contact = () => ElMessage.info('在线客服功能开发中，可先拨打
     <!-- 基本信息 -->
     <div class="co-card">
       <div class="ttl">售后信息</div>
-      <el-descriptions :column="2" border>
+      <el-descriptions :column="narrow ? 1 : 2" border>
         <el-descriptions-item label="售后单号">{{ record.id }}</el-descriptions-item>
         <el-descriptions-item label="售后类型">{{ record.typeName }}</el-descriptions-item>
         <el-descriptions-item label="关联订单">

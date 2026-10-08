@@ -60,7 +60,10 @@ services:
 
   # ---------------- MinIO（对象存储） ----------------
   minio:
-    image: minio/minio:latest
+    # 原 minio/minio 已于 2026-09-11 从 Docker Hub 整体下架（quay.io 亦不再对匿名用户开放），
+    # 这里改用社区维护的兼容分支 pgsty/minio；如需回退可用 STORAGE_TYPE=local 走本地磁盘。
+    # 可用版本见 https://hub.docker.com/r/pgsty/minio/tags
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     container_name: geek-mall-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"

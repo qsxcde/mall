@@ -55,6 +55,13 @@
 .promo-title em { color: var(--primary); font-style: normal; }
 .promo-more { font-size: 12px; color: var(--text-light); cursor: pointer; }
 .promo-more:hover { color: var(--primary); }
+/* 新品页 banner 右上角：本次真实上新数量（替代原先写死的发布倒计时） */
+.np-right .np-label { font-size: 13px; opacity: .95; }
+.np-right .np-count { font-size: 30px; font-weight: bold; margin-top: 4px; }
+/* 首页/秒杀页的场次信息：取自后端 sessions，替代原先写死的倒计时 */
+.promo-session { font-size: 12px; color: #666; }
+.seckill-hero .sh-session { font-size: 20px; font-weight: bold; margin-top: 2px; }
+.seckill-hero .sh-state { font-size: 12px; opacity: .95; margin-top: 4px; }
 
 .countdown { display: flex; gap: 4px; align-items: center; font-size: 12px; color: #666; }
 .countdown b { background: #333; color: #fff; padding: 2px 5px; border-radius: 3px; font-weight: normal; font-size: 12px; }
@@ -157,6 +164,16 @@
 .pd-thumbs .th { width: 76px; height: 76px; border-radius: 8px; cursor: pointer; border: 2px solid transparent; transition: border .2s; display: flex; align-items: center; justify-content: center; color: rgba(0,0,0,.2); font-size: 12px; }
 .pd-thumbs .th:hover { border-color: var(--border); }
 .pd-thumbs .th.on { border-color: var(--primary); }
+/* 真实图集：图片铺满容器；无图时回落到占位块 */
+.pd-stage img, .pd-thumbs .th img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
+.pd-thumbs .th.ph { cursor: default; border-style: dashed; font-size: 11px; }
+.pd-thumbs .th.ph:hover { border-color: transparent; }
+.opt-note { font-size: 12px; color: var(--text-light); align-self: center; }
+.pd-tags .tg { background: #f0f6ff; color: var(--primary); }
+.pd-params { display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 14px 0 4px; }
+.pd-param { font-size: 13px; color: #555; }
+.pd-param i { color: var(--text-light); font-style: normal; margin-right: 8px; }
+.pd-note { font-size: 13px; color: var(--text-light); margin-top: 10px; }
 .pd-info { flex: 1; min-width: 0; }
 .pd-info h1 { font-size: 24px; line-height: 1.35; }
 .pd-sub { font-size: 14px; color: var(--text-light); margin-top: 10px; }
@@ -248,6 +265,8 @@
 .sk-btn { width: 100%; height: 38px; border: none; border-radius: 19px; background: linear-gradient(135deg, #ff7a45, #ff4d2e); color: #fff; font-size: 14px; font-weight: bold; cursor: pointer; margin-top: 12px; transition: filter .2s; font-family: inherit; }
 .sk-btn:hover { filter: brightness(1.05); }
 .sk-btn.not-start { background: #fff; color: var(--seckill); border: 1px solid var(--seckill); }
+.sk-btn:disabled { cursor: not-allowed; opacity: .6; }
+.sk-btn.not-start:disabled { color: var(--text-light); border-color: var(--border); }
 
 /* 秒杀抢购确认弹窗 */
 .sk-confirm { color: #333; }
@@ -531,6 +550,27 @@
 .pf-top { display: flex; align-items: center; gap: 18px; padding-bottom: 20px; margin-bottom: 20px; border-bottom: 1px dashed var(--border); }
 .pf-top .pf-avatar { width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(135deg, #4da3ff, var(--primary)); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 32px; }
 .pf-top .pf-edit-av { font-size: 12px; color: var(--primary); cursor: pointer; margin-top: 6px; }
+/* 真实头像：img 撑满圆形容器；未设置时回落到 emoji 占位 */
+.pf-top .pf-avatar img, .uc-side .avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+.av-upload { text-align: center; cursor: pointer; flex-shrink: 0; }
+.pf-top .pf-edit-av.busy { color: var(--text-light); cursor: progress; }
+.pf-tip { font-size: 12px; color: var(--text-light); margin-top: 4px; line-height: 1.6; }
+/* 购物车结算摘要：优惠券走「领券中心 → 结算页选券」，不再有假的优惠码输入 */
+.side-row .side-hint { font-size: 12px; color: var(--text-light); font-weight: normal; }
+.side-coupon { display: block; font-size: 13px; color: var(--primary); cursor: pointer; margin: 6px 0 14px; }
+.side-coupon:hover { text-decoration: underline; }
+@media (max-width: 768px) {
+  /* 窄屏隐藏「单价」列，小计已能表达同样信息，避免表格被挤到只剩横向滚动 */
+  .cart-table .cart-col-sm-hide { display: none; }
+  /*
+   * el-table 的固定列宽之和会成为它的 min-content 宽度，若不约束，
+   * 在 390px 屏幕上会顶破页面（实测 scrollWidth 774px）。
+   * 这里让购物车主体自己横向滚动，表格不再撑开整页。
+   */
+  .cart-main { width: 100%; min-width: 0; overflow-x: auto; }
+  .cart-main .cart-table { min-width: 520px; }
+  .cart-main .cart-foot-bar { position: sticky; left: 0; }
+}
 .cp-sub, .od-sub, .as-sub { display: flex; gap: 8px; margin-bottom: 18px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .cp-sub a, .od-sub a, .as-sub a { padding: 10px 16px; font-size: 14px; color: #555; cursor: pointer; border-bottom: 2px solid transparent; transition: all .2s; }
 .cp-sub a.on, .od-sub a.on, .as-sub a.on { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
@@ -622,6 +662,10 @@
 .social { display: flex; justify-content: center; gap: 18px; }
 .social a { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 20px; transition: all .2s; }
 .social a:hover { border-color: var(--primary); color: var(--primary); transform: translateY(-2px); }
+/* 未接入的第三方登录：只做展示位，禁用点击与 hover 反馈，避免「点了没反应」的假交互 */
+.social a.disabled { opacity: .45; cursor: not-allowed; filter: grayscale(1); }
+.social a.disabled:hover { border-color: var(--border); color: inherit; transform: none; }
+.social-tip { text-align: center; margin-top: 12px; font-size: 12px; color: var(--text-light); }
 
 /* ============================ 文档页（关于 / 帮助 / 政策） ============================ */
 .doc-card { background: #fff; border-radius: 12px; padding: 28px; border: 1px solid var(--border); line-height: 2; color: #555; }

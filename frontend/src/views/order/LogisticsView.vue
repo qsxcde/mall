@@ -35,6 +35,18 @@ const copy = async () => {
     ElMessage.success(`运单号：${logistic.value.no}`)
   }
 }
+
+/** 联系快递：号码来自后端物流信息，复制出来让用户自己拨（网页无法直接外呼） */
+const callCourier = async () => {
+  const lg = logistic.value
+  if (!lg?.phone) return ElMessage.info('暂无快递客服电话')
+  try {
+    await navigator.clipboard.writeText(lg.phone)
+    ElMessage.success(`${lg.company} 客服 ${lg.phone} 已复制`)
+  } catch (e) {
+    ElMessage.info(`${lg.company} 客服 ${lg.phone}`)
+  }
+}
 </script>
 
 <template>
@@ -56,7 +68,7 @@ const copy = async () => {
           </div>
           <div class="lg-ops">
             <el-button size="small" @click="copy">复制运单号</el-button>
-            <el-button size="small" @click="ElMessage.info(`拨打 ${logistic.company} 客服 ${logistic.phone}（演示）`)">
+            <el-button size="small" @click="callCourier">
               联系快递
             </el-button>
           </div>
