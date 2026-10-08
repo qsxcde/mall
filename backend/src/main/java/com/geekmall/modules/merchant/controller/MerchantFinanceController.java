@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -25,6 +26,7 @@ import java.util.Map;
  * 商家端财务结算接口，对应前端 FinanceSettleView。
  */
 @Tag(name = "18-商家财务", description = "资金总览 / 结算单 / 资金流水 / 提现")
+@PreAuthorize("hasRole('MERCHANT')")
 @RestController
 @RequestMapping("/api/v1/merchant")
 @RequiredArgsConstructor

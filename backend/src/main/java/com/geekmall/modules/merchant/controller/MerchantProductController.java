@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -24,6 +25,7 @@ import java.util.Map;
  * 商家端商品管理接口，对应前端 ProductListView。
  */
 @Tag(name = "12-商家商品", description = "商品列表 / 保存 / 上下架 / 批量改价")
+@PreAuthorize("hasRole('MERCHANT')")
 @RestController
 @RequestMapping("/api/v1/merchant/product")
 @RequiredArgsConstructor

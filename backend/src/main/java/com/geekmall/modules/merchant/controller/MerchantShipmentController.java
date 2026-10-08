@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -23,6 +24,7 @@ import java.util.Map;
  * 商家端发货中心接口，对应前端 ShippingDeskView。
  */
 @Tag(name = "14-商家发货", description = "发货单列表 / 打单 / 确认发货")
+@PreAuthorize("hasRole('MERCHANT')")
 @RestController
 @RequestMapping("/api/v1/merchant/shipment")
 @RequiredArgsConstructor

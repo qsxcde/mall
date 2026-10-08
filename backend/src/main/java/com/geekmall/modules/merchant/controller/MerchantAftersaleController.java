@@ -16,12 +16,14 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 商家端售后管理接口，对应前端 AfterSaleView。
  */
 @Tag(name = "15-商家售后", description = "售后列表 / 详情 / 处理")
+@PreAuthorize("hasRole('MERCHANT')")
 @RestController
 @RequestMapping("/api/v1/merchant/aftersale")
 @RequiredArgsConstructor

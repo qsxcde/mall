@@ -181,15 +181,19 @@ class MerchantApiIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("买家令牌不能访问商家接口（双端鉴权隔离）")
+    @DisplayName("买家令牌不能访问商家接口（双端鉴权隔离：403 无权限，而非 401 未登录）")
     void buyerTokenShouldNotAccessMerchantApi() {
         String buyerToken = loginDemoBuyer();
 
         JsonNode response = get("/api/v1/merchant/overview", buyerToken);
 
+        // 买家令牌是「已认证」的，只是没有商家身份 —— 语义上应是 403（无权限）。
+        // 此前靠各商家 service 内部调 MerchantSecurityUtils.getShopId() 抛 401 兜底，
+        // 会被误报成「未登录」；现已由 SecurityConfig 的路径规则 + 商家控制器的
+        // @PreAuthorize("hasRole('MERCHANT')") 在进入业务前拦住。
         assertThat(response.get("code").asInt())
-                .as("买家令牌进入商家域必须被判为未登录")
-                .isEqualTo(ResultCode.UNAUTHORIZED.getCode());
+                .as("买家令牌已认证但无商家身份，应返回 403")
+                .isEqualTo(ResultCode.FORBIDDEN.getCode());
     }
 
     @Test

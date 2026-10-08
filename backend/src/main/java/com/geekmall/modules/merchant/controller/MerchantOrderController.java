@@ -17,12 +17,14 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 商家端订单管理接口，对应前端 OrderListView。
  */
 @Tag(name = "13-商家订单", description = "订单列表 / 详情 / 发货 / 关闭 / 备注")
+@PreAuthorize("hasRole('MERCHANT')")
 @RestController
 @RequestMapping("/api/v1/merchant/order")
 @RequiredArgsConstructor
