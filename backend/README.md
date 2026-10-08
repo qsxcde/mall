@@ -24,7 +24,7 @@ Spring Boot 3.3 + JDK 21 + MyBatis-Plus + MySQL 8 + Redis 7 的后端脚手架�
 docker compose -f infra/docker-compose.yml up -d
 ```
 
-会启动 MySQL(3306) / Redis(6379) / MinIO(9000,9001)。首次启动会初始化数据库
+会启动 MySQL(3307) / Redis(6379) / MinIO(9000,9001)。首次启动会初始化数据库
 `geek_mall`，表结构与演示数据在应用启动时由 Flyway 自动执行。
 
 ### 2. 启动后端
@@ -91,7 +91,7 @@ backend/
         ├── application.yml          # 公共配置
         ├── application-dev.yml      # 本地环境
         ├── application-prod.yml     # 生产环境
-        ├── logback-spring.xml       # 日志：控制台文本 + JSON 文件（含 traceId，见 docs/日志规范.md）
+        ├── logback-spring.xml       # 日志：控制台文本 + JSON 文件（含 traceId，见 docs/spec/日志规范.md）
         └── db/migration/
             ├── V1__init.sql         # 建表脚本（21 张表）
             ├── V2__seed.sql         # 演示数据
@@ -177,14 +177,14 @@ backend/
 - 未登录返回 `code = 401`（HTTP 状态仍为 200），前端拦截器据此跳转登录页。
 - 每个响应头都带 `X-Trace-Id`，与日志中的 `traceId` 字段对应。日志以 JSON 落盘（`logs/geek-mall.json.log`），
   在 Loki 中用 `{job="geek-mall-server"} | traceId="<值>"` 可精确串出整条调用链（含秒杀异步段）。
-  级别语义、字段字典与脱敏规则见 `docs/日志规范.md`。
+  级别语义、字段字典与脱敏规则见 `docs/spec/日志规范.md`。
 
 ## 配置说明
 
 | 配置项 | 说明 | 默认 |
 | --- | --- | --- |
 | `MALL_JWT_SECRET` | JWT 密钥，长度需 ≥ 32 字节 | 内置开发值，生产必须覆盖 |
-| `MYSQL_HOST/PORT/DB/USER/PASSWORD` | 数据库连接 | localhost:3306/geek_mall |
+| `MYSQL_HOST/PORT/DB/USER/PASSWORD` | 数据库连接 | localhost:3307/geek_mall |
 | `REDIS_HOST/PORT` | Redis 连接 | localhost:6379 |
 | `mall.init-demo-user` | 是否初始化演示账号 | dev=true |
 | `mall.sms.expose-code` | 是否回显验证码 | dev=true，生产必须 false |
@@ -220,7 +220,7 @@ backend/
    - 商品评分回写（评价后更新 `pms_product.rating`）
    - 真实物流轨迹接入；订单超时改用延迟队列替代轮询扫描
 
-详细设计与取舍（秒杀是否需要 MQ、可观测性分档、中间件全景）见 `docs/后端脚手架搭建方案.md`。
+详细设计与取舍（秒杀是否需要 MQ、可观测性分档、中间件全景）见 `docs/planning/后端脚手架搭建方案.md`。
 
 ## 前端联调
 

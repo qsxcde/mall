@@ -19,8 +19,9 @@ const currentCat = computed(
 const subList = computed(() => currentCat.value.children || [])
 const subKey = ref(route.query.sub || 'all')
 
-// 筛选条件（全部由后端执行）
-const filters = reactive({ brands: [], services: [] })
+// 筛选条件（全部由后端执行）；后端 ProductQueryDTO 只支持品牌/价格/排序，
+// 因此这里不做「服务」这类后端不认的勾选项——勾了也不生效等于骗用户
+const filters = reactive({ brands: [] })
 const priceRange = ref([0, PRICE_MAX])
 // 品牌需与后端 brand_name 一致
 const brandOptions = ['苹果', '华为', '小米', 'OPPO', '荣耀', '三星', '联想', '戴尔']
@@ -101,7 +102,7 @@ watch(catKey, () => {
 })
 // 筛选变化回到第一页重新查询
 watch(
-  [() => filters.brands.join(','), () => filters.services.join(','), priceRange, sortParam],
+  [() => filters.brands.join(','), priceRange, sortParam],
   () => {
     page.value = 1
     load()
@@ -196,16 +197,6 @@ const onSort = (key) => {
           </div>
         </div>
 
-        <div class="filter-group">
-          <div class="filter-title">服务</div>
-          <div class="filter-opts">
-            <el-checkbox-group v-model="filters.services">
-              <el-checkbox label="分期免息" value="分期免息" />
-              <el-checkbox label="顺丰包邮" value="顺丰包邮" />
-              <el-checkbox label="延保服务" value="延保服务" />
-            </el-checkbox-group>
-          </div>
-        </div>
       </aside>
 
       <!-- 结果区 -->

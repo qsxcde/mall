@@ -2,8 +2,15 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import contentApi from '@/api/content'
+import { SERVICE_HOTLINE, SERVICE_HOURS } from '@/data/constants'
 
 const faqs = ref([])
+
+/** 本站没有在线客服系统，统一给出可拨通的热线，而不是假装「已接入客服」 */
+const contactService = () => {
+  ElMessage.info(`客服热线 ${SERVICE_HOTLINE}（${SERVICE_HOURS}）`)
+}
+
 
 onMounted(async () => {
   try {
@@ -31,8 +38,8 @@ onMounted(async () => {
     </div>
 
     <div class="contact-bar">
-      <div><b>没找到答案？</b><br />工作时间 9:00-22:00 在线客服为你服务</div>
-      <button class="go" @click="ElMessage.success('已为您接入在线客服（演示）')">联系在线客服</button>
+      <div><b>没找到答案？</b><br />客服热线 {{ SERVICE_HOTLINE }}（{{ SERVICE_HOURS }}）</div>
+      <button class="go" @click="contactService">联系客服</button>
     </div>
   </div>
 </template>

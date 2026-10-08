@@ -4,8 +4,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { couponApi } from '@/api/marketing'
+import { fileApi } from '@/api/content'
 import { useUserStore } from '@/stores/user'
 import { useAfterSaleStore } from '@/stores/aftersale'
+import { SERVICE_HOTLINE, SERVICE_HOURS } from '@/data/constants'
 
 const route = useRoute()
 const router = useRouter()
@@ -36,6 +38,26 @@ const profile = reactive({ ...info.value })
 watch(info, (v) => Object.assign(profile, v), { deep: true })
 
 const saving = ref(false)
+
+/**
+ * 更换头像：先 POST /files?biz=avatar 拿到 URL，再 PUT /user/profile 持久化。
+ * 不做本地预览式的「假更换」——上传失败会由拦截器提示，头像保持不变。
+ */
+const uploadingAvatar = ref(false)
+const uploadAvatar = async ({ file }) => {
+  if (!file.type.startsWith('image/')) return ElMessage.warning('请选择图片文件')
+  if (file.size > 2 * 1024 * 1024) return ElMessage.warning('头像大小不能超过 2MB')
+  uploadingAvatar.value = true
+  try {
+    const { url } = await fileApi.upload(file, 'avatar')
+    await user.uploadAvatar(url)
+    ElMessage.success('头像已更新')
+  } catch (e) {
+    /* 失败信息由拦截器提示 */
+  } finally {
+    uploadingAvatar.value = false
+  }
+}
 const saveProfile = async () => {
   saving.value = true
   try {
@@ -161,7 +183,13 @@ const onSecurity = (row) => {
   // 密码修改复用「找回密码」链路；邮箱在个人资料里维护
   if (row.key === 'password') return router.push({ name: 'forgot' })
   if (row.key === 'email') return switchTab('profile')
-  return ElMessage.info('更换手机号功能开发中')
+  // 手机号即登录账号，更换需要后端下发换绑验证码的接口，目前没有——如实告知，不假装能改
+  ElMessage.info(`手机号是登录账号，更换需联系客服 ${SERVICE_HOTLINE}（${SERVICE_HOURS}）`)
+}
+
+/** 客服：本站无在线客服系统，统一给出可拨通的热线 */
+const contactService = () => {
+  ElMessage.info(`客服热线 ${SERVICE_HOTLINE}（${SERVICE_HOURS}）`)
 }
 
 // ---- 售后服务 ----
@@ -203,7 +231,10 @@ watch(activeTab, (tab) => {
       <!-- 侧边栏 -->
       <aside class="uc-side">
         <div class="user-head">
-          <div class="avatar">😊</div>
+          <div class="avatar">
+            <img v-if="info.avatar" :src="info.avatar" alt="头像" />
+            <template v-else>😊</template>
+          </div>
           <div>
             <div class="uname">{{ info.nickname }}</div>
             <div class="ulevel">VIP {{ info.level }}</div>
@@ -236,17 +267,31 @@ watch(activeTab, (tab) => {
         <section v-show="activeTab === 'profile'">
           <div class="panel-title">个人资料</div>
           <div class="pf-top">
-            <div class="pf-avatar">😊</div>
+            <el-upload
+              class="av-upload"
+              action="#"
+              accept="image/*"
+              :show-file-list="false"
+              :http-request="uploadAvatar"
+            >
+              <div class="pf-avatar">
+                <img v-if="info.avatar" :src="info.avatar" alt="头像" />
+                <template v-else>😊</template>
+              </div>
+              <div class="pf-edit-av" :class="{ busy: uploadingAvatar }">
+                {{ uploadingAvatar ? '上传中…' : '更换头像' }}
+              </div>
+            </el-upload>
             <div>
               <div style="font-size:16px;font-weight:bold">{{ info.nickname }}</div>
-              <div class="pf-edit-av" @click="ElMessage.info('更换头像（演示）')">更换头像</div>
+              <div class="pf-tip">支持 jpg / png / webp，不超过 2MB</div>
             </div>
           </div>
           <el-form label-position="top" style="max-width:680px">
             <el-row :gutter="20">
-              <el-col :span="12"><el-form-item label="昵称"><el-input v-model="profile.nickname" /></el-form-item></el-col>
-              <el-col :span="12"><el-form-item label="真实姓名"><el-input v-model="profile.realName" placeholder="请输入真实姓名" /></el-form-item></el-col>
-              <el-col :span="12">
+              <el-col :xs="24" :sm="12"><el-form-item label="昵称"><el-input v-model="profile.nickname" /></el-form-item></el-col>
+              <el-col :xs="24" :sm="12"><el-form-item label="真实姓名"><el-input v-model="profile.realName" placeholder="请输入真实姓名" /></el-form-item></el-col>
+              <el-col :xs="24" :sm="12">
                 <el-form-item label="性别">
                   <el-radio-group v-model="profile.gender">
                     <el-radio value="男">男</el-radio>
@@ -255,9 +300,9 @@ watch(activeTab, (tab) => {
                   </el-radio-group>
                 </el-form-item>
               </el-col>
-              <el-col :span="12"><el-form-item label="生日"><el-date-picker v-model="profile.birthday" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
-              <el-col :span="12"><el-form-item label="手机号"><el-input v-model="profile.phone" disabled /></el-form-item></el-col>
-              <el-col :span="12"><el-form-item label="邮箱"><el-input v-model="profile.email" placeholder="请输入邮箱" /></el-form-item></el-col>
+              <el-col :xs="24" :sm="12"><el-form-item label="生日"><el-date-picker v-model="profile.birthday" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
+              <el-col :xs="24" :sm="12"><el-form-item label="手机号"><el-input v-model="profile.phone" disabled /><div class="pf-tip">登录账号，如需更换请联系客服</div></el-form-item></el-col>
+              <el-col :xs="24" :sm="12"><el-form-item label="邮箱"><el-input v-model="profile.email" placeholder="请输入邮箱" /></el-form-item></el-col>
               <el-col :span="24"><el-form-item label="个人简介"><el-input v-model="profile.bio" type="textarea" :rows="3" /></el-form-item></el-col>
             </el-row>
             <el-button type="primary" :loading="saving" @click="saveProfile">保存修改</el-button>
@@ -328,7 +373,7 @@ watch(activeTab, (tab) => {
             <div class="as-svc" @click="applyService('return')"><div class="ic">🔁</div><div class="nm">申请退换货</div><div class="ds">7 天无理由 · 质量问题退换</div></div>
             <div class="as-svc" @click="applyService('repair')"><div class="ic">🔧</div><div class="nm">维修服务</div><div class="ds">保修期内 · 预约上门</div></div>
             <div class="as-svc" @click="applyService('refund')"><div class="ic">💰</div><div class="nm">价格保护</div><div class="ds">降价补差 · 自动审核</div></div>
-            <div class="as-svc" @click="ElMessage.info('已为您接入在线客服（演示）')"><div class="ic">💬</div><div class="nm">咨询客服</div><div class="ds">在线客服 · 7×24 小时</div></div>
+            <div class="as-svc" @click="contactService"><div class="ic">💬</div><div class="nm">咨询客服</div><div class="ds">{{ SERVICE_HOTLINE }} · {{ SERVICE_HOURS }}</div></div>
           </div>
 
           <div class="panel-title" style="margin-top:26px">我的售后记录</div>
@@ -348,7 +393,7 @@ watch(activeTab, (tab) => {
     </div>
 
     <!-- 新增地址弹窗 -->
-    <el-dialog v-model="addrDialog" :title="editingId ? '编辑收货地址' : '新增收货地址'" width="520px">
+    <el-dialog v-model="addrDialog" :title="editingId ? '编辑收货地址' : '新增收货地址'" width="min(520px, 92vw)">
       <el-form label-width="80px">
         <el-form-item label="收货人"><el-input v-model="addrForm.name" placeholder="请输入收货人姓名" /></el-form-item>
         <el-form-item label="手机号"><el-input v-model="addrForm.phone" placeholder="请输入手机号" /></el-form-item>

@@ -3,6 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { userApi } from '@/api/user'
+import tradeApi from '@/api/trade'
+import reviewApi from '@/api/review'
 import { useUserStore } from '@/stores/user'
 import { benefitIcons } from '@/data/constants'
 
@@ -27,11 +29,24 @@ const raw = ref({
 })
 const signing = ref(false)
 
+/** 成长任务的完成状态用真实数据判定：订单数与评价数 */
+const stats = ref({ orders: 0, reviews: 0 })
+
 const load = async () => {
   try {
     raw.value = await userApi.memberInfo()
   } catch (e) {
     /* 失败信息由拦截器提示 */
+  }
+  // 任务判定不阻断主流程：任一失败都按 0 处理
+  try {
+    const [orderPage, reviews] = await Promise.all([
+      tradeApi.orders({ page: 1, pageSize: 1 }),
+      reviewApi.mine()
+    ])
+    stats.value = { orders: orderPage.total || 0, reviews: (reviews || []).length }
+  } catch (e) {
+    stats.value = { orders: 0, reviews: 0 }
   }
 }
 onMounted(load)
@@ -47,7 +62,7 @@ const buildSignDays = (r) => {
 }
 
 /**
- * 成长任务：完成状态取自真实数据（签到状态 / 资料完善度）。
+ * 成长任务：完成状态全部取自真实数据（签到状态 / 资料完善度 / 订单数 / 评价数）。
  * 注意：目前只有「每日签到」的积分奖励由后端真实发放，其余为运营展示位。
  */
 const buildTasks = (r) => {
@@ -55,8 +70,8 @@ const buildTasks = (r) => {
   return [
     { key: 'sign', icon: '📅', name: '每日签到', reward: '+10 积分', action: r.signedToday ? '已签到' : '去签到', done: !!r.signedToday },
     { key: 'profile', icon: '👤', name: '完善个人资料', reward: '提升账户安全', action: '去完善', done: !!(profile.avatar && profile.email) },
-    { key: 'order', icon: '🛒', name: '逛逛新品', reward: '累计成长值', action: '去逛逛', done: false },
-    { key: 'review', icon: '✍️', name: '发表商品评价', reward: '累计成长值', action: '去评价', done: false }
+    { key: 'order', icon: '🛒', name: '完成第一笔订单', reward: '累计成长值', action: stats.value.orders ? '已下单' : '去逛逛', done: stats.value.orders > 0 },
+    { key: 'review', icon: '✍️', name: '发表商品评价', reward: '累计成长值', action: stats.value.reviews ? '已评价' : '去评价', done: stats.value.reviews > 0 }
   ]
 }
 
@@ -125,7 +140,7 @@ const exchange = () => router.push({ name: 'points' })
         </div>
       </div>
       <div class="m-actions">
-        <button class="m-btn m-btn-gold" @click="upgrade">立即升级</button>
+        <button class="m-btn m-btn-gold" @click="upgrade">成长值自动升级</button>
         <button class="m-btn m-btn-ghost" @click="exchange">积分兑换</button>
       </div>
     </div>

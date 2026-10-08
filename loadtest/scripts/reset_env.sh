@@ -94,7 +94,7 @@ stop_backend() {
   pkill -f "$(basename "$JAR")" 2>/dev/null || true
 }
 
-# 秒杀商品基线（与 docs/第一次压力测试.md 的说明保持一致）
+# 秒杀商品基线（与 docs/benchmark/第一次压力测试.md 的说明保持一致）
 ITEM1_STOCK=200      # 压力测试用：mkt_seckill_item.id=1 → pms_product.id=1
 ITEM1_PRODUCT=1
 ITEM2_STOCK=50       # 并发正确性测试用：mkt_seckill_item.id=2 → pms_product.id=6

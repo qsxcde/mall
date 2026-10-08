@@ -116,12 +116,12 @@
 >
 > **首次启动需要联网**：`mvn` 拉取依赖、`npm install` 安装 `node_modules`（未入库）、Docker 拉取 `mysql:8.0` / `redis:7-alpine` / `minio` 镜像。
 >
-> **启动前确认端口空闲**：`8080`（后端）、`3306`（MySQL）、`6379`（Redis）、`9000` / `9001`（MinIO）、`5173` / `5174`（前端）。新机器若已装本地 MySQL 或 Redis，会与容器抢占 `3306` / `6379`。
+> **启动前确认端口空闲**：`8080`（后端）、`3307`（容器 MySQL）、`6379`（Redis）、`9000` / `9001`（MinIO）、`5173` / `5174`（前端）。容器 MySQL 默认映射到 **3307**（见 `infra/.env` 与 `application-dev.yml`），就是为了避开新机器上已装的本地 MySQL 抢占 `3306`。
 
 ### 2.2 启动基础设施
 
 ```bash
-# 在仓库根目录执行：MySQL(3306) / Redis(6379) / MinIO(9000,9001)
+# 在仓库根目录执行：MySQL(3307) / Redis(6379) / MinIO(9000,9001)
 docker compose -f infra/docker-compose.yml up -d
 
 # （可选）同时启动 Prometheus / Grafana / Loki / Promtail
@@ -211,9 +211,10 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
 | 现象 | 原因与处理 |
 | --- | --- |
 | 接口返回 401 | 登录态失效或令牌过期；前端拦截器会自动跳登录页 |
-| 接口返回 429 | 触发了限流（防刷接口为 `FAIL_CLOSED`）；规则见 `docs/接口限流策略说明.md` |
+| 接口返回 429 | 触发了限流（防刷接口为 `FAIL_CLOSED`）；规则见 `docs/spec/接口限流策略说明.md` |
 | 提示连接不上 MySQL/Redis | 中间件未启动：`docker compose -f infra/docker-compose.yml up -d` |
-| 宿主机 3306 / 6379 端口被占用 | 本机已装 MySQL / Redis 与容器冲突：停掉本地服务，或改 `.env` 里的 `MYSQL_PORT` / `REDIS_PORT` 并同步后端环境变量 |
+| 宿主机 3307 / 6379 端口被占用 | 本机已装 MySQL / Redis 与容器冲突：停掉本地服务，或改 `.env` 里的 `MYSQL_PORT` / `REDIS_PORT` 并同步后端环境变量 |
+| 启动报 `Access denied for user 'root'@'localhost'` | 后端连到了**本机**的 MySQL 而不是容器（3306 被本地实例占用）：确认容器端口为 3307，且 `application-dev.yml` 的默认端口未被改回 3306 |
 | 前端 `npm run dev` 报 Node 版本不支持 | `vite@6` 要求 Node `^18` / `^20` / `>=22`，升级到 Node 20/22 |
 | `mvn test` 失败且报容器相关错误 | Docker 未运行，或 Testcontainers 版本过低（项目已固定为 1.21.4） |
 | 图片上传失败 | MinIO 未就绪；改用 `--mall.storage.type=local` |
@@ -256,7 +257,7 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
 `infra/` 里已经编排好 Prometheus + Grafana + Loki + Promtail，但只有配置、没有看板与告警。缓存命中率、限流触发次数、消费队列滞后、熔断状态这些指标已在代码里埋好（Micrometer），把它们画出来才能在日常就发现问题，而不是等压测。
 
 > **进展**：日志侧已先行落地——结构化 JSON、traceId 跨线程/跨队列贯通、慢 SQL 阈值化、重复异常收敛、敏感信息脱敏，
-> 并有自动化断言守住（见 `docs/日志规范.md`）。看板、告警与限流/秒杀队列指标仍未落地，详见 `docs/可观测性现状分析与改进方案.md`。
+> 并有自动化断言守住（见 `docs/spec/日志规范.md`）。看板、告警与限流/秒杀队列指标仍未落地，详见 `docs/spec/可观测性现状分析与改进方案.md`。
 
 ### 3.3 更远的想法
 
@@ -272,20 +273,24 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
 
 ## 四、文档索引
 
-`docs/` 下的报告按主题分类，都是对代码的实际审查与实测记录：
+`docs/` 下的报告已按主题归档到子目录（总入口见 `docs/文档分类索引.md`），都是对代码的实际审查与实测记录：
 
-| 文档 | 内容 |
-| --- | --- |
-| `练手项目聚焦范围与框架就绪度报告.md` | **总纲**：功能就绪度、能力矩阵、缺口与优先级 |
-| `接口限流策略说明.md` | 全站 118 个端点的限流规则明细与分层取舍 |
-| `秒杀削峰压测对比报告.md` | 削峰的实测收益与代价（含完整复现步骤） |
-| `秒杀异步化分析.md` | 削峰方案的设计取舍 |
-| `高并发处理现状报告.md` / `高并发问题治理清单.md` | 现状盘点与问题清单 |
-| `第一次压力测试.md` | 首轮 JMeter + k6 压测全记录 |
-| `高并发功能模块全景分析.md` / `功能点分析报告.md` | 模块与功能全景 |
-| `后端脚手架搭建方案.md` | 后端分层与中间件选型设计 |
-| `死代码清理报告.md` | 死代码排查与复核结论 |
-| `可观测性现状分析与改进方案.md` | 观测能力盘点（日志/指标/追踪/告警）、盲区诊断、改进方向与分阶段落地计划 |
-| `日志规范.md` | 日志级别语义、字段字典、链路上下文三边界、脱敏规则与噪音治理 |
+| 目录 | 文档 | 内容 |
+| --- | --- | --- |
+| `docs/planning/` | `练手项目聚焦范围与框架就绪度报告.md` | **总纲**：功能就绪度、能力矩阵、缺口与优先级 |
+| `docs/planning/` | `功能点分析报告.md` | 前端功能点清单与缺口清单（需求基线） |
+| `docs/planning/` | `后端脚手架搭建方案.md` | 后端分层与中间件选型设计 |
+| `docs/concurrency/` | `高并发功能模块全景分析.md` | 全站高并发点普查 |
+| `docs/concurrency/` | `高并发处理现状报告.md` | 高并发处理手段现状盘点 |
+| `docs/concurrency/` | `高并发现状核查报告.md` | 对已有结论的独立复核 |
+| `docs/concurrency/` | `高并发问题治理清单.md` | 待治理项清单与优先级 |
+| `docs/concurrency/` | `秒杀异步化分析.md` | 削峰方案的设计取舍 |
+| `docs/concurrency/` | `秒杀削峰压测对比报告.md` | 削峰的实测收益与代价（含完整复现步骤） |
+| `docs/benchmark/` | `第一次压力测试.md` | 首轮 JMeter + k6 压测全记录 |
+| `docs/benchmark/` | `测试补充项与MQ对比压测方案.md` | 测试缺口梳理与 MQ / 非MQ 对比压测方案 |
+| `docs/spec/` | `接口限流策略说明.md` | 全站 118 个端点的限流规则明细与分层取舍 |
+| `docs/spec/` | `日志规范.md` | 日志级别语义、字段字典、链路上下文三边界、脱敏规则与噪音治理 |
+| `docs/spec/` | `可观测性现状分析与改进方案.md` | 观测能力盘点（日志/指标/追踪/告警）、盲区诊断、改进方向与分阶段落地计划 |
+| `docs/governance/` | `死代码清理报告.md` | 死代码排查与复核结论 |
 
 各子工程另有自己的 README：`backend/README.md`（接口清单与配置项）、`infra/README.md`（编排与可观测性用法）、`frontend/README.md`、`frontendMerchant/README.md`、`loadtest/B机压测操作指南.md`（跨机压测操作）。

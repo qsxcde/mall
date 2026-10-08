@@ -162,7 +162,7 @@ const submit = async () => {
         <!-- 优惠券 -->
         <div class="co-card">
           <div class="ttl">优惠券</div>
-          <el-select v-model="couponId" placeholder="不使用优惠券" style="width:380px">
+          <el-select v-model="couponId" placeholder="不使用优惠券" style="width:100%;max-width:380px">
             <el-option label="不使用优惠券" value="" />
             <el-option
               v-for="c in coupons"

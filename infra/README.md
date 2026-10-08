@@ -40,7 +40,7 @@ docker compose -f infra/docker-compose.yml down -v
 
 | 组件 | 端口 | 说明 | Profile |
 | --- | --- | --- | --- |
-| MySQL | 3306 | 库 `geek_mall`，账号 `root/root` | 默认 |
+| MySQL | 3307 | 库 `geek_mall`，账号 `root/root`（宿主端口 3307，避开本机 MySQL 的 3306） | 默认 |
 | Redis | 6379 | appendonly 持久化 | 默认 |
 | MinIO | 9000 / 9001 | API / 控制台（`minioadmin/minioadmin`） | 默认 |
 | Prometheus | 9090 | 指标采集 | observability |
@@ -102,13 +102,22 @@ docker run -d --name geek-mall-server \
 
 ## 注意事项
 
-- **MinIO 镜像拉取失败时**（部分网络环境无法访问 Docker Hub 的 `minio/minio`）：
-  不影响后端启动，只是图片上传会返回明确提示。此时可让后端改用本地磁盘存储：
+- **MinIO 镜像说明**：官方 `minio/minio` 已于 2026-09-11 从 Docker Hub 整体下架
+  （`quay.io/minio/minio` 也于 2026-09-24 起不再对匿名用户开放），因此本编排改用社区维护的
+  兼容分支 `pgsty/minio`（见 `docker-compose.yml` 中 minio 服务的注释）。
+  若该镜像也拉取失败（离线环境等），不影响后端启动，只是图片上传会返回明确提示，
+  此时可让后端改用本地磁盘存储：
   ```bash
   java -jar backend/target/geek-mall-server-1.0.0.jar --mall.storage.type=local
   # 或设置环境变量 STORAGE_TYPE=local
   ```
   文件会写入 `backend/uploads/`，并通过 `/uploads/**` 直接访问。
+- 切换对象存储实现只依赖 `mall.storage.type`（见 `backend/src/main/resources/application.yml`），
+  为 `minio` 时才会连 `http://localhost:9000`，为 `local` 时完全不依赖容器。
+- **容器 MySQL 映射到宿主 `3307`（不是 3306）**：本机若已装 MySQL，它会占住 `127.0.0.1:3306`，
+  而后端连 `localhost:3306` 会命中本机实例，报 `Access denied for user 'root'@'localhost'`——
+  看起来像密码错，其实是连错了实例。`.env` 里已设 `MYSQL_PORT=3307`，
+  后端 `application-dev.yml` 的默认端口与之对齐，改端口时两边要一起改。
 - 生产环境请务必修改 `MYSQL_ROOT_PASSWORD`、`MINIO_ROOT_PASSWORD`、`GRAFANA_PASSWORD`
   以及后端的 `MALL_JWT_SECRET`。
 - 生产不建议使用 `mysql:8.0` 的 `latest` 标签，应固定小版本号。

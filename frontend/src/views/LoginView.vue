@@ -14,6 +14,13 @@ const pwdFormRef = ref()
 const smsFormRef = ref()
 const smsCounter = ref(0)
 
+/** 第三方登录尚未接入（后端无 OAuth 接口），只做展示位，不做假交互 */
+const socials = [
+  { name: '微信', icon: '💬' },
+  { name: 'QQ', icon: '🐧' },
+  { name: '支付宝', icon: '🅰️' }
+]
+
 // 从注册页返回时携带手机号，自动填入
 const pwdForm = reactive({
   account: typeof route.query.account === 'string' ? route.query.account : '',
@@ -141,17 +148,18 @@ const submitSmsLogin = async (formEl) => {
         </el-form-item>
         <div style="display:flex;justify-content:space-between;align-items:center;margin:4px 0 20px">
           <el-checkbox v-model="smsForm.remember">记住我</el-checkbox>
-          <el-link type="primary" :underline="false" @click="ElMessage.info('演示')">无法接收短信？</el-link>
+          <el-link type="primary" :underline="false" @click="loginTab = 'pwd'">收不到短信？改用密码登录</el-link>
         </div>
         <el-button type="primary" size="large" style="width:100%" @click="submitSmsLogin(smsFormRef)">登录</el-button>
       </el-form>
 
       <el-divider>其他方式</el-divider>
       <div class="social">
-        <a title="微信登录">💬</a>
-        <a title="QQ 登录">🐧</a>
-        <a title="支付宝登录">🅰️</a>
+        <el-tooltip v-for="s in socials" :key="s.name" :content="`${s.name}登录暂未开放`" placement="top">
+          <a class="disabled" aria-disabled="true">{{ s.icon }}</a>
+        </el-tooltip>
       </div>
+      <p class="social-tip">第三方登录暂未开放，请使用手机号登录</p>
       <div class="form-foot">还没有账号？<a @click="router.push({ name: 'register' })">立即注册</a></div>
     </div>
   </main>

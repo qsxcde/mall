@@ -20,8 +20,6 @@ const load = async () => {
 }
 onMounted(load)
 
-// 后端尚未提供追评接口，这里如实告知而不是假装成功
-const append = () => ElMessage.info('追加评价功能开发中')
 
 const remove = (review) => {
   ElMessageBox.confirm('确定删除这条评价吗？删除后不可恢复。', '提示', { type: 'warning' })
@@ -69,7 +67,10 @@ const goOrder = (no) => router.push({ name: 'order-detail', params: { no } })
 
         <div class="mr-ops">
           <el-button size="small" @click="goOrder(r.orderNo)">查看订单</el-button>
-          <el-button size="small" @click="append">追加评价</el-button>
+          <!-- 后端暂无追评接口：按钮置灰而不是弹「开发中」，避免看起来可用 -->
+          <el-tooltip content="追加评价暂未开放" placement="top">
+            <span><el-button size="small" disabled>追加评价</el-button></span>
+          </el-tooltip>
           <el-button size="small" text type="danger" @click="remove(r)">删除</el-button>
         </div>
       </div>

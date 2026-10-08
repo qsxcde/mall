@@ -5,7 +5,6 @@ import { ElMessage } from 'element-plus'
 import { seckillApi } from '@/api/marketing'
 import { useUserStore } from '@/stores/user'
 import { fmtMoney } from '@/utils/format'
-import CountdownTimer from '@/components/CountdownTimer.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -46,6 +45,11 @@ const stopPolling = () => {
 
 // 离开页面必须停掉轮询：否则定时器仍会触发跳转，把已经离开的用户拽走
 onUnmounted(stopPolling)
+
+/** 场次状态文案：直接由后端返回的 state 推导，不再用写死的倒计时冒充「本场剩余时间」 */
+const STATE_TEXT = { wait: '即将开始', running: '进行中', done: '已结束' }
+const currentSession = computed(() => sessions.value[sessionIndex.value] || null)
+const currentStateText = computed(() => STATE_TEXT[currentSession.value?.state] || '')
 
 const loadItems = async () => {
   const current = sessions.value[sessionIndex.value]
@@ -192,7 +196,6 @@ const confirmGrab = async () => {
   await doGrab(item)
 }
 
-const remind = () => ElMessage.success('已开启开抢提醒')
 </script>
 
 <template>
@@ -204,8 +207,11 @@ const remind = () => ElMessage.success('已开启开抢提醒')
         <p>天天低价 · 整点开抢 · 抢完即止 · 正品保障</p>
       </div>
       <div class="sh-right">
-        <div class="sh-label">本场结束还剩</div>
-        <CountdownTimer :hours="2" :minutes="15" :seconds="30" big />
+        <div class="sh-label">当前场次</div>
+        <div class="sh-session">
+          {{ currentSession ? `${currentSession.time} ${currentSession.label || ''}` : '加载中…' }}
+        </div>
+        <div class="sh-state">{{ currentStateText }}</div>
       </div>
     </div>
 
@@ -255,7 +261,8 @@ const remind = () => ElMessage.success('已开启开抢提醒')
                     : '马上抢'
             }}
           </button>
-          <button v-else class="sk-btn not-start" @click="remind">提醒我</button>
+          <!-- 后端没有「开抢提醒」接口：置灰并说明，而不是弹一句假的「已开启提醒」 -->
+          <button v-else class="sk-btn not-start" disabled title="开抢提醒暂未开放">开抢提醒暂未开放</button>
         </div>
       </div>
     </div>
@@ -264,7 +271,7 @@ const remind = () => ElMessage.success('已开启开抢提醒')
     <el-dialog
       v-model="confirmVisible"
       title="确认抢购"
-      width="520px"
+      width="min(520px, 92vw)"
       @closed="pendingItem = null"
     >
       <div v-if="pendingItem" class="sk-confirm">
