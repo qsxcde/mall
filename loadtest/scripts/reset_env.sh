@@ -156,6 +156,21 @@ docker exec geek-mall-redis sh -c "redis-cli --scan --pattern 'mall:seckill:*' |
 # 返回一个数据库里并不存在的悬空订单号。必须一起清掉。
 docker exec geek-mall-redis sh -c "redis-cli --scan --pattern 'mall:order:idempotent:*' | xargs -r redis-cli del" >/dev/null
 
+if [[ "$MANAGE_BACKEND" == "1" ]] && ! command -v lsof >/dev/null 2>&1; then
+  # Windows / Git Bash 没有 lsof：停服分支必然退化——按端口找不到进程，
+  # 于是「端口已释放」的判断会误判，最后以「假成功」失败退出，报错很难懂。
+  # 这里提前拦下来，直接给出可行路径。
+  echo "[4/5] 未找到 lsof，无法按端口精确停服（Windows/Git Bash 常见）" >&2
+  echo "      请改用：MANAGE_BACKEND=0 bash $0" >&2
+  echo "      然后自行重启后端，例如：" >&2
+  echo "        java -jar $JAR --server.port=$PORT \\" >&2
+  echo "          --mall.rate-limit.enabled=$RATE_LIMIT_ENABLED \\" >&2
+  echo "          --mall.seckill.async.enabled=$SECKILL_ASYNC_ENABLED \\" >&2
+  echo "          --mall.seckill.async.consumer-threads=$CONSUMER_THREADS" >&2
+  echo "      （重启同样能清 Caffeine 令牌缓存 + 预热秒杀库存）" >&2
+  exit 1
+fi
+
 if [[ "$MANAGE_BACKEND" != "1" ]]; then
   echo "[4/5] MANAGE_BACKEND=0：仅重置数据，不重启后端"
   echo "      提醒：请自行重启后端，否则 Caffeine 令牌缓存不会清、Redis 秒杀计数不会预热"
