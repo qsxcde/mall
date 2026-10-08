@@ -52,7 +52,7 @@ docker compose -f infra/docker-compose.yml down -v
 
 - 数据库由 MySQL 容器自动创建（`MYSQL_DATABASE=geek_mall`）。
 - **表结构与演示数据不在这里初始化**，而是由后端启动时的 Flyway 自动执行
-  `backend/src/main/resources/db/migration/` 下的 9 个版本化迁移（`V1__init.sql` … `V9__merchant_consistency.sql`）。
+  `backend/src/main/resources/db/migration/` 下的 10 个版本化迁移（`V1__init.sql` … `V10__digital_product_release_seed.sql`）。
 - 这样保证「代码与库结构」始终同源，避免手工导入 SQL 造成漂移。
 
 ## 可观测性使用
