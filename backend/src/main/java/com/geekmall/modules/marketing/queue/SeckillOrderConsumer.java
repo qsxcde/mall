@@ -58,6 +58,8 @@ public class SeckillOrderConsumer implements SmartLifecycle {
     private final SeckillResultStore resultStore;
     private final SeckillServiceImpl seckillService;
     private final SeckillProperties properties;
+    /** 队列可观测指标（积压/消费者数/死信）。 */
+    private final SeckillQueueMetrics queueMetrics;
     /** 用于取 {@code server.port} 参与消费者命名（同机多实例必须可区分）。 */
     private final Environment environment;
 
@@ -223,6 +225,8 @@ public class SeckillOrderConsumer implements SmartLifecycle {
         String requestId = message.requestId();
         log.error("[秒杀削峰] 消息重投 {} 次仍未成功，转入死信并终止重试：requestId={}, itemId={}, userId={}",
                 delivery.deliveries(), requestId, message.itemId(), message.userId());
+        // 计数：死信是「有单被放弃」的硬信号，必须能在看板/告警上看到（而不是只留在日志里）
+        queueMetrics.recordDeadLetter();
 
         // ① 回补预扣：尽力而为，失败仅记录 —— 不能因为回补失败就让消息继续留在 pending 里打转
         try {

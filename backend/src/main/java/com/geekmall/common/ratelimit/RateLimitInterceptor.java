@@ -72,6 +72,8 @@ public class RateLimitInterceptor implements AsyncHandlerInterceptor {
     private final DistributedRateLimiter distributedRateLimiter;
     /** 集群实例数：用于把 LOCAL 层（进程内）配额切分到各实例。 */
     private final ClusterProperties clusterProperties;
+    /** 限流拒绝计数（按规则 / 层级 / 原因打标签，供看板与告警使用）。 */
+    private final RateLimitMetrics rateLimitMetrics;
 
     @Override
     public boolean preHandle(@NonNull HttpServletRequest request,
@@ -114,6 +116,7 @@ public class RateLimitInterceptor implements AsyncHandlerInterceptor {
                 : distributedRateLimiter.tryAcquire(key, limit, policy.windowSeconds(), policy.fallback());
 
         if (!result.allowed()) {
+            rateLimitMetrics.recordRejected(policy, RateLimitMetrics.REASON_RATE);
             log.warn("[限流] 规则={}, 维度={}, 阈值={}/{}s, 层级={}",
                     policy.name(), dimension, policy.limit(), policy.windowSeconds(), policy.tier());
             throw new RateLimitException("系统繁忙，请稍后再试", result.retryAfterSeconds());
@@ -125,6 +128,7 @@ public class RateLimitInterceptor implements AsyncHandlerInterceptor {
         if (maxConcurrent > 0) {
             String concurrentKey = key + ":conc";
             if (!localRateLimiter.tryAcquireConcurrent(concurrentKey, maxConcurrent)) {
+                rateLimitMetrics.recordRejected(policy, RateLimitMetrics.REASON_CONCURRENT);
                 log.warn("[限流] 规则={} 并发已达上限 {}（实例数 {}），拒绝请求",
                         policy.name(), maxConcurrent, instanceCount);
                 throw new RateLimitException("当前请求过多，请稍后再试", 1);

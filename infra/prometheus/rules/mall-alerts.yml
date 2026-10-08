@@ -1,0 +1,115 @@
+# ============================================================
+# 商城告警规则
+#
+# 说明：
+#   · 规则由 Prometheus 求值，结果暴露为 `ALERTS` / `ALERTS_FOR_STATE` 指标，
+#     可在 Prometheus 的 /alerts 页面与 Grafana 上直接看到；
+#   · **要真正发出通知（邮件/钉钉/企微）还需接 Alertmanager** —— 本项目刻意未编排它，
+#     属于「告警规则已就位、通知渠道留白」的取舍（见 docs/spec/可观测性现状分析与改进方案.md）；
+#   · 所有表达式都对「取不到数据（NaN）」保持沉默：比较运算遇到 NaN 一律为假，
+#     因此 Redis 抖动时不会误报。
+# ============================================================
+
+groups:
+  # ---------------- 秒杀削峰队列 ----------------
+  - name: mall-seckill-queue
+    rules:
+      - alert: MallSeckillQueueBacklog
+        expr: mall_seckill_queue_pending > 500
+        for: 2m
+        labels:
+          severity: warning
+          component: seckill-queue
+        annotations:
+          summary: "秒杀削峰队列积压（pending={{ $value }}）"
+          description: >-
+            已投递但未确认的秒杀消息持续 2 分钟超过 500 条：消费者可能卡住、落库变慢，
+            或 ack 路径异常。用户侧表现为抢购一直停在「排队中」。
+          runbook: >-
+            ① 看 mall_seckill_queue_consumers 是否为 0（消费端全挂）；
+            ② 搜日志「[秒杀削峰] 回收了」「落库异常，等待重投」；
+            ③ 看 mall_slow_sql_total 是否同时上涨（落库变慢是最常见根因）。
+
+      - alert: MallSeckillConsumerDown
+        # 只有「确实有活儿没人干」才告警：空闲时消费组本来就可能没有活跃消费者（懒注册）
+        expr: (mall_seckill_queue_pending > 0) and (mall_seckill_queue_consumers < 1)
+        for: 2m
+        labels:
+          severity: critical
+          component: seckill-queue
+        annotations:
+          summary: "秒杀队列有积压但无消费者"
+          description: "队列里有 {{ $value }} 条待处理消息，但消费者组内活跃消费者为 0 —— 消息只进不出。"
+
+      - alert: MallSeckillDeadLetter
+        expr: increase(mall_seckill_dead_letter_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          component: seckill-queue
+        annotations:
+          summary: "秒杀出现死信（5 分钟内 {{ $value }} 条）"
+          description: >-
+            有消息重投达上限仍未成功，已被放弃并回补预扣 —— 该用户会拿到「抢购未完成」。
+            需要人工核对库存与订单是否一致。
+
+  # ---------------- 熔断降级 ----------------
+  - name: mall-resilience
+    rules:
+      - alert: MallCircuitBreakerOpen
+        # 状态码映射见 ResilienceMetrics#registerStateGauge：0=CLOSED, 1=OPEN, 2=HALF_OPEN
+        expr: mall_circuit_state == 1
+        for: 1m
+        labels:
+          severity: warning
+          component: resilience
+        annotations:
+          summary: "熔断器打开（resource={{ $labels.resource }}）"
+          description: >-
+            该下游持续失败已被熔断，请求正在走降级路径。关注 mall_resilience_degraded_total
+            （有多少用户被优雅降级接住）与 mall_resilience_failure_total（真实失败量）。
+
+  # ---------------- 缓存 ----------------
+  - name: mall-cache
+    rules:
+      - alert: MallCacheRebuildSpike
+        expr: sum(rate(mall_cache_rebuild_total[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "缓存回源重建过于频繁"
+          description: >-
+            持续回源说明热点 key 在反复失效。结合 mall_cache_lock_timeout_total 判断：
+            超时数也上涨则说明重建本身很慢（下游变慢），否则可能是 TTL 配置过短或遭到了错峰穿透。
+
+  # ---------------- 限流 ----------------
+  - name: mall-ratelimit
+    rules:
+      - alert: MallRateLimitRejectionSpike
+        expr: sum(rate(mall_rate_limit_rejected_total[1m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: ratelimit
+        annotations:
+          summary: "限流拒绝速率持续偏高（{{ $value }}/s）"
+          description: >-
+            按 policy 维度下钻（mall_rate_limit_rejected_total{policy=...}）区分：
+            是正常防刷拦住了攻击流量，还是阈值配得过紧误伤了正常用户。
+
+  # ---------------- 数据库 ----------------
+  - name: mall-database
+    rules:
+      - alert: MallSlowSqlSpike
+        expr: increase(mall_slow_sql_total[5m]) > 10
+        for: 0m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "慢 SQL 数量上升（5 分钟内 {{ $value }} 条）"
+          description: >-
+            阈值见 mall.logging.slow-sql-threshold-ms。常见根因：缺索引、数据量增长后计划退化、
+            或热点行锁等待（可结合 mall_seckill_queue_pending 判断）。

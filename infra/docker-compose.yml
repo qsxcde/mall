@@ -93,6 +93,8 @@ services:
     profiles: ["observability"]
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # 告警规则（prometheus.yml 里的 rule_files 指向此目录）
+      - ./prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
     ports:
       - "9090:9090"
@@ -114,6 +116,9 @@ services:
       - "3000:3000"
     volumes:
       - grafana-data:/var/lib/grafana
+      # 数据源与看板通过 provisioning 自动装载（无需手工在 UI 里点）
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
     networks: [geek-mall-net]

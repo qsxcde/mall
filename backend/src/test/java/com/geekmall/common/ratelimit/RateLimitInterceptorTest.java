@@ -46,6 +46,8 @@ class RateLimitInterceptorTest {
     private LocalRateLimiter localRateLimiter;
     @Mock
     private DistributedRateLimiter distributedRateLimiter;
+    @Mock
+    private RateLimitMetrics rateLimitMetrics;
 
     private RateLimitProperties properties;
     private ClusterProperties clusterProperties;
@@ -65,7 +67,7 @@ class RateLimitInterceptorTest {
         properties.setEnabled(true);
         clusterProperties = new ClusterProperties();
         interceptor = new RateLimitInterceptor(properties, new RateLimitPolicies(),
-                localRateLimiter, distributedRateLimiter, clusterProperties);
+                localRateLimiter, distributedRateLimiter, clusterProperties, rateLimitMetrics);
     }
 
     @AfterEach
@@ -218,6 +220,9 @@ class RateLimitInterceptorTest {
                     .isInstanceOf(RateLimitException.class)
                     .hasMessageContaining("系统繁忙")
                     .satisfies(e -> assertThat(((RateLimitException) e).getRetryAfterSeconds()).isEqualTo(7));
+
+            // 拒绝必须计入指标（reason=rate）：否则看板与告警看不到限流真的在生效
+            verify(rateLimitMetrics).recordRejected(any(), eq(RateLimitMetrics.REASON_RATE));
         }
     }
 
@@ -296,6 +301,9 @@ class RateLimitInterceptorTest {
                     new MockHttpServletResponse(), handlerMethod()))
                     .isInstanceOf(RateLimitException.class)
                     .hasMessageContaining("请求过多");
+
+            // 并发拒绝与频率拒绝分开计数（reason=concurrent），便于告警区分「被打满」与「被刷」
+            verify(rateLimitMetrics).recordRejected(any(), eq(RateLimitMetrics.REASON_CONCURRENT));
         }
 
         @Test

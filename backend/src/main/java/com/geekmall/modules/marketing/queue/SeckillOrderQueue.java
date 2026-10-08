@@ -64,6 +64,35 @@ public interface SeckillOrderQueue {
     List<Delivery> reclaimStale(String consumer, Duration minIdle, int maxCount);
 
     /**
+     * 队列运行时快照，供指标采集与健康检查使用。
+     *
+     * <p><b>采集失败不得抛异常</b>：观测能力本身故障（Redis 抖动、消费组尚未创建）
+     * 不应该影响业务，也不应该让 Prometheus 抓取失败 —— 调用方应返回
+     * {@link QueueStats#unavailable()} 这个哨兵值表达「取不到」。</p>
+     */
+    QueueStats stats();
+
+    /**
+     * 队列快照。
+     *
+     * @param length    流中条目总数（{@code XLEN}，含已确认但尚未被裁剪的）
+     * @param pending   已投递但<b>未确认</b>的条目数（{@code XPENDING}）——
+     *                  这才是真正意义上的「在途积压」：消费者卡住时它会持续上涨
+     * @param consumers 组内活跃消费者数（{@code XINFO GROUPS}）
+     */
+    record QueueStats(long length, long pending, long consumers) {
+
+        /** 取不到时的哨兵值（各字段为 -1），避免用 0 冒充「队列很空」。 */
+        public static QueueStats unavailable() {
+            return new QueueStats(-1L, -1L, -1L);
+        }
+
+        public boolean available() {
+            return length >= 0;
+        }
+    }
+
+    /**
      * 一条已取出的消息及其确认句柄。
      *
      * @param handle     确认句柄（Redis Stream 的 record id）

@@ -10,8 +10,10 @@ import org.springframework.data.redis.connection.stream.Consumer;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.PendingMessage;
 import org.springframework.data.redis.connection.stream.PendingMessages;
+import org.springframework.data.redis.connection.stream.PendingMessagesSummary;
 import org.springframework.data.redis.connection.stream.ReadOffset;
 import org.springframework.data.redis.connection.stream.RecordId;
+import org.springframework.data.redis.connection.stream.StreamInfo;
 import org.springframework.data.redis.connection.stream.StreamOffset;
 import org.springframework.data.redis.connection.stream.StreamReadOptions;
 import org.springframework.data.redis.connection.stream.StreamRecords;
@@ -152,9 +154,52 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
         return deliveries;
     }
 
+    /* ------------------------------ 运行时快照 ------------------------------ */
+
+    /**
+     * 读取队列快照（供指标/健康检查）。
+     *
+     * <p>三种情况都返回 {@link QueueStats#unavailable()} 而不是抛异常：key 不存在、
+     * 消费组尚未创建（{@code NOGROUP}）、Redis 抖动。观测失败绝不能升级为业务失败。</p>
+     */
+    @Override
+    public QueueStats stats() {
+        try {
+            Long length = redisTemplate.opsForStream().size(RedisKeys.SECKILL_ORDER_STREAM);
+            long pending = 0L;
+            PendingMessagesSummary summary =
+                    redisTemplate.opsForStream().pending(RedisKeys.SECKILL_ORDER_STREAM, GROUP);
+            if (summary != null) {
+                pending = summary.getTotalPendingMessages();
+            }
+            long consumers = 0L;
+            StreamInfo.XInfoGroups groups =
+                    redisTemplate.opsForStream().groups(RedisKeys.SECKILL_ORDER_STREAM);
+            if (groups != null) {
+                for (StreamInfo.XInfoGroup group : groups) {
+                    if (GROUP.equals(group.groupName())) {
+                        consumers = group.consumerCount();
+                        break;
+                    }
+                }
+            }
+            return new QueueStats(length == null ? 0L : length, pending, consumers);
+        } catch (Exception ex) {
+            log.debug("读取秒杀队列状态失败（按不可用处理）：{}", ex.getMessage());
+            return QueueStats.unavailable();
+        }
+    }
+
     /* ------------------------------ 私有方法 ------------------------------ */
 
-    /** 建消费者组；{@code MKSTREAM} 保证 key 不存在时一并创建，避免启动顺序依赖。 */
+    /**
+     * 建消费者组；{@code MKSTREAM} 保证 key 不存在时一并创建，避免启动顺序依赖。
+     *
+     * <p><b>只在「确实建好」或「已存在」时才置 {@code groupReady}</b>：其它失败（Redis 抖动、
+     * 流 key 与消费组被外部删除/淘汰）必须允许下次重试。早期版本无条件置位，
+     * 后果是<b>消费组一旦丢失就永久 NOGROUP</b> —— 消费者每秒报错、消息只进不出，
+     * 且只能靠重启进程恢复。这类「观测/运维动作把长稳状态打坏」的场景必须能自愈。</p>
+     */
     private void ensureGroup() {
         if (groupReady) {
             return;
@@ -167,11 +212,18 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
                 redisTemplate.execute((RedisCallback<String>) connection -> connection.streamCommands()
                         .xGroupCreate(rawKey(), GROUP, ReadOffset.from("0"), true));
                 log.info("已创建秒杀订单消费者组：{}", GROUP);
+                groupReady = true;
             } catch (Exception ex) {
-                // BUSYGROUP：组已存在（本实例重复调用或其它实例先创建），属正常情况
-                log.debug("秒杀消费者组创建跳过（已存在）：{}", ex.getMessage());
+                String message = ex.getMessage() == null ? "" : ex.getMessage();
+                if (message.contains("BUSYGROUP")) {
+                    // 组已存在：本实例重复调用、其它实例先创建，或 key 销毁后组仍在 —— 均属正常
+                    log.debug("秒杀消费者组已存在，跳过创建：{}", GROUP);
+                    groupReady = true;
+                } else {
+                    // 不置位 → 下次 enqueue/poll 会重试，避免「组丢了就永久失效」
+                    log.warn("创建秒杀消费者组失败，将在下次调用时重试：{}", message);
+                }
             }
-            groupReady = true;
         }
     }
 

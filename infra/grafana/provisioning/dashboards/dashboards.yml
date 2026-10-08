@@ -1,0 +1,16 @@
+# 看板文件装载：Grafana 启动时扫描 /var/lib/grafana/dashboards 下的 JSON 并导入。
+# 该目录由 docker-compose.yml 挂载自 infra/grafana/dashboards。
+apiVersion: 1
+
+providers:
+  - name: geek-mall
+    orgId: 1
+    folder: Geek Mall
+    type: file
+    disableDeletion: false
+    # 改了 JSON 后最多 30s 自动生效，不用重启 Grafana
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false
