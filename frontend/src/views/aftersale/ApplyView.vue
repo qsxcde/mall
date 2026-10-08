@@ -30,8 +30,6 @@ const form = reactive({
 })
 const fileList = ref([])
 
-const currentType = computed(() => afterSaleTypes.find((t) => t.key === form.type))
-
 onMounted(async () => {
   loading.value = true
   try {
@@ -85,7 +83,9 @@ const submit = async () => {
 <template>
   <div class="container page-wrap">
     <el-breadcrumb class="crumb" separator=">">
-      <el-breadcrumb-item :to="{ name: 'user', query: { tab: 'aftersale' } }">售后服务</el-breadcrumb-item>
+      <el-breadcrumb-item :to="{ name: 'user', query: { tab: 'aftersale' } }"
+        >售后服务</el-breadcrumb-item
+      >
       <el-breadcrumb-item>申请售后</el-breadcrumb-item>
     </el-breadcrumb>
 
@@ -111,7 +111,7 @@ const submit = async () => {
       <div class="ttl">选择订单商品</div>
       <div class="as-order-row">
         <span class="k">订单号</span>
-        <el-select v-model="orderNo" style="width:320px">
+        <el-select v-model="orderNo" style="width: 320px">
           <el-option
             v-for="o in orders"
             :key="o.no"
@@ -120,7 +120,7 @@ const submit = async () => {
           />
         </el-select>
       </div>
-      <div v-if="order" class="co-item" style="border-bottom:none">
+      <div v-if="order" class="co-item" style="border-bottom: none">
         <div class="ci" :class="order.product.c">图</div>
         <div class="cm">
           <div class="cn">{{ order.product.title }}</div>
@@ -133,23 +133,38 @@ const submit = async () => {
     <!-- 申请信息 -->
     <div class="co-card">
       <div class="ttl">申请信息</div>
-      <el-form label-width="90px" style="max-width:680px">
+      <el-form label-width="90px" style="max-width: 680px">
         <el-form-item label="申请原因" required>
-          <el-select v-model="form.reason" placeholder="请选择申请原因" style="width:100%">
+          <el-select v-model="form.reason" placeholder="请选择申请原因" style="width: 100%">
             <el-option v-for="r in afterSaleReasons" :key="r" :label="r" :value="r" />
           </el-select>
         </el-form-item>
         <el-form-item label="问题描述">
-          <el-input v-model="form.content" type="textarea" :rows="4" maxlength="300" show-word-limit placeholder="请补充问题描述，便于商家快速处理" />
+          <el-input
+            v-model="form.content"
+            type="textarea"
+            :rows="4"
+            maxlength="300"
+            show-word-limit
+            placeholder="请补充问题描述，便于商家快速处理"
+          />
         </el-form-item>
         <el-form-item label="上传凭证">
-          <el-upload v-model:file-list="fileList" action="#" list-type="picture-card" :http-request="uploadImage" :limit="6">
+          <el-upload
+            v-model:file-list="fileList"
+            action="#"
+            list-type="picture-card"
+            :http-request="uploadImage"
+            :limit="6"
+          >
             <el-icon><Plus /></el-icon>
-            <template #tip><div class="as-tip">最多 6 张，支持 jpg / png / webp，单张不超过 10MB</div></template>
+            <template #tip
+              ><div class="as-tip">最多 6 张，支持 jpg / png / webp，单张不超过 10MB</div></template
+            >
           </el-upload>
         </el-form-item>
         <el-form-item label="联系电话">
-          <el-input v-model="form.phone" style="width:240px" />
+          <el-input v-model="form.phone" style="width: 240px" />
         </el-form-item>
         <el-form-item>
           <el-button
@@ -158,7 +173,8 @@ const submit = async () => {
             :loading="submitting"
             :disabled="!orders.length"
             @click="submit"
-          >提交申请</el-button>
+            >提交申请</el-button
+          >
           <el-button size="large" @click="router.back()">取消</el-button>
         </el-form-item>
       </el-form>
@@ -167,19 +183,53 @@ const submit = async () => {
 </template>
 
 <style scoped>
-.as-types { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-.as-type {
-  border: 1px solid var(--border); border-radius: 10px; padding: 16px; text-align: center;
-  cursor: pointer; transition: all .2s;
+.as-types {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
 }
-.as-type:hover { border-color: var(--primary); box-shadow: 0 4px 14px rgba(26,109,255,.12); }
-.as-type.on { border-color: var(--primary); background: #f5f9ff; }
-.as-type-name { font-size: 15px; font-weight: 600; }
-.as-type-desc { font-size: 12px; color: var(--text-light); margin-top: 6px; }
-.as-order-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.as-order-row .k { color: var(--text-light); font-size: 13px; }
-.as-tip { font-size: 12px; color: var(--text-light); }
+.as-type {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.as-type:hover {
+  border-color: var(--primary);
+  box-shadow: 0 4px 14px rgba(26, 109, 255, 0.12);
+}
+.as-type.on {
+  border-color: var(--primary);
+  background: #f5f9ff;
+}
+.as-type-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+.as-type-desc {
+  font-size: 12px;
+  color: var(--text-light);
+  margin-top: 6px;
+}
+.as-order-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.as-order-row .k {
+  color: var(--text-light);
+  font-size: 13px;
+}
+.as-tip {
+  font-size: 12px;
+  color: var(--text-light);
+}
 @media (max-width: 768px) {
-  .as-types { grid-template-columns: repeat(2, 1fr); }
+  .as-types {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 </style>

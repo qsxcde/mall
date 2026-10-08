@@ -6,7 +6,7 @@
 ## 技术栈
 
 - Vue 3（`<script setup>` 组合式 API）
-- Vite 6
+- Vite 7
 - Element Plus（含 `@element-plus/icons-vue`，中文语言包）
 - Vue Router 4（动态路由、路由传参、路由守卫）
 - Pinia（用户 / 购物车 / 优惠券，localStorage 持久化）
@@ -19,6 +19,23 @@ npm run dev      # 本地开发，默认 http://localhost:5173
 npm run build    # 生产构建，产物在 dist/
 npm run preview  # 预览构建产物
 ```
+
+## 代码规范
+
+```bash
+npm run lint          # ESLint 9（flat config + eslint-plugin-vue）
+npm run lint:fix      # 自动修可修的问题
+npm run format        # Prettier 格式化 src 下的 js / vue / css
+npm run format:check  # 只检查不修改
+```
+
+> **格式校验走 ratchet**：仓库里仍有一部分文件不符合 Prettier 输出，故 CI 只校验「相对 `origin/main` 有改动」的文件
+> （`bash scripts/check-frontend-style.sh origin/main frontend`），避免一次性产生覆盖全库的 diff；
+> 被改动过的文件会自动收敛到统一风格。本地想全量检查可跑 `npm run format:check`。
+>
+> ⚠️ **不要在模板里写 `@click="a = b; c()"` 这种多语句内联表达式**：
+> 本工程配置 `semi: false`，Prettier 会把它拆成多行并去掉分号，而 Vue 指令的表达式位置**不允许语句序列**，
+> 会直接编译失败（`Error parsing JavaScript expression: Unexpected token`）。请抽成具名函数。
 
 ## 目录结构
 

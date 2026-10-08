@@ -38,16 +38,21 @@ const {
   pageCount,
   isFiltered,
   allSelected,
-  indeterminate,
   load,
   changePage,
   reset,
   clearSelection,
-  toggleSelectAll,
   toggleSelect,
   isSelected
 } = useTableQuery(fetchProductPage, {
-  defaultParams: { status: 'all', keyword: '', cat: 'all', brand: 'all', stock: 'all', sort: 'update_desc' },
+  defaultParams: {
+    status: 'all',
+    keyword: '',
+    cat: 'all',
+    brand: 'all',
+    stock: 'all',
+    sort: 'update_desc'
+  },
   watchKeys: ['status', 'keyword', 'cat', 'brand', 'stock', 'sort'],
   size: 8
 })
@@ -148,7 +153,10 @@ async function setStatus(rows, status, tip) {
     ElMessage.warning('请先勾选商品')
     return
   }
-  await updateProductStatus(rows.map((r) => r.id), status)
+  await updateProductStatus(
+    rows.map((r) => r.id),
+    status
+  )
   ElMessage.success(tip || `已更新 ${rows.length} 个商品状态`)
   clearSelection()
   await Promise.all([load(), store.loadBadges(true)])
@@ -156,11 +164,11 @@ async function setStatus(rows, status, tip) {
 
 async function trashOne(row) {
   try {
-    await ElMessageBox.confirm(
-      `「${row.name}」将移入回收站，可随时恢复。`,
-      '移入回收站',
-      { type: 'warning', confirmButtonText: '移入回收站', cancelButtonText: '取消' }
-    )
+    await ElMessageBox.confirm(`「${row.name}」将移入回收站，可随时恢复。`, '移入回收站', {
+      type: 'warning',
+      confirmButtonText: '移入回收站',
+      cancelButtonText: '取消'
+    })
   } catch {
     return
   }
@@ -169,7 +177,11 @@ async function trashOne(row) {
 
 async function onToggle(row) {
   const target = row.status === 'on' ? 'off' : 'ware'
-  await setStatus([row], target, `「${row.name.slice(0, 10)}…」已${target === 'on' ? '上架' : '下架'}`)
+  await setStatus(
+    [row],
+    target,
+    `「${row.name.slice(0, 10)}…」已${target === 'on' ? '上架' : '下架'}`
+  )
 }
 
 /* ---------- 批量改价 ---------- */
@@ -277,8 +289,7 @@ async function syncStock() {
   <div class="page">
     <PageHeader eyebrow="Catalog · Product Center" title="商品" title-accent="管理">
       <template #desc>
-        共 <b>{{ extras.tabs?.all || 0 }}</b> 个商品 ·
-        在售 <b>{{ extras.tabs?.on || 0 }}</b> ·
+        共 <b>{{ extras.tabs?.all || 0 }}</b> 个商品 · 在售 <b>{{ extras.tabs?.on || 0 }}</b> ·
         库存预警 <b>{{ extras.stats?.warn || 0 }}</b>
       </template>
       <template #actions>
@@ -332,7 +343,9 @@ async function syncStock() {
         <el-button text type="primary" @click="reset()">重置筛选</el-button>
 
         <div class="spacer" />
-        <span class="result-hint">共 <b>{{ total }}</b> 个商品</span>
+        <span class="result-hint"
+          >共 <b>{{ total }}</b> 个商品</span
+        >
 
         <el-radio-group v-model="view" size="small">
           <el-radio-button value="grid">
@@ -354,7 +367,9 @@ async function syncStock() {
       <!-- ============ 网格视图 ============ -->
       <div v-if="view === 'grid'" v-loading="loading" class="grid-wrap">
         <div v-if="allSelected && list.length" class="grid-selectall">
-          <el-checkbox :model-value="true" @change="clearSelection">已全选当前页 {{ list.length }} 个商品</el-checkbox>
+          <el-checkbox :model-value="true" @change="clearSelection"
+            >已全选当前页 {{ list.length }} 个商品</el-checkbox
+          >
         </div>
 
         <div v-if="list.length" class="pgrid">
@@ -370,12 +385,10 @@ async function syncStock() {
                 <StatusTag :tone="pick(PRODUCT_STATUS, p.status).tone" size="small">
                   {{ pick(PRODUCT_STATUS, p.status).text }}
                 </StatusTag>
-                <StatusTag v-if="p.stock === 0 && p.status !== 'trash'" tone="coral" size="small">无货</StatusTag>
-                <StatusTag
-                  v-else-if="stockState(p) === 'warn'"
-                  tone="amber"
-                  size="small"
+                <StatusTag v-if="p.stock === 0 && p.status !== 'trash'" tone="coral" size="small"
+                  >无货</StatusTag
                 >
+                <StatusTag v-else-if="stockState(p) === 'warn'" tone="amber" size="small">
                   库存紧张
                 </StatusTag>
                 <StatusTag v-else-if="p.sales > 900" tone="brand" size="small">热销</StatusTag>
@@ -400,7 +413,8 @@ async function syncStock() {
                   <div class="pcard__list">¥{{ money(p.listPrice) }}</div>
                 </div>
                 <div class="pcard__metrics">
-                  库存 <b>{{ int(p.stock) }}</b><br />
+                  库存 <b>{{ int(p.stock) }}</b
+                  ><br />
                   销量 <b>{{ int(p.sales) }}</b>
                 </div>
               </div>
@@ -423,10 +437,16 @@ async function syncStock() {
                 >
                   {{ p.status === 'on' ? '下架' : '上架' }}
                 </el-button>
-                <el-button v-if="p.status === 'trash'" size="small" @click="setStatus([p], 'ware', '已恢复到仓库中')">
+                <el-button
+                  v-if="p.status === 'trash'"
+                  size="small"
+                  @click="setStatus([p], 'ware', '已恢复到仓库中')"
+                >
                   恢复
                 </el-button>
-                <el-button v-else size="small" type="danger" text @click="trashOne(p)">删除</el-button>
+                <el-button v-else size="small" type="danger" text @click="trashOne(p)"
+                  >删除</el-button
+                >
               </div>
             </div>
           </article>
@@ -435,7 +455,13 @@ async function syncStock() {
         <EmptyHint
           v-else-if="!loading"
           icon="Box"
-          :title="params.status === 'trash' ? '回收站是空的' : isFiltered ? '没有找到匹配的商品' : '还没有任何商品'"
+          :title="
+            params.status === 'trash'
+              ? '回收站是空的'
+              : isFiltered
+                ? '没有找到匹配的商品'
+                : '还没有任何商品'
+          "
           :desc="
             params.status === 'trash'
               ? '被删除的商品会暂存在这里，可随时恢复上架'
@@ -459,14 +485,17 @@ async function syncStock() {
           <template #default="{ row }">
             <div class="sku-box">
               <div class="sku-head">
-                <span>规格</span><span>售价</span><span>库存</span><span>规格编码</span><span>占比</span>
+                <span>规格</span><span>售价</span><span>库存</span><span>规格编码</span
+                ><span>占比</span>
               </div>
               <div v-for="s in row.skus" :key="s.code" class="sku-row">
                 <span>{{ s.spec }}</span>
                 <span class="mono">¥{{ money(s.price) }}</span>
                 <span class="mono">{{ s.stock }}</span>
                 <span class="mono">{{ s.code }}</span>
-                <span class="mono">{{ row.stock ? Math.round((s.stock / row.stock) * 100) : 0 }}%</span>
+                <span class="mono"
+                  >{{ row.stock ? Math.round((s.stock / row.stock) * 100) : 0 }}%</span
+                >
               </div>
             </div>
           </template>
@@ -506,7 +535,11 @@ async function syncStock() {
                 fontSize: '14px',
                 fontWeight: 600,
                 color:
-                  row.stock === 0 ? 'var(--coral)' : row.stock <= row.safeStock ? 'var(--amber)' : 'inherit'
+                  row.stock === 0
+                    ? 'var(--coral)'
+                    : row.stock <= row.safeStock
+                      ? 'var(--amber)'
+                      : 'inherit'
               }"
             >
               {{ int(row.stock) }}
@@ -544,12 +577,7 @@ async function syncStock() {
                 恢复
               </el-button>
               <template v-else>
-                <el-button
-                  v-if="row.status !== 'audit'"
-                  text
-                  size="small"
-                  @click="onToggle(row)"
-                >
+                <el-button v-if="row.status !== 'audit'" text size="small" @click="onToggle(row)">
                   {{ row.status === 'on' ? '下架' : '上架' }}
                 </el-button>
                 <el-button text type="danger" size="small" @click="trashOne(row)">删除</el-button>
@@ -568,7 +596,9 @@ async function syncStock() {
       </el-table>
 
       <div v-if="total" class="mz-pager">
-        <span class="info">共 <b>{{ total }}</b> 个商品</span>
+        <span class="info"
+          >共 <b>{{ total }}</b> 个商品</span
+        >
         <div class="spacer" />
         <el-pagination
           layout="prev, pager, next"
@@ -581,7 +611,11 @@ async function syncStock() {
     </section>
 
     <!-- ============ 批量改价 ============ -->
-    <el-dialog v-model="priceDialog.visible" :title="`批量改价 · ${selectedCount} 个商品`" width="460">
+    <el-dialog
+      v-model="priceDialog.visible"
+      :title="`批量改价 · ${selectedCount} 个商品`"
+      width="460"
+    >
       <p class="dialog-desc">改价将同步更新前台售价，请谨慎操作</p>
       <el-form label-position="top">
         <el-form-item label="调整方式">
@@ -591,10 +625,11 @@ async function syncStock() {
           </el-radio-group>
         </el-form-item>
         <el-form-item label="调整数值">
-          <el-input-number v-model="priceDialog.value" :step="priceDialog.mode === 'pct' ? 5 : 50" />
-          <div class="field-hint">
-            示例：比例 -10 表示降价 10%；固定 -50 表示每件减 50 元
-          </div>
+          <el-input-number
+            v-model="priceDialog.value"
+            :step="priceDialog.mode === 'pct' ? 5 : 50"
+          />
+          <div class="field-hint">示例：比例 -10 表示降价 10%；固定 -50 表示每件减 50 元</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -608,7 +643,9 @@ async function syncStock() {
       <template v-if="drawer.model">
         <div class="drawer-head">
           <div>
-            <span class="drawer-kicker">{{ drawer.isNew ? 'Create Product' : 'Edit Product' }}</span>
+            <span class="drawer-kicker">{{
+              drawer.isNew ? 'Create Product' : 'Edit Product'
+            }}</span>
             <b>{{ drawer.isNew ? '发布新商品' : drawer.model.name }}</b>
           </div>
           <el-button circle text @click="drawer.visible = false">
@@ -673,7 +710,11 @@ async function syncStock() {
               <div class="imgpick__main" :class="drawer.model.thumb">{{ drawer.model.tag }}</div>
               <div class="imgpick__slot" :class="drawer.model.thumb">图 2</div>
               <div class="imgpick__slot" :class="drawer.model.thumb">图 3</div>
-              <button class="imgpick__add" type="button" @click="ElMessage.success('已打开本地图片选择器（演示）')">
+              <button
+                class="imgpick__add"
+                type="button"
+                @click="ElMessage.success('已打开本地图片选择器（演示）')"
+              >
                 <el-icon><Plus /></el-icon>
               </button>
             </div>
@@ -774,7 +815,10 @@ async function syncStock() {
   border-radius: var(--r-m);
   overflow: hidden;
   background: #fff;
-  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.22s, border-color 0.18s;
+  transition:
+    transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.22s,
+    border-color 0.18s;
 }
 .pcard:hover {
   transform: translateY(-3px);
@@ -1046,7 +1090,7 @@ async function syncStock() {
   border: 1px solid var(--line);
 }
 .imgpick__main::after {
-  content: "主图";
+  content: '主图';
   position: absolute;
   bottom: 0;
   left: 0;

@@ -94,7 +94,14 @@ const statItems = computed(() => {
   const c = summary.value?.current
   if (!c) return []
   return [
-    { key: 'gmv', label: '本期成交额', value: c.gmv, prefix: '¥', tone: 'brand', desc: `账期 ${c.range}` },
+    {
+      key: 'gmv',
+      label: '本期成交额',
+      value: c.gmv,
+      prefix: '¥',
+      tone: 'brand',
+      desc: `账期 ${c.range}`
+    },
     {
       key: 'commission',
       label: '平台佣金',
@@ -111,7 +118,14 @@ const statItems = computed(() => {
       tone: 'amber',
       desc: `费率 ${percent(feeRate.value.service)}`
     },
-    { key: 'refund', label: '退款扣减', value: -c.refund, prefix: '¥', tone: 'violet', desc: '含售后退款与赔付' },
+    {
+      key: 'refund',
+      label: '退款扣减',
+      value: -c.refund,
+      prefix: '¥',
+      tone: 'violet',
+      desc: '含售后退款与赔付'
+    },
     {
       key: 'settle',
       label: '本期实结',
@@ -130,7 +144,9 @@ const compositionWithPercent = computed(() => {
   return items.map((it) => ({ ...it, percent: it.value / total }))
 })
 
-const trendItems = computed(() => (table.trend || []).map((t) => ({ label: t.label, value: t.value })))
+const trendItems = computed(() =>
+  (table.trend || []).map((t) => ({ label: t.label, value: t.value }))
+)
 
 /* ---------- 提现 ---------- */
 const withdrawDialog = reactive({ visible: false, amount: 0, fee: 0, arrival: 0, requestId: '' })
@@ -155,6 +171,19 @@ function recalcWithdraw() {
   const amt = Number(withdrawDialog.amount) || 0
   withdrawDialog.fee = Math.min(500, Math.round(amt * 0.001 * 100) / 100)
   withdrawDialog.arrival = Math.max(0, amt - withdrawDialog.fee)
+}
+
+/**
+ * 「全部提现」：把可提现余额填进输入框并重算手续费。
+ *
+ * 抽成具名函数而不是写成模板内联的 `withdrawDialog.amount = balance; recalcWithdraw()`：
+ * Prettier（本项目配置 `semi: false`）会把 `;` 分隔的语句序列拆成多行并去掉分号，
+ * 而 Vue 指令的表达式位置**不允许语句序列** —— 会直接编译失败
+ * （`Error parsing JavaScript expression: Unexpected token`）。
+ */
+function withdrawAll() {
+  withdrawDialog.amount = balance.value
+  recalcWithdraw()
 }
 
 async function confirmWithdraw() {
@@ -193,8 +222,8 @@ function exportBill() {
   <div class="page">
     <PageHeader eyebrow="Finance · Settlement" title="财务" title-accent="结算">
       <template #desc>
-        结算周期 <b>T+3</b> · 平台佣金率 <b>{{ percent(feeRate.commission) }}</b> ·
-        下一结算日 <b>10-08</b>
+        结算周期 <b>T+3</b> · 平台佣金率 <b>{{ percent(feeRate.commission) }}</b> · 下一结算日
+        <b>10-08</b>
       </template>
       <template #actions>
         <el-button @click="ElMessage.success('发票申请已提交，平台将在 3 个工作日内处理')">
@@ -285,18 +314,38 @@ function exportBill() {
           <span class="sub">共 {{ table.tabs.all || 0 }} 个账期 · 点击行可查看明细</span>
         </div>
 
-        <el-tabs :model-value="tab" class="tabs" @update:model-value="(v) => { tab = v; onTabChange() }">
+        <el-tabs
+          :model-value="tab"
+          class="tabs"
+          @update:model-value="
+            (v) => {
+              tab = v
+              onTabChange()
+            }
+          "
+        >
           <el-tab-pane name="all">
-            <template #label><span>全部</span><span class="tab-count">{{ table.tabs.all || 0 }}</span></template>
+            <template #label
+              ><span>全部</span><span class="tab-count">{{ table.tabs.all || 0 }}</span></template
+            >
           </el-tab-pane>
           <el-tab-pane name="settled">
-            <template #label><span>已结算</span><span class="tab-count">{{ table.tabs.settled || 0 }}</span></template>
+            <template #label
+              ><span>已结算</span
+              ><span class="tab-count">{{ table.tabs.settled || 0 }}</span></template
+            >
           </el-tab-pane>
           <el-tab-pane name="settling">
-            <template #label><span>结算中</span><span class="tab-count">{{ table.tabs.settling || 0 }}</span></template>
+            <template #label
+              ><span>结算中</span
+              ><span class="tab-count">{{ table.tabs.settling || 0 }}</span></template
+            >
           </el-tab-pane>
           <el-tab-pane name="pending">
-            <template #label><span>待结算</span><span class="tab-count">{{ table.tabs.pending || 0 }}</span></template>
+            <template #label
+              ><span>待结算</span
+              ><span class="tab-count">{{ table.tabs.pending || 0 }}</span></template
+            >
           </el-tab-pane>
         </el-tabs>
 
@@ -371,7 +420,9 @@ function exportBill() {
         </el-table>
 
         <div v-if="table.total" class="mz-pager">
-          <span class="info">共 <b>{{ table.total }}</b> 个账期</span>
+          <span class="info"
+            >共 <b>{{ table.total }}</b> 个账期</span
+          >
           <div class="spacer" />
           <el-pagination
             layout="prev, pager, next"
@@ -442,7 +493,7 @@ function exportBill() {
           />
           <div class="field-hint">
             可提现余额 ¥{{ money(balance) }}
-            <el-button text type="primary" size="small" @click="withdrawDialog.amount = balance; recalcWithdraw()">
+            <el-button text type="primary" size="small" @click="withdrawAll()">
               全部提现
             </el-button>
           </div>
@@ -484,15 +535,21 @@ function exportBill() {
         <div class="drawer-body">
           <section class="block">
             <h4>结算概要</h4>
-            <div class="kv"><span>账期</span><b>{{ drawer.settlement.range }}</b></div>
+            <div class="kv">
+              <span>账期</span><b>{{ drawer.settlement.range }}</b>
+            </div>
             <div class="kv">
               <span>状态</span>
               <StatusTag :tone="pick(SETTLE_STATUS, drawer.settlement.status).tone">
                 {{ pick(SETTLE_STATUS, drawer.settlement.status).text }}
               </StatusTag>
             </div>
-            <div class="kv"><span>订单笔数</span><b>{{ int(drawer.settlement.orderCount) }} 笔</b></div>
-            <div class="kv"><span>实结率</span><b>{{ percent(drawer.settlement.rate) }}</b></div>
+            <div class="kv">
+              <span>订单笔数</span><b>{{ int(drawer.settlement.orderCount) }} 笔</b>
+            </div>
+            <div class="kv">
+              <span>实结率</span><b>{{ percent(drawer.settlement.rate) }}</b>
+            </div>
           </section>
 
           <section class="block">
@@ -502,7 +559,8 @@ function exportBill() {
                 <span>成交额</span><b>¥{{ money(drawer.settlement.gmv) }}</b>
               </div>
               <div class="money__row">
-                <span>平台佣金</span><b class="minus">-¥{{ money(drawer.settlement.commission) }}</b>
+                <span>平台佣金</span
+                ><b class="minus">-¥{{ money(drawer.settlement.commission) }}</b>
               </div>
               <div class="money__row">
                 <span>支付服务费</span><b class="minus">-¥{{ money(drawer.settlement.service) }}</b>
@@ -517,7 +575,10 @@ function exportBill() {
           </section>
 
           <section class="block">
-            <h4>订单流水（抽样 {{ drawer.orders.length }} / {{ int(drawer.settlement.orderCount) }} 笔）</h4>
+            <h4>
+              订单流水（抽样 {{ drawer.orders.length }} /
+              {{ int(drawer.settlement.orderCount) }} 笔）
+            </h4>
             <div class="orders">
               <div v-for="o in drawer.orders" :key="o.id" class="order">
                 <div class="order__line">
@@ -569,16 +630,17 @@ function exportBill() {
   box-shadow: var(--shadow-m);
 }
 .fund::before {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   opacity: 0.5;
-  background-image: linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
   background-size: 34px 34px;
 }
 .fund::after {
-  content: "";
+  content: '';
   position: absolute;
   right: -70px;
   bottom: -140px;

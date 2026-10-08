@@ -12,7 +12,7 @@ import { useTableQuery } from '@/composables/useTableQuery'
 import { fetchAftersalePage, resolveAftersale } from '@/api/trade'
 import { useMerchantStore } from '@/stores/merchant'
 import { AFTERSALE_STATUS, AFTERSALE_TABS, AFTERSALE_TYPE, pick } from '@/utils/dict'
-import { deadlineText, fmtDate, int, money, percent } from '@/utils/format'
+import { deadlineText, fmtDate, money, percent } from '@/utils/format'
 
 /**
  * 售后管理。
@@ -78,8 +78,22 @@ const statItems = computed(() => {
       alert: (s.pending || 0) > 0,
       desc: '需 48 小时内响应'
     },
-    { key: 'waitReturn', label: '待买家退货', value: s.waitReturn || 0, suffix: '笔', tone: 'brand', desc: '已同意，等待寄回' },
-    { key: 'waitReceive', label: '待商家收货', value: s.waitReceive || 0, suffix: '笔', tone: 'teal', desc: '已寄回，待确认收货' },
+    {
+      key: 'waitReturn',
+      label: '待买家退货',
+      value: s.waitReturn || 0,
+      suffix: '笔',
+      tone: 'brand',
+      desc: '已同意，等待寄回'
+    },
+    {
+      key: 'waitReceive',
+      label: '待商家收货',
+      value: s.waitReceive || 0,
+      suffix: '笔',
+      tone: 'teal',
+      desc: '已寄回，待确认收货'
+    },
     {
       key: 'done',
       label: '已完成',
@@ -232,9 +246,9 @@ async function bulkApprove() {
   <div class="page">
     <PageHeader eyebrow="Service · After-Sale Center" title="售后" title-accent="管理">
       <template #desc>
-        待处理 <b>{{ extras.stats?.pending || 0 }}</b> 笔 ·
-        退款处理中 <b>{{ (extras.stats?.waitReturn || 0) + (extras.stats?.waitReceive || 0) }}</b> 笔 ·
-        共 <b>{{ extras.tabs?.all || 0 }}</b> 笔工单
+        待处理 <b>{{ extras.stats?.pending || 0 }}</b> 笔 · 退款处理中
+        <b>{{ (extras.stats?.waitReturn || 0) + (extras.stats?.waitReceive || 0) }}</b> 笔 · 共
+        <b>{{ extras.tabs?.all || 0 }}</b> 笔工单
       </template>
       <template #actions>
         <el-button @click="ElMessage.success('工单已导出，完成后将通过站内信通知')">
@@ -253,7 +267,10 @@ async function bulkApprove() {
         <el-tab-pane v-for="tab in AFTERSALE_TABS" :key="tab.key" :name="tab.key">
           <template #label>
             <span>{{ tab.label }}</span>
-            <span class="tab-count" :class="{ 'is-hot': tab.key === 'pending' && (extras.tabs?.pending || 0) > 0 }">
+            <span
+              class="tab-count"
+              :class="{ 'is-hot': tab.key === 'pending' && (extras.tabs?.pending || 0) > 0 }"
+            >
               {{ extras.tabs?.[tab.key] ?? 0 }}
             </span>
           </template>
@@ -274,7 +291,9 @@ async function bulkApprove() {
         <el-button text type="primary" @click="reset()">重置筛选</el-button>
 
         <div class="spacer" />
-        <span class="result-hint">共 <b>{{ total }}</b> 笔工单</span>
+        <span class="result-hint"
+          >共 <b>{{ total }}</b> 笔工单</span
+        >
       </div>
 
       <BulkBar :count="selectedCount" unit="笔" label="工单" @clear="clearSelection">
@@ -353,8 +372,12 @@ async function bulkApprove() {
           <template #default="{ row }">
             <div class="cell-actions">
               <template v-if="row.status === 'pending'">
-                <el-button size="small" type="primary" @click="openApprove([row.id])">同意退款</el-button>
-                <el-button size="small" text type="danger" @click="openReject([row.id])">拒绝</el-button>
+                <el-button size="small" type="primary" @click="openApprove([row.id])"
+                  >同意退款</el-button
+                >
+                <el-button size="small" text type="danger" @click="openReject([row.id])"
+                  >拒绝</el-button
+                >
                 <el-button size="small" text @click="openDetail(row)">详情</el-button>
               </template>
               <template v-else-if="row.status === 'wait_return'">
@@ -385,7 +408,9 @@ async function bulkApprove() {
       </el-table>
 
       <div v-if="total" class="mz-pager">
-        <span class="info">共 <b>{{ total }}</b> 笔工单</span>
+        <span class="info"
+          >共 <b>{{ total }}</b> 笔工单</span
+        >
         <div class="spacer" />
         <el-pagination
           layout="prev, pager, next"
@@ -409,7 +434,11 @@ async function bulkApprove() {
       </div>
       <el-form label-position="top">
         <el-form-item label="退款金额（元）">
-          <el-input-number v-model="approveDialog.refundAmount" :min="1" :max="approveDialog.orderAmount" />
+          <el-input-number
+            v-model="approveDialog.refundAmount"
+            :min="1"
+            :max="approveDialog.orderAmount"
+          />
           <div class="field-hint">
             订单实付 ¥{{ money(approveDialog.orderAmount) }}，支持部分退款（如扣除运费或赠品价值）
           </div>
@@ -477,13 +506,28 @@ async function bulkApprove() {
 
           <section class="block">
             <h4>售后信息</h4>
-            <div class="kv"><span>工单号</span><b class="mono">{{ drawer.item.id }}</b></div>
-            <div class="kv"><span>订单号</span><b class="mono">{{ drawer.item.orderId }}</b></div>
-            <div class="kv"><span>售后类型</span><b>{{ pick(AFTERSALE_TYPE, drawer.item.type).text }}</b></div>
-            <div class="kv"><span>申请时间</span><b>{{ fmtDate(drawer.item.applyAt, true) }}</b></div>
-            <div class="kv"><span>买家</span><b>{{ drawer.item.buyer.name }} · {{ drawer.item.phone }}</b></div>
-            <div class="kv"><span>凭证</span><b>{{ drawer.item.images ? `${drawer.item.images} 张图片` : '无' }}</b></div>
-            <div class="kv"><span>申请原因</span><b>{{ drawer.item.reason }}</b></div>
+            <div class="kv">
+              <span>工单号</span><b class="mono">{{ drawer.item.id }}</b>
+            </div>
+            <div class="kv">
+              <span>订单号</span><b class="mono">{{ drawer.item.orderId }}</b>
+            </div>
+            <div class="kv">
+              <span>售后类型</span><b>{{ pick(AFTERSALE_TYPE, drawer.item.type).text }}</b>
+            </div>
+            <div class="kv">
+              <span>申请时间</span><b>{{ fmtDate(drawer.item.applyAt, true) }}</b>
+            </div>
+            <div class="kv">
+              <span>买家</span><b>{{ drawer.item.buyer.name }} · {{ drawer.item.phone }}</b>
+            </div>
+            <div class="kv">
+              <span>凭证</span
+              ><b>{{ drawer.item.images ? `${drawer.item.images} 张图片` : '无' }}</b>
+            </div>
+            <div class="kv">
+              <span>申请原因</span><b>{{ drawer.item.reason }}</b>
+            </div>
             <div v-if="drawer.item.rejectReason" class="kv">
               <span>拒绝理由</span><b class="coral">{{ drawer.item.rejectReason }}</b>
             </div>
@@ -507,9 +551,7 @@ async function bulkApprove() {
               <div class="money__row">
                 <span>订单实付</span><b>¥{{ money(drawer.item.orderAmount) }}</b>
               </div>
-              <div class="money__row">
-                <span>退款方式</span><b>原路退回</b>
-              </div>
+              <div class="money__row"><span>退款方式</span><b>原路退回</b></div>
               <div class="money__row is-total">
                 <span>申请退款</span><b class="num">¥{{ money(drawer.item.refundAmount) }}</b>
               </div>
@@ -518,8 +560,12 @@ async function bulkApprove() {
 
           <section v-if="drawer.item.returnWaybill" class="block">
             <h4>退回物流</h4>
-            <div class="kv"><span>承运商</span><b>{{ drawer.item.returnExpress }}</b></div>
-            <div class="kv"><span>运单号</span><b class="mono">{{ drawer.item.returnWaybill }}</b></div>
+            <div class="kv">
+              <span>承运商</span><b>{{ drawer.item.returnExpress }}</b>
+            </div>
+            <div class="kv">
+              <span>运单号</span><b class="mono">{{ drawer.item.returnWaybill }}</b>
+            </div>
           </section>
 
           <section class="block">

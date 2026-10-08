@@ -207,6 +207,46 @@
                     </excludes>
                 </configuration>
             </plugin>
+            <!--
+                代码格式：palantir-java-format（4 空格缩进 + 120 列，与本项目既有风格接近；
+                google-java-format 是 2 空格缩进，会把全库重排成另一个样子）。
+
+                ratchetFrom：**只要求「相对基线新增或改动过」的文件合规**。
+                本仓库已有 370+ 个文件不符合该格式，全量重排会产生一次几乎覆盖全库的 diff、
+                冲掉 git blame，还要重审每一处手写注释的排版。ratchet 让 CI 立刻能绿，
+                旧代码不动，此后每次改动自动把被碰过的文件收敛到统一风格 —— 这是遗留代码库
+                引入格式化的标准做法。
+
+                用法：mvn spotless:apply 自动修（只动 ratchet 命中的文件）；
+                      mvn spotless:check 只检查（CI 用，已绑定到 validate 阶段）。
+                注意：ratchet 依赖 git 引用 origin/main，CI 需完整检出（fetch-depth: 0）。
+            -->
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>2.44.0</version>
+                <configuration>
+                    <ratchetFrom>origin/main</ratchetFrom>
+                    <java>
+                        <palantirJavaFormat>
+                            <version>2.50.0</version>
+                        </palantirJavaFormat>
+                        <removeUnusedImports/>
+                        <importOrder/>
+                        <trimTrailingWhitespace/>
+                        <endWithNewline/>
+                    </java>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>spotless-check</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>

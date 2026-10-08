@@ -79,9 +79,12 @@
 ### 1.5 质量与验证
 
 - **46 个测试类**（+1 基类，共 **569 个用例**），`mvn test` 一键运行全绿；集成测试用 Testcontainers 起**真实 MySQL 8 + Redis 7**，跑真实 Flyway 迁移与真实过滤器链
+- **代码风格有工具约束且已接入 CI**：后端 Spotless + palantir-java-format，前端 ESLint 9（flat config）+ Prettier 3。
+  两边都用 **ratchet**（只约束「相对基线有改动的文件」）——因为全库重排会产生覆盖数百文件的 diff，
+  而 ratchet 既能让 CI 立刻变绿，又能让此后每次改动自动收敛到统一风格
 - 并发正确性从「压测时观察」升级为「自动化断言」——改坏了会立刻红灯
 - k6 压测体系可复现：数据准备脚本 + 结果校验脚本 + 指标渲染
-- 已做过一轮死代码清理（基于全库引用扫描 + 逐项人工复核）
+- 已做过一轮死代码清理（基于全库引用扫描 + 逐项人工复核），并在引入 ESLint 时又清掉一批 + 删除了前端 mock 死代码
 
 ### 1.6 目录结构
 
@@ -275,7 +278,9 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
 
 - **业务补全**：真实支付渠道、真实物流轨迹、真实短信通道（当前均为 mock）
 - **稳定性纵深**：缓存层已有独立熔断器，但下游调用（如 MinIO）还没有业务级熔断保护，可考虑统一到 Resilience4j；订单超时关闭目前靠轮询扫描，可改为延迟队列/时间轮
-- **工程化**：✅ 已补 CI（`.github/workflows/ci.yml`：后端 `mvn test`（含 Testcontainers 集成测试）+ 双前端 `vite build`）；✅ 压测账号令牌（`users.csv` / 派生 `users.js`）与 `node_modules` / `dist` 已移出仓库并加入 `.gitignore`；待办：把 k6 压测纳入 CI 回归
+- **工程化**：✅ 已补 CI（`.github/workflows/ci.yml`：后端 **Spotless 格式检查 + `mvn test`（含 Testcontainers 集成测试）**、
+  双前端 **ESLint + Prettier ratchet + `vite build`**）；✅ 压测账号令牌（`users.csv` / 派生 `users.js`）与 `node_modules` / `dist` 已移出仓库并加入 `.gitignore`；
+  ✅ 前端依赖升级到 vite 7；待办：把 k6 压测纳入 CI 回归
 
 ### 3.4 一句话
 

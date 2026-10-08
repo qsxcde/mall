@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import ProductThumb from './ProductThumb.vue'
-import { fmtDate, int, maskPhone, money } from '@/utils/format'
+import { fmtDate, maskPhone, money } from '@/utils/format'
 import { ORDER_STATUS, pick } from '@/utils/dict'
 
 /**
@@ -42,7 +42,9 @@ const timeline = computed(() => {
   <div class="blocks">
     <!-- 收货信息 -->
     <section class="block">
-      <h4><el-icon><Location /></el-icon> 收货信息</h4>
+      <h4>
+        <el-icon><Location /></el-icon> 收货信息
+      </h4>
       <div class="kv">
         <span>收货人</span>
         <b>{{ order.buyer.name }} · {{ order.buyer.level }}</b>
@@ -59,7 +61,9 @@ const timeline = computed(() => {
 
     <!-- 物流信息 -->
     <section class="block">
-      <h4><el-icon><Van /></el-icon> 物流信息</h4>
+      <h4>
+        <el-icon><Van /></el-icon> 物流信息
+      </h4>
       <div class="kv">
         <span>支付方式</span>
         <b>{{ order.payWayLabel || order.payWay || '未支付' }}</b>
@@ -88,9 +92,16 @@ const timeline = computed(() => {
 
     <!-- 商品清单 -->
     <section class="block">
-      <h4><el-icon><Box /></el-icon> 商品清单</h4>
+      <h4>
+        <el-icon><Box /></el-icon> 商品清单
+      </h4>
       <div class="prod">
-        <ProductThumb :thumb="order.product.thumb" :tag="order.product.tag" :size="52" :radius="12" />
+        <ProductThumb
+          :thumb="order.product.thumb"
+          :tag="order.product.tag"
+          :size="52"
+          :radius="12"
+        />
         <div class="prod__body">
           <b>{{ order.product.name }}</b>
           <span>{{ order.product.spec }}</span>
@@ -102,7 +113,9 @@ const timeline = computed(() => {
 
     <!-- 金额明细 -->
     <section class="block">
-      <h4><el-icon><Wallet /></el-icon> 金额明细</h4>
+      <h4>
+        <el-icon><Wallet /></el-icon> 金额明细
+      </h4>
       <div class="money">
         <div class="money__row">
           <span>商品总额</span>
@@ -125,7 +138,9 @@ const timeline = computed(() => {
 
     <!-- 订单进度 -->
     <section class="block">
-      <h4><el-icon><Clock /></el-icon> 订单进度</h4>
+      <h4>
+        <el-icon><Clock /></el-icon> 订单进度
+      </h4>
       <el-timeline class="tl">
         <el-timeline-item
           v-for="(s, i) in timeline"

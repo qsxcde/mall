@@ -11,7 +11,7 @@ import { useTableQuery } from '@/composables/useTableQuery'
 import { fetchCoupons, fetchPromoChannels, fetchPromoPage } from '@/api/growth'
 import { useMerchantStore } from '@/stores/merchant'
 import { PROMO_STATUS, PROMO_TABS, PROMO_TYPES, pick } from '@/utils/dict'
-import { fmtDay, int, money, moneyShort, percent } from '@/utils/format'
+import { fmtDay, int, moneyShort, percent } from '@/utils/format'
 
 /**
  * 营销中心。
@@ -20,22 +20,12 @@ import { fmtDay, int, money, moneyShort, percent } from '@/utils/format'
  */
 const store = useMerchantStore()
 
-const {
-  params,
-  list,
-  total,
-  loading,
-  extras,
-  pageCount,
-  isFiltered,
-  load,
-  changePage,
-  reset
-} = useTableQuery(fetchPromoPage, {
-  defaultParams: { status: 'all', keyword: '', type: 'all', sort: 'gmv_desc' },
-  watchKeys: ['status', 'keyword', 'type', 'sort'],
-  size: 6
-})
+const { params, list, total, loading, extras, pageCount, isFiltered, load, changePage, reset } =
+  useTableQuery(fetchPromoPage, {
+    defaultParams: { status: 'all', keyword: '', type: 'all', sort: 'gmv_desc' },
+    watchKeys: ['status', 'keyword', 'type', 'sort'],
+    size: 6
+  })
 
 watch(
   () => store.keyword,
@@ -70,7 +60,14 @@ const sortOptions = [
 const statItems = computed(() => {
   const s = extras.value.stats || {}
   return [
-    { key: 'running', label: '进行中活动', value: s.running || 0, suffix: '个', tone: 'coral', desc: '正在引流中' },
+    {
+      key: 'running',
+      label: '进行中活动',
+      value: s.running || 0,
+      suffix: '个',
+      tone: 'coral',
+      desc: '正在引流中'
+    },
     {
       key: 'gmv',
       label: '活动带来成交额',
@@ -79,7 +76,14 @@ const statItems = computed(() => {
       tone: 'green',
       desc: '进行中活动累计'
     },
-    { key: 'cost', label: '累计推广花费', value: s.totalCost || 0, prefix: '¥', tone: 'amber', desc: '含直通车与站外投放' },
+    {
+      key: 'cost',
+      label: '累计推广花费',
+      value: s.totalCost || 0,
+      prefix: '¥',
+      tone: 'amber',
+      desc: '含直通车与站外投放'
+    },
     {
       key: 'roas',
       label: '整体 ROI',
@@ -122,7 +126,9 @@ async function togglePromo(p) {
   const next = p.status === 'running' ? 'paused' : 'running'
   try {
     await ElMessageBox.confirm(
-      next === 'paused' ? `暂停后「${p.name}」将立即停止对外曝光。` : `「${p.name}」将恢复对外曝光。`,
+      next === 'paused'
+        ? `暂停后「${p.name}」将立即停止对外曝光。`
+        : `「${p.name}」将恢复对外曝光。`,
       next === 'paused' ? '暂停活动' : '恢复活动',
       { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' }
     )
@@ -170,9 +176,9 @@ function manageCoupons() {
   <div class="page">
     <PageHeader eyebrow="Growth · Marketing Center" title="营销" title-accent="中心">
       <template #desc>
-        进行中 <b>{{ extras.stats?.running || 0 }}</b> 个活动 ·
-        累计推广花费 <b>¥{{ moneyShort(extras.stats?.totalCost || 0) }}</b> ·
-        整体 ROI <b>{{ (extras.stats?.roas || 0).toFixed(2) }}</b>
+        进行中 <b>{{ extras.stats?.running || 0 }}</b> 个活动 · 累计推广花费
+        <b>¥{{ moneyShort(extras.stats?.totalCost || 0) }}</b> · 整体 ROI
+        <b>{{ (extras.stats?.roas || 0).toFixed(2) }}</b>
       </template>
       <template #actions>
         <el-button @click="manageCoupons">
@@ -211,7 +217,9 @@ function manageCoupons() {
         <el-button text type="primary" @click="reset()">重置筛选</el-button>
 
         <div class="spacer" />
-        <span class="result-hint">共 <b>{{ total }}</b> 个活动</span>
+        <span class="result-hint"
+          >共 <b>{{ total }}</b> 个活动</span
+        >
       </div>
 
       <div v-loading="loading" class="promo-wrap">
@@ -246,7 +254,9 @@ function manageCoupons() {
               </div>
               <div class="pm">
                 <span>ROI</span>
-                <b class="num" :class="p.roi >= 4 ? 'good' : ''">{{ p.roi ? p.roi.toFixed(2) : '—' }}</b>
+                <b class="num" :class="p.roi >= 4 ? 'good' : ''">{{
+                  p.roi ? p.roi.toFixed(2) : '—'
+                }}</b>
               </div>
               <div class="pm">
                 <span>花费 / 预算</span>
@@ -297,7 +307,9 @@ function manageCoupons() {
       </div>
 
       <div v-if="total" class="mz-pager">
-        <span class="info">共 <b>{{ total }}</b> 个活动</span>
+        <span class="info"
+          >共 <b>{{ total }}</b> 个活动</span
+        >
         <div class="spacer" />
         <el-pagination
           layout="prev, pager, next"
@@ -370,12 +382,12 @@ function manageCoupons() {
           <div v-for="c in coupons" :key="c.id" class="coupon" :class="`is-${c.status}`">
             <div class="coupon__left">
               <div class="coupon__amount num">
-                <template v-if="c.amount">
-                  <small>¥</small>{{ c.amount }}
-                </template>
+                <template v-if="c.amount"> <small>¥</small>{{ c.amount }} </template>
                 <template v-else>折扣</template>
               </div>
-              <div class="coupon__cond">{{ c.threshold ? `满 ${c.threshold} 可用` : '无门槛' }}</div>
+              <div class="coupon__cond">
+                {{ c.threshold ? `满 ${c.threshold} 可用` : '无门槛' }}
+              </div>
             </div>
             <div class="coupon__right">
               <div class="coupon__name">{{ c.name }}</div>
@@ -466,7 +478,9 @@ function manageCoupons() {
   border-radius: var(--r-m);
   padding: 15px 16px 14px;
   background: #fff;
-  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.22s;
+  transition:
+    transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.22s;
 }
 .promo:hover {
   transform: translateY(-3px);
