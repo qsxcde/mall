@@ -13,7 +13,7 @@ import { useTableQuery } from '@/composables/useTableQuery'
 import { closeOrders, fetchOrderPage, saveOrderNote, shipOrders } from '@/api/trade'
 import { useMerchantStore } from '@/stores/merchant'
 import { ORDER_STATUS, ORDER_TABS, PAY_OPTIONS, pick } from '@/utils/dict'
-import { ellipsis, fmtDate, int, money } from '@/utils/format'
+import { fmtDate, int, money } from '@/utils/format'
 
 /**
  * 订单管理。
@@ -34,14 +34,10 @@ const {
   pageCount,
   isEmpty,
   isFiltered,
-  allSelected,
-  indeterminate,
   load,
-  search,
   changePage,
   reset,
-  clearSelection,
-  toggleSelectAll
+  clearSelection
 } = useTableQuery(fetchOrderPage, {
   defaultParams: {
     status: 'all',
@@ -87,7 +83,14 @@ const statItems = computed(() => {
       alert: (s.waitShip || 0) > 0,
       desc: '超 24h 将影响体验分'
     },
-    { key: 'shipped', label: '待收货', value: s.shipped || 0, suffix: '笔', tone: 'teal', desc: '包裹运输中' },
+    {
+      key: 'shipped',
+      label: '待收货',
+      value: s.shipped || 0,
+      suffix: '笔',
+      tone: 'teal',
+      desc: '包裹运输中'
+    },
     {
       key: 'after',
       label: '售后处理中',
@@ -161,12 +164,6 @@ function onSelectionChange(rows) {
   selected.value = rows.map((r) => r.id)
 }
 
-function onCheckAll(checked) {
-  toggleSelectAll(checked)
-  // el-table 的勾选态由自己维护，这里显式同步一次，避免「全选后表头半选」
-  list.value.forEach((row) => tableRef.value?.toggleRowSelection(row, checked))
-}
-
 function clearAll() {
   clearSelection()
   tableRef.value?.clearSelection()
@@ -229,11 +226,11 @@ async function confirmNote() {
 /* ---------- 关闭订单 ---------- */
 async function closeOrder(id) {
   try {
-    await ElMessageBox.confirm(
-      `关闭后订单不可恢复，占用库存会自动回滚。订单号 ${id}`,
-      '关闭订单',
-      { type: 'warning', confirmButtonText: '确认关闭', cancelButtonText: '取消' }
-    )
+    await ElMessageBox.confirm(`关闭后订单不可恢复，占用库存会自动回滚。订单号 ${id}`, '关闭订单', {
+      type: 'warning',
+      confirmButtonText: '确认关闭',
+      cancelButtonText: '取消'
+    })
   } catch {
     return
   }
@@ -251,6 +248,25 @@ function openDetail(id) {
   if (!order) return
   drawer.order = order
   drawer.visible = true
+}
+
+/**
+ * 抽屉内的两个复合动作：先关抽屉，再执行相应操作。
+ *
+ * 抽成具名函数而不是写在模板里 `@click="drawer.visible = false; openShip(...)"`，
+ * 原因：Prettier（配置 semi: false）会把 `;` 分隔的多语句内联表达式拆成多行并去掉分号，
+ * 而 Vue 指令的表达式位置**不允许语句序列** —— 会直接编译报错
+ * `Error parsing JavaScript expression: Unexpected token`。
+ * 顺带也更易读、可加日志与埋点。
+ */
+function shipFromDrawer(order) {
+  drawer.visible = false
+  openShip([order.id])
+}
+
+function closeFromDrawer(order) {
+  drawer.visible = false
+  closeOrder(order.id)
 }
 
 /* ---------- 行操作分发 ---------- */
@@ -351,10 +367,7 @@ function printWaybills() {
       <BulkBar :count="selectedCount" unit="笔" label="订单" @clear="clearAll">
         <button class="bulk-primary" @click="batchShip">批量发货</button>
         <button class="bulk__btn" @click="selectedCount && openNote(selected[0])">添加备注</button>
-        <button
-          class="bulk__btn"
-          @click="ElMessage.success(`已导出 ${selectedCount} 笔订单明细`)"
-        >
+        <button class="bulk__btn" @click="ElMessage.success(`已导出 ${selectedCount} 笔订单明细`)">
           导出所选
         </button>
       </BulkBar>
@@ -392,9 +405,7 @@ function printWaybills() {
               <ProductThumb :thumb="row.product.thumb" :tag="row.product.tag" :size="46" />
               <div class="cell-prod__body">
                 <div class="cell-prod__name">{{ row.product.name }}</div>
-                <div class="cell-prod__spec">
-                  {{ row.product.spec }} · 数量 {{ row.qty }}
-                </div>
+                <div class="cell-prod__spec">{{ row.product.spec }} · 数量 {{ row.qty }}</div>
               </div>
             </div>
           </template>
@@ -450,13 +461,17 @@ function printWaybills() {
           <EmptyHint
             icon="Tickets"
             :title="isFiltered ? '没有找到匹配的订单' : '还没有订单'"
-            :desc="isFiltered ? '试试调整筛选条件，或清空关键词重新搜索' : '等待买家下单后这里会出现记录'"
+            :desc="
+              isFiltered ? '试试调整筛选条件，或清空关键词重新搜索' : '等待买家下单后这里会出现记录'
+            "
           />
         </template>
       </el-table>
 
       <div v-if="!isEmpty" class="mz-pager">
-        <span class="info">共 <b>{{ total }}</b> 笔订单</span>
+        <span class="info"
+          >共 <b>{{ total }}</b> 笔订单</span
+        >
         <div class="spacer" />
         <el-pagination
           layout="prev, pager, next"
@@ -470,7 +485,11 @@ function printWaybills() {
     </section>
 
     <!-- ============ 发货弹窗 ============ -->
-    <el-dialog v-model="shipDialog.visible" :title="`批量发货 · ${shipDialog.ids.length} 笔订单`" width="480">
+    <el-dialog
+      v-model="shipDialog.visible"
+      :title="`批量发货 · ${shipDialog.ids.length} 笔订单`"
+      width="480"
+    >
       <p class="dialog-desc">填写物流信息后，订单状态将更新为「待收货」</p>
       <el-form label-position="top">
         <el-form-item label="物流公司">
@@ -487,7 +506,12 @@ function printWaybills() {
           <div class="field-hint">已自动获取电子面单号，支持手动修改</div>
         </el-form-item>
         <el-form-item label="发货备注">
-          <el-input v-model="shipDialog.note" type="textarea" :rows="2" placeholder="选填，仅商家可见" />
+          <el-input
+            v-model="shipDialog.note"
+            type="textarea"
+            :rows="2"
+            placeholder="选填，仅商家可见"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -543,14 +567,14 @@ function printWaybills() {
           <el-button
             v-if="drawer.order.status === 'wait_ship'"
             type="primary"
-            @click="drawer.visible = false; openShip([drawer.order.id])"
+            @click="shipFromDrawer(drawer.order)"
           >
             立即发货
           </el-button>
           <el-button
             v-else-if="drawer.order.status === 'wait_pay'"
             type="primary"
-            @click="drawer.visible = false; closeOrder(drawer.order.id)"
+            @click="closeFromDrawer(drawer.order)"
           >
             关闭订单
           </el-button>

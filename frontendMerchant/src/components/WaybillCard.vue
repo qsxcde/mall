@@ -23,7 +23,9 @@ const expressShort = computed(() =>
   (props.data.express || '').replace('速运', '').replace('快递', '').replace('物流', '')
 )
 
-const originAddress = computed(() => WAREHOUSE_ADDR[props.data.warehouse] || WAREHOUSE_ADDR['深圳总仓'])
+const originAddress = computed(
+  () => WAREHOUSE_ADDR[props.data.warehouse] || WAREHOUSE_ADDR['深圳总仓']
+)
 
 /**
  * 条码：由运单号做散列后生成的确定性条纹。
@@ -66,7 +68,7 @@ const barcode = computed(() => {
     <div class="waybill__sec">
       <div class="waybill__line">
         <em>收件</em>
-        <span class="is-big">{{ data.buyerName }}　{{ data.phone }}</span>
+        <span class="is-big">{{ data.buyerName }}&emsp;{{ data.phone }}</span>
       </div>
       <div class="waybill__line">
         <em>地址</em>
@@ -88,7 +90,7 @@ const barcode = computed(() => {
     <div class="waybill__sec">
       <div class="waybill__line">
         <em>订单</em>
-        <span>{{ data.orderId }}　共 {{ data.qty }} 件</span>
+        <span>{{ data.orderId }}&emsp;共 {{ data.qty }} 件</span>
       </div>
       <div class="waybill__line">
         <em>内件</em>
@@ -131,7 +133,7 @@ const barcode = computed(() => {
 }
 /* 走纸纹底纹：让面单有「热敏纸」的质感 */
 .waybill::before {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;

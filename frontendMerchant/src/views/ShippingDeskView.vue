@@ -38,7 +38,6 @@ const {
   selected,
   selectedCount,
   pageCount,
-  isFiltered,
   load,
   changePage,
   reset,
@@ -92,9 +91,30 @@ const statItems = computed(() => {
       alert: (s.late || 0) > 0,
       desc: `超时预警 ${s.late || 0} 笔`
     },
-    { key: 'printed', label: '已打单待发出', value: s.printed || 0, suffix: '笔', tone: 'brand', desc: '面单已生成待交寄' },
-    { key: 'shipped', label: '今日已发', value: s.shipped || 0, suffix: '笔', tone: 'teal', desc: '平均发货时长 4.2h' },
-    { key: 'exc', label: '物流异常', value: s.exc || 0, suffix: '笔', tone: 'amber', desc: '需主动联系买家' },
+    {
+      key: 'printed',
+      label: '已打单待发出',
+      value: s.printed || 0,
+      suffix: '笔',
+      tone: 'brand',
+      desc: '面单已生成待交寄'
+    },
+    {
+      key: 'shipped',
+      label: '今日已发',
+      value: s.shipped || 0,
+      suffix: '笔',
+      tone: 'teal',
+      desc: '平均发货时长 4.2h'
+    },
+    {
+      key: 'exc',
+      label: '物流异常',
+      value: s.exc || 0,
+      suffix: '笔',
+      tone: 'amber',
+      desc: '需主动联系买家'
+    },
     {
       key: 'rate',
       label: '发货及时率',
@@ -150,7 +170,8 @@ const waybillData = computed(() => {
 /* ---------- 时效展示 ---------- */
 function dueOf(s) {
   if (s.status === 'exc') return { text: '异常', note: '需人工介入', urgent: true }
-  if (s.status === 'shipped') return { text: '已发出', note: `${fmtTime(s.shippedAt)} 交寄`, done: true }
+  if (s.status === 'shipped')
+    return { text: '已发出', note: `${fmtTime(s.shippedAt)} 交寄`, done: true }
   if (s.status === 'printed') return { text: '待交寄', note: '面单已就绪' }
   const h = hoursLeft(s)
   const urgent = h <= 6
@@ -321,9 +342,9 @@ async function confirmWaybill() {
   <div class="page">
     <PageHeader eyebrow="Fulfilment · Shipping Desk" title="发货" title-accent="中心">
       <template #desc>
-        待发货 <b>{{ extras.stats?.wait || 0 }}</b> 笔 ·
-        超时预警 <b>{{ extras.stats?.late || 0 }}</b> 笔 ·
-        今日已发 <b>{{ extras.stats?.shipped || 0 }}</b> 笔
+        待发货 <b>{{ extras.stats?.wait || 0 }}</b> 笔 · 超时预警
+        <b>{{ extras.stats?.late || 0 }}</b> 笔 · 今日已发
+        <b>{{ extras.stats?.shipped || 0 }}</b> 笔
       </template>
       <template #actions>
         <el-button @click="syncOrders">
@@ -347,7 +368,10 @@ async function confirmWaybill() {
           <el-tab-pane v-for="tab in SHIPPING_TABS" :key="tab.key" :name="tab.key">
             <template #label>
               <span>{{ tab.label }}</span>
-              <span class="tab-count" :class="{ 'is-hot': tab.key === 'late' && (extras.tabs?.late || 0) > 0 }">
+              <span
+                class="tab-count"
+                :class="{ 'is-hot': tab.key === 'late' && (extras.tabs?.late || 0) > 0 }"
+              >
                 {{ extras.tabs?.[tab.key] ?? 0 }}
               </span>
             </template>
@@ -375,7 +399,9 @@ async function confirmWaybill() {
           <el-button text type="primary" @click="reset()">重置筛选</el-button>
 
           <div class="spacer" />
-          <span class="result-hint">共 <b>{{ total }}</b> 笔</span>
+          <span class="result-hint"
+            >共 <b>{{ total }}</b> 笔</span
+          >
         </div>
 
         <BulkBar :count="selectedCount" unit="笔" label="订单" @clear="clearSelection">
@@ -420,7 +446,9 @@ async function confirmWaybill() {
             <template #default="{ row }">
               <div class="buyer">
                 <b>{{ row.buyer.name }}</b>
-                <StatusTag tone="neutral" size="small" :dot="false">{{ row.buyer.level }}</StatusTag>
+                <StatusTag tone="neutral" size="small" :dot="false">{{
+                  row.buyer.level
+                }}</StatusTag>
               </div>
               <div class="sub ellipsis">{{ row.area.province }}</div>
             </template>
@@ -442,7 +470,10 @@ async function confirmWaybill() {
 
           <el-table-column label="时效 / 操作" min-width="196" align="right">
             <template #default="{ row }">
-              <div class="due" :class="{ 'is-urgent': dueOf(row).urgent, 'is-done': dueOf(row).done }">
+              <div
+                class="due"
+                :class="{ 'is-urgent': dueOf(row).urgent, 'is-done': dueOf(row).done }"
+              >
                 <div class="due__text">{{ dueOf(row).text }}</div>
                 <div class="due__note">{{ dueOf(row).note }}</div>
               </div>
@@ -470,13 +501,17 @@ async function confirmWaybill() {
             <EmptyHint
               icon="Van"
               :title="params.status === 'late' ? '没有超时订单，发货节奏很好' : '没有匹配的订单'"
-              :desc="params.status === 'late' ? '继续保持 24 小时内发货' : '试试切换状态或清空筛选条件'"
+              :desc="
+                params.status === 'late' ? '继续保持 24 小时内发货' : '试试切换状态或清空筛选条件'
+              "
             />
           </template>
         </el-table>
 
         <div v-if="total" class="mz-pager">
-          <span class="info">共 <b>{{ total }}</b> 笔</span>
+          <span class="info"
+            >共 <b>{{ total }}</b> 笔</span
+          >
           <div class="spacer" />
           <el-pagination
             layout="prev, pager, next"
@@ -492,15 +527,23 @@ async function confirmWaybill() {
       <aside class="side">
         <section class="mz-card mz-card--flush">
           <div class="mz-card__head">
-            <span class="head-icon tone-brand"><el-icon><Printer /></el-icon></span>
+            <span class="head-icon tone-brand"
+              ><el-icon><Printer /></el-icon
+            ></span>
             <h3>打单台</h3>
           </div>
           <div class="panel">
             <el-form label-position="top" size="default">
               <el-form-item label="打印机">
                 <el-select v-model="desk.printer">
-                  <el-option label="顺丰云打印 · SP-RT300（在线）" value="顺丰云打印 · SP-RT300（在线）" />
-                  <el-option label="菜鸟电子面单打印机 · 已就绪" value="菜鸟电子面单打印机 · 已就绪" />
+                  <el-option
+                    label="顺丰云打印 · SP-RT300（在线）"
+                    value="顺丰云打印 · SP-RT300（在线）"
+                  />
+                  <el-option
+                    label="菜鸟电子面单打印机 · 已就绪"
+                    value="菜鸟电子面单打印机 · 已就绪"
+                  />
                   <el-option label="系统默认打印机" value="系统默认打印机" />
                 </el-select>
               </el-form-item>
@@ -556,7 +599,9 @@ async function confirmWaybill() {
 
         <section class="mz-card mz-card--flush">
           <div class="mz-card__head">
-            <span class="head-icon tone-teal"><el-icon><Document /></el-icon></span>
+            <span class="head-icon tone-teal"
+              ><el-icon><Document /></el-icon
+            ></span>
             <h3>面单预览</h3>
             <span class="sub">{{ previewShipment?.id || '—' }}</span>
           </div>
@@ -576,10 +621,18 @@ async function confirmWaybill() {
       <div class="waybill-dialog">
         <WaybillCard v-if="waybillData" :data="waybillData" />
         <div class="waybill-side">
-          <div class="kv"><span>承运商</span><b>{{ previewShipment?.express }}</b></div>
-          <div class="kv"><span>仓库</span><b>{{ previewShipment?.warehouse }}</b></div>
-          <div class="kv"><span>内件数</span><b>{{ previewShipment?.qty }} 件</b></div>
-          <div class="kv"><span>面单张数</span><b>{{ waybillDialog.ids.length }} 张</b></div>
+          <div class="kv">
+            <span>承运商</span><b>{{ previewShipment?.express }}</b>
+          </div>
+          <div class="kv">
+            <span>仓库</span><b>{{ previewShipment?.warehouse }}</b>
+          </div>
+          <div class="kv">
+            <span>内件数</span><b>{{ previewShipment?.qty }} 件</b>
+          </div>
+          <div class="kv">
+            <span>面单张数</span><b>{{ waybillDialog.ids.length }} 张</b>
+          </div>
           <div class="tip">
             <el-icon><WarningFilled /></el-icon>
             <span>请确认打印机已装纸，面单为热敏纸不可重复打印</span>
@@ -606,7 +659,8 @@ async function confirmWaybill() {
           异常原因：{{ excDialog.shipment.excReason }}
         </div>
         <div class="exc-info">
-          收件人：<b>{{ excDialog.shipment.buyer.name }}</b>　{{ excDialog.shipment.phone }}<br />
+          收件人：<b>{{ excDialog.shipment.buyer.name }}</b
+          >&emsp;{{ excDialog.shipment.phone }}<br />
           地址：<b>{{ excDialog.shipment.area.province }} {{ excDialog.shipment.area.detail }}</b>
         </div>
         <div class="exc-title">处理方式</div>
@@ -637,8 +691,12 @@ async function confirmWaybill() {
           <el-descriptions-item label="收货地址">
             {{ detailDialog.shipment.area.province }} {{ detailDialog.shipment.area.detail }}
           </el-descriptions-item>
-          <el-descriptions-item label="发货仓库">{{ detailDialog.shipment.warehouse }}</el-descriptions-item>
-          <el-descriptions-item label="承运商">{{ detailDialog.shipment.express }}</el-descriptions-item>
+          <el-descriptions-item label="发货仓库">{{
+            detailDialog.shipment.warehouse
+          }}</el-descriptions-item>
+          <el-descriptions-item label="承运商">{{
+            detailDialog.shipment.express
+          }}</el-descriptions-item>
           <el-descriptions-item label="运单号">
             <span class="mono">{{ detailDialog.shipment.waybill || '未获取' }}</span>
           </el-descriptions-item>
@@ -657,7 +715,10 @@ async function confirmWaybill() {
       <el-form label-position="top">
         <el-form-item label="打印机">
           <el-select v-model="desk.printer">
-            <el-option label="顺丰云打印 · SP-RT300（在线）" value="顺丰云打印 · SP-RT300（在线）" />
+            <el-option
+              label="顺丰云打印 · SP-RT300（在线）"
+              value="顺丰云打印 · SP-RT300（在线）"
+            />
             <el-option label="菜鸟电子面单打印机 · 已就绪" value="菜鸟电子面单打印机 · 已就绪" />
             <el-option label="系统默认打印机" value="系统默认打印机" />
           </el-select>

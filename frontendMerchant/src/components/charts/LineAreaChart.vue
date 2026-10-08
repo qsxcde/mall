@@ -122,13 +122,19 @@ const tooltip = computed(() => {
 </script>
 
 <template>
-  <div ref="wrapRef" class="chart" :style="{ height: `${height}px` }" @mousemove="onMove" @mouseleave="onLeave">
+  <div
+    ref="wrapRef"
+    class="chart"
+    :style="{ height: `${height}px` }"
+    @mousemove="onMove"
+    @mouseleave="onLeave"
+  >
     <svg v-if="width" :width="width" :height="height" class="chart__svg">
       <defs>
         <linearGradient
           v-for="(s, si) in geometry"
-          :key="`g${si}`"
           :id="`area-${si}`"
+          :key="`g${si}`"
           x1="0"
           y1="0"
           x2="0"
@@ -150,7 +156,9 @@ const tooltip = computed(() => {
             stroke="var(--line-soft)"
             stroke-width="1"
           />
-          <text :x="PAD.left - 10" :y="t.y + 4" text-anchor="end" class="chart__axis">{{ t.text }}</text>
+          <text :x="PAD.left - 10" :y="t.y + 4" text-anchor="end" class="chart__axis">
+            {{ t.text }}
+          </text>
         </template>
       </g>
 
