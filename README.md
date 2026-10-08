@@ -19,7 +19,7 @@
 | 后端 | `backend/` | Spring Boot 3.3.5 + JDK 21，118 个 REST 接口，统一前缀 `/api/v1` |
 | 基础设施 | `infra/` | Docker Compose 编排 MySQL / Redis / MinIO，可选开可观测性栈 |
 | 压测 | `loadtest/` | k6 为主、JMeter 为辅，含数据准备与结果校验脚本 |
-| 文档 | `docs/` | 14 份分析报告（现状、治理清单、限流策略、压测对比等） |
+| 文档 | `docs/` | 19 份分析报告（现状、治理清单、限流策略、压测对比、多实例验证等） |
 
 ### 1.2 技术栈
 
@@ -30,7 +30,7 @@
 | 运行时 | JDK 21 |
 | 框架 | Spring Boot 3.3.5 |
 | 安全 | Spring Security 6 + JWT 无状态（Redis 保存会话，支持登出踢下线） |
-| 持久层 | MyBatis-Plus + MySQL 8 + Flyway（10 个版本化迁移，代码与库结构同源） |
+| 持久层 | MyBatis-Plus + MySQL 8 + Flyway（12 个版本化迁移，代码与库结构同源） |
 | 缓存 | Redis 7（分级 TTL + 本地 Caffeine L1） |
 | 分布式 | Redis Stream（秒杀削峰队列）、ShedLock（定时任务互斥） |
 | 可观测性 | Actuator + Micrometer/Prometheus + 结构化 JSON 日志 + TraceId 全链路（跨线程 / 跨队列） |
@@ -51,9 +51,9 @@
 
 ### 1.3 业务域
 
-后端按业务域分包（`backend/src/main/java/com/geekmall/modules/`），共 12 个域，每个域内部统一 `controller → service(+impl) → mapper`，配合 `entity / dto / vo / converter`：
+后端按业务域分包（`backend/src/main/java/com/geekmall/modules/`），共 13 个域，每个域内部统一 `controller → service(+impl) → mapper`，配合 `entity / dto / vo / converter`：
 
-`auth`（登录注册验证码）· `user`（资料/地址/签到）· `product`（分类/列表/搜索/详情/首页）· `cart`（购物车）· `trade`（结算/下单/状态机/物流）· `payment`（支付单/回调）· `marketing`（优惠券/秒杀/积分）· `review`（评价）· `aftersale`（售后）· `message`（消息中心）· `content`（CMS/上传）· `merchant`（商家中心）
+`auth`（登录注册验证码）· `user`（资料/地址/签到）· `product`（分类/列表/搜索/详情/首页）· `cart`（购物车）· `trade`（结算/下单/状态机/物流）· `payment`（支付单/回调）· `marketing`（优惠券/秒杀/积分）· `inventory`（商品库存分桶）· `review`（评价）· `aftersale`（售后）· `message`（消息中心）· `content`（CMS/上传）· `merchant`（商家中心）
 
 ### 1.4 高并发治理 —— 本项目的核心
 
@@ -70,14 +70,15 @@
 
 **几组实测数字**（详见各报告）：
 
-- 秒杀削峰：用户侧 **P99 由 1880ms 降至 320ms（-83%）**，落库吞吐不变 —— 削峰只摊平脉冲，不提升吞吐
+- 秒杀削峰：**受理侧** P99 由 1888.8ms 降至 320.4ms（-83%），落库吞吐不变 —— 削峰只摊平脉冲、不提升吞吐，
+  且端到端（点击→拿到订单号）反而变长（见 `docs/concurrency/秒杀削峰压测对比报告.md`）
 - 秒杀正确性：6 用户并发抢 3 件库存，**恰好 3 人成功、不超卖、一人一单**
 - 并发取消：8 线程同时取消同一订单，**只产生 1 条状态日志**（即库存只回退一次）
 - 缓存击穿：8 线程并发冷启动重建，**恰好回源 1 次**（读指标差值断言，而非靠观察）
 
 ### 1.5 质量与验证
 
-- **44 个测试类**（+1 基类，共 555 个用例），`mvn test` 一键运行全绿；集成测试用 Testcontainers 起**真实 MySQL 8 + Redis 7**，跑真实 Flyway 迁移与真实过滤器链
+- **46 个测试类**（+1 基类，共 **569 个用例**），`mvn test` 一键运行全绿；集成测试用 Testcontainers 起**真实 MySQL 8 + Redis 7**，跑真实 Flyway 迁移与真实过滤器链
 - 并发正确性从「压测时观察」升级为「自动化断言」——改坏了会立刻红灯
 - k6 压测体系可复现：数据准备脚本 + 结果校验脚本 + 指标渲染
 - 已做过一轮死代码清理（基于全库引用扫描 + 逐项人工复核）
@@ -91,7 +92,7 @@
 │       ├── common/     # 通用层：cache / ratelimit / resilience / event / result / exception ...
 │       ├── config/     # 配置类
 │       ├── security/   # JWT 过滤器、双端安全上下文
-│       └── modules/    # 12 个业务域
+│       └── modules/    # 13 个业务域
 ├── frontend/           # 买家端（Vite: 5173）
 ├── frontendMerchant/   # 商家端（Vite: 5174）
 ├── infra/              # docker-compose：MySQL / Redis / MinIO (+ 可观测性 profile)
@@ -112,11 +113,11 @@
 | Node.js | 20 / 22（18 亦可） | 前端构建；`vite@6` 要求 Node `^18` / `^20` / `>=22`，Node 18 已 EOL，建议 20/22 |
 | Docker | 任意较新版本 | 起中间件；**跑集成测试也需要它**；命令为 Compose V2 的 `docker compose`（非 `docker-compose`） |
 
-> **换一台电脑时，除上面 4 个运行时外无需额外配置**：后端 `dev` 所需的 MySQL / Redis / MinIO 连接信息全部有默认值（见 `application-dev.yml`），`infra/.env` 是可选的（`docker-compose.yml` 均使用默认值兜底）。
+> **换一台电脑时，除上面 4 个运行时外无需额外配置**：后端 `dev` 所需的 MySQL / Redis / MinIO 连接信息全部有默认值（见 `application-dev.yml`），`infra/.env` 是可选的（`docker-compose.yml` 的兜底端口/账号与 `application-dev.yml` 的默认值一致，不建也能直接起）。
 >
 > **首次启动需要联网**：`mvn` 拉取依赖、`npm install` 安装 `node_modules`（未入库）、Docker 拉取 `mysql:8.0` / `redis:7-alpine` / `minio` 镜像。
 >
-> **启动前确认端口空闲**：`8080`（后端）、`3307`（容器 MySQL）、`6379`（Redis）、`9000` / `9001`（MinIO）、`5173` / `5174`（前端）。容器 MySQL 默认映射到 **3307**（见 `infra/.env` 与 `application-dev.yml`），就是为了避开新机器上已装的本地 MySQL 抢占 `3306`。
+> **启动前确认端口空闲**：`8080`（后端）、`3307`（容器 MySQL）、`6379`（Redis）、`9000` / `9001`（MinIO）、`5173` / `5174`（前端）。容器 MySQL 默认映射到 **3307**（见 `infra/docker-compose.yml` 与 `application-dev.yml`），就是为了避开新机器上已装的本地 MySQL 抢占 `3306`。
 
 ### 2.2 启动基础设施
 
@@ -131,7 +132,7 @@ docker compose -f infra/docker-compose.yml --profile observability up -d
 docker compose -f infra/docker-compose.yml ps
 ```
 
-**表结构与演示数据不在这里初始化**，而是由后端启动时的 Flyway 自动执行（`V1__init.sql` ~ `V10__digital_product_release_seed.sql`），保证代码与库结构始终同源。
+**表结构与演示数据不在这里初始化**，而是由后端启动时的 Flyway 自动执行（`V1__init.sql` ~ `V12__seckill_stock_bucketing.sql`），保证代码与库结构始终同源。
 
 > 若 MinIO 镜像因网络问题拉取失败：**不影响后端启动**，只是图片上传会提示失败。可让后端改用本地磁盘存储：`--mall.storage.type=local`，文件落在 `backend/uploads/`。
 
@@ -230,23 +231,26 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
 
 ### 3.2 下一步：按 ROI 排序
 
-**① 真正提升吞吐：批量落库与库存分桶**（优先级最高）
+**① 真正提升吞吐：批量落库**（优先级最高）
 
-这不是拍脑袋的方向，而是压测**明确指出的瓶颈**：削峰把用户侧 P99 降了 83%，但落库吞吐仍是 30~40 单/秒，与同步模式相当——因为单热点 SKU 的瓶颈是**数据库行锁串行**，跟请求从哪来无关。
+压测**明确指出的瓶颈**：削峰把受理侧 P99 降了 83%，但落库吞吐仍是 30~40 单/秒，与同步模式相当——因为单热点 SKU 的瓶颈是**数据库行锁串行**，跟请求从哪来无关。
 
-- **批量落库**：一个事务合并插入 N 单，把 N 次行锁竞争压成 1 次
-- **库存分桶**：把热点商品的可售库存拆成 N 个独立桶，把一把行锁拆成 N 把
+- ✅ **库存分桶**（已完成并实测）：把热点商品的可售库存拆成 N 个独立桶，把一把行锁拆成 N 把。
+  秒杀侧实测落库 TPS 1→10 桶提升 **+74%（同步）/ +110%（削峰）**；
+  商品侧另有独立维度分桶（`inv_bucket` 四表，见 `docs/spec/库存分桶设计与交互边界.md`）。
+  ⚠️ 实测同时暴露：秒杀分桶只提升约 1.7~2 倍而非理论上界 10 倍，
+  因为同一事务里还有一行**未分桶的 `pms_product`** 在串行 —— 见 `loadtest/results/秒杀分桶×MQ对比-2026-10-08.md`。
+- ⏳ **批量落库**（未做）：一个事务合并插入 N 单，把 N 次行锁竞争压成 1 次。
 
 这两件事是「提吞吐」，与削峰（「降延迟、保护系统」）是正交的，缺了它们，秒杀场景的吞吐上限就被 DB 锁死。
 
-**② 多实例部署验证**（优先级高）
+**② 多实例部署验证** —— ✅ 核心项已完成
 
-目前所有并发验证都在单实例下完成，而项目里几处关键设计**只有多实例才考验得出来**：
-
-- 缓存互斥锁是否真的跨实例只回源一次
-- 本地 L1 在多实例下的一致性窗口（当前靠白名单收窄来限制影响）
-- Redis Stream 消费者组在多实例下的分工与 rebalance
-- ShedLock 定时任务互斥
+- ✅ **已验证**（3 实例实测，见 `docs/benchmark/多实例部署验证-2026-10-08.md`）：
+  限流全局量（LOCAL 层按 `instance-count` 分摊 → 全局 60 = 每实例 20×3；DISTRIBUTED 层全局恰好 10）、
+  号段发号跨实例唯一（300 单零冲突、各领一段）、缓存跨实例互斥重建（4 个缓存重建均 = 1）、ShedLock 定时任务单点。
+  验证同时修掉两个真实缺陷：击穿互斥原本只覆盖 1/4 个缓存、`homeFloors` 自调用绕过分类缓存。
+- ⏳ **未验证**：Redis Stream 消费者组在多实例下的分工与 rebalance；本地 L1 一致性窗口的实际影响（当前靠白名单收窄）。
 
 **③ 商品域进阶**
 
@@ -267,7 +271,7 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
 
 ### 3.4 一句话
 
-**功能已经够用了，接下来值得投入的是「让已有的高并发设计真的被压出问题来」**——多实例部署、批量落库、看板告警，这三件事做完，这个项目就从「写了很多并发代码」变成「验证过并发设计」。
+**功能已经够用了，接下来值得投入的是「让已有的高并发设计真的被压出问题来」**——多实例部署验证与库存分桶已经做完并留下实测报告，剩下的批量落库与看板告警做完，这个项目就从「写了很多并发代码」变成「验证过并发设计」。
 
 ---
 
@@ -280,6 +284,7 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
 | `docs/planning/` | `练手项目聚焦范围与框架就绪度报告.md` | **总纲**：功能就绪度、能力矩阵、缺口与优先级 |
 | `docs/planning/` | `功能点分析报告.md` | 前端功能点清单与缺口清单（需求基线） |
 | `docs/planning/` | `后端脚手架搭建方案.md` | 后端分层与中间件选型设计 |
+| `docs/planning/` | `校招面试视角的项目完善建议.md` | 以「简历主项目」为目标的差距分析（P0/P1/P2）与行动清单 |
 | `docs/concurrency/` | `高并发功能模块全景分析.md` | 全站高并发点普查 |
 | `docs/concurrency/` | `高并发处理现状报告.md` | 高并发处理手段现状盘点 |
 | `docs/concurrency/` | `高并发现状核查报告.md` | 对已有结论的独立复核 |
@@ -288,7 +293,10 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
 | `docs/concurrency/` | `秒杀削峰压测对比报告.md` | 削峰的实测收益与代价（含完整复现步骤） |
 | `docs/benchmark/` | `第一次压力测试.md` | 首轮 JMeter + k6 压测全记录 |
 | `docs/benchmark/` | `测试补充项与MQ对比压测方案.md` | 测试缺口梳理与 MQ / 非MQ 对比压测方案 |
+| `docs/benchmark/` | `库存分桶实现分析.md` | 库存分桶的机制、桶数估算、假售罄与一致性取舍 |
+| `docs/benchmark/` | `多实例部署验证-2026-10-08.md` | 3 实例实测：限流全局量 / 号段唯一 / 缓存互斥 / ShedLock 单点，及由此修掉的两处缺陷 |
 | `docs/spec/` | `接口限流策略说明.md` | 全站 118 个端点的限流规则明细与分层取舍 |
+| `docs/spec/` | `库存分桶设计与交互边界.md` | 商品库存分桶（`inv_bucket` 四表）的设计、不变量与交易域交互边界 |
 | `docs/spec/` | `日志规范.md` | 日志级别语义、字段字典、链路上下文三边界、脱敏规则与噪音治理 |
 | `docs/spec/` | `可观测性现状分析与改进方案.md` | 观测能力盘点（日志/指标/追踪/告警）、盲区诊断、改进方向与分阶段落地计划 |
 | `docs/governance/` | `死代码清理报告.md` | 死代码排查与复核结论 |

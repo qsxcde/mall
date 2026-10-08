@@ -37,7 +37,8 @@ name: geek-mall
 x-app-env: &app-env
   # Dockerfile 已固定 prod；prod 的 datasource 无默认值，必须显式给全
   SPRING_PROFILES_ACTIVE: prod
-  # 容器内走 compose 服务名，不能用 localhost（那是容器自己）
+  # 容器内走 compose 服务名，不能用 localhost（那是容器自己）；
+  # 这里的 3306 是「容器网络内的端口」，与宿主机映射端口（默认 3307）无关
   MYSQL_HOST: mysql
   MYSQL_PORT: "3306"
   MYSQL_USER: root

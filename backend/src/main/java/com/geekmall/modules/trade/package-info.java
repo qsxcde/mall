@@ -21,7 +21,8 @@
  *     <li>按钮可用性（canCancel/canPay/...）由后端按状态机算出，前端不重复实现规则。</li>
  * </ol>
  *
- * <p>待补充：发货（后台）、真实物流轨迹接入、订单超时改用延迟队列。</p>
+ * <p>待补充：真实物流轨迹接入、订单超时改用延迟队列。（发货后台已由商家域实现，见
+ * {@code com.geekmall.modules.merchant.service.impl.MerchantShipmentServiceImpl}。）</p>
  *
  * <p>对应前端：CheckoutView、OrdersView、OrderDetailView、LogisticsView。</p>
  */

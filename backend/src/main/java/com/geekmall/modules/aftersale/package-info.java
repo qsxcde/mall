@@ -18,8 +18,9 @@
  *
  * <p>设计要点：订单归属与状态判断都交给交易域，售后域不重复实现订单状态机。</p>
  *
- * <p>待实现：商家审核/驳回（后台）、真实退款调用、售后凭证图片（依赖 content 域上传接口）、
- * 售后退回商品后回滚库存。</p>
+ * <p>待实现：真实退款调用、售后凭证图片（依赖 content 域上传接口）、
+ * 售后退回商品后回滚库存。（商家审核/驳回已由商家域实现，见
+ * {@code com.geekmall.modules.merchant.service.impl.MerchantAftersaleServiceImpl}。）</p>
  *
  * <p>对应前端：aftersale/ApplyView、aftersale/DetailView、UserCenterView 售后面板。</p>
  */
