@@ -116,7 +116,7 @@ docker run -d --name geek-mall-server \
   为 `minio` 时才会连 `http://localhost:9000`，为 `local` 时完全不依赖容器。
 - **容器 MySQL 映射到宿主 `3307`（不是 3306）**：本机若已装 MySQL，它会占住 `127.0.0.1:3306`，
   而后端连 `localhost:3306` 会命中本机实例，报 `Access denied for user 'root'@'localhost'`——
-  看起来像密码错，其实是连错了实例。`.env` 里已设 `MYSQL_PORT=3307`，
+  看起来像密码错，其实是连错了实例。`docker-compose.yml` 的兜底值与 `.env.example` 均已设为 `MYSQL_PORT=3307`，
   后端 `application-dev.yml` 的默认端口与之对齐，改端口时两边要一起改。
 - 生产环境请务必修改 `MYSQL_ROOT_PASSWORD`、`MINIO_ROOT_PASSWORD`、`GRAFANA_PASSWORD`
   以及后端的 `MALL_JWT_SECRET`。
