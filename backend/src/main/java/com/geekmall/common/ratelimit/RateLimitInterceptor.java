@@ -1,5 +1,6 @@
 package com.geekmall.common.ratelimit;
 
+import com.geekmall.common.cluster.ClusterProperties;
 import com.geekmall.security.MerchantSecurityUtils;
 import com.geekmall.security.SecurityUtils;
 import jakarta.servlet.DispatcherType;
@@ -45,6 +46,10 @@ import org.springframework.web.servlet.HandlerMapping;
  *       </ul>
  *       该边界由 {@code RateLimitIntegrationTest#unauthenticatedRequestsAreRejectedBeforeRateLimiting}
  *       固化，避免将来有人误以为「所有请求都过限流」而做出错误的安全推断。</li>
+ *   <li><b>LOCAL 配额按实例数切分</b>：LOCAL 层计数在进程内，N 个实例的总放行量
+ *       会被放大 N 倍。这里按 {@code mall.cluster.instance-count} 把额度切成
+ *       {@code ceil(limit / N)}（且至少保留 1），使全局总量回到配置值附近；
+ *       DISTRIBUTED 层本身全局准确，不切分。</li>
  * </ol>
  */
 @Slf4j
@@ -65,6 +70,8 @@ public class RateLimitInterceptor implements AsyncHandlerInterceptor {
     private final RateLimitPolicies policies;
     private final LocalRateLimiter localRateLimiter;
     private final DistributedRateLimiter distributedRateLimiter;
+    /** 集群实例数：用于把 LOCAL 层（进程内）配额切分到各实例。 */
+    private final ClusterProperties clusterProperties;
 
     @Override
     public boolean preHandle(@NonNull HttpServletRequest request,
@@ -96,10 +103,15 @@ public class RateLimitInterceptor implements AsyncHandlerInterceptor {
         String dimension = resolveDimension(policy.dimension(), request);
         String key = KEY_PREFIX + policy.name() + ":" + dimension;
 
+        // LOCAL 层是进程内计数：多实例部署时按实例数切分额度，否则总放行量会被放大 N 倍。
+        // DISTRIBUTED 层本身全局准确，effectiveLimit 会原样返回配置值。
+        int instanceCount = clusterProperties.getInstanceCount();
+        int limit = policy.effectiveLimit(instanceCount);
+
         // ---- 频率限制 ----
         RateLimitResult result = policy.tier() == RateLimitTier.LOCAL
-                ? localRateLimiter.tryAcquire(key, policy.limit(), policy.windowSeconds())
-                : distributedRateLimiter.tryAcquire(key, policy.limit(), policy.windowSeconds(), policy.fallback());
+                ? localRateLimiter.tryAcquire(key, limit, policy.windowSeconds())
+                : distributedRateLimiter.tryAcquire(key, limit, policy.windowSeconds(), policy.fallback());
 
         if (!result.allowed()) {
             log.warn("[限流] 规则={}, 维度={}, 阈值={}/{}s, 层级={}",
@@ -108,10 +120,13 @@ public class RateLimitInterceptor implements AsyncHandlerInterceptor {
         }
 
         // ---- 并发度限制（可选）----
-        if (policy.maxConcurrent() > 0) {
+        // 在途并发同样是进程内计数，按实例数切分
+        int maxConcurrent = policy.effectiveMaxConcurrent(instanceCount);
+        if (maxConcurrent > 0) {
             String concurrentKey = key + ":conc";
-            if (!localRateLimiter.tryAcquireConcurrent(concurrentKey, policy.maxConcurrent())) {
-                log.warn("[限流] 规则={} 并发已达上限 {}，拒绝请求", policy.name(), policy.maxConcurrent());
+            if (!localRateLimiter.tryAcquireConcurrent(concurrentKey, maxConcurrent)) {
+                log.warn("[限流] 规则={} 并发已达上限 {}（实例数 {}），拒绝请求",
+                        policy.name(), maxConcurrent, instanceCount);
                 throw new RateLimitException("当前请求过多，请稍后再试", 1);
             }
             request.setAttribute(ATTR_CONCURRENT_KEY, concurrentKey);

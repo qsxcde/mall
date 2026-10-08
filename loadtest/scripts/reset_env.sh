@@ -1,18 +1,98 @@
 #!/usr/bin/env bash
 # ============================================================
-# 压测环境重置：清空历史压测数据 → 重置秒杀/商品库存 → 重启后端
+# 压测环境重置：清空历史压测数据 → 重置秒杀/商品库存 → (可配)重启后端
 #
-# 为什么要重启后端：
+# 为什么默认要重启后端：
 #   1) 清空 JwtAuthenticationFilter 的 Caffeine 本地令牌缓存；
 #   2) SeckillStockWarmUp 会用 DB 库存重新预热 Redis 秒杀计数；
 #   3) 保证每次压测从同一基线开始，结果可复现。
+#
+# 可覆盖参数（环境变量）：
+#   PORT=8080                 后端端口
+#   MANAGE_BACKEND=1          1=停旧后端并起新后端；0=只清数据，不动后端
+#   RATE_LIMIT_ENABLED=false  压测口径默认关闭限流（否则批量登录/读链路会 429）
+#   SECKILL_ASYNC_ENABLED=false  秒杀削峰队列开关：true=用队列异步落库，false=同步落库
+#                                （同一台脚本跑两遍即可做「用/不用削峰」A/B 对比）
+#   LOG_LEVEL=info            业务日志级别
+#   STORAGE_TYPE=local        文件存储实现（minio / local）
+#   SPRING_PROFILES=          可选，如 dev
+#   JAR=<path>                默认 backend/target/geek-mall-server-1.0.0.jar
+#   LOG_FILE=/tmp/geekmall-app.log
+#   HEALTH_TIMEOUT=40         健康检查最长等待秒数
+#   FORCE_KILL_AFTER=10       优雅停止等待秒数，超时强杀
+#
+# 停服策略（不再只靠 jar 名匹配）：
+#   1) 优先按「监听 PORT 的 PID」精确停服 —— 能覆盖 mvn / IDE 起的后端；
+#   2) 再兜底按 jar 名匹配，清理其他实例；
+#   3) 启动前校验端口已释放，启动后校验新进程存活且真正接管了端口（避免假成功）。
 # ============================================================
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BACKEND_DIR="$ROOT_DIR/backend"
-JAR="$BACKEND_DIR/target/geek-mall-server-1.0.0.jar"
+PORT="${PORT:-8080}"
+MANAGE_BACKEND="${MANAGE_BACKEND:-1}"
+JAR="${JAR:-$BACKEND_DIR/target/geek-mall-server-1.0.0.jar}"
 LOG_FILE="${GM_LOG:-/tmp/geekmall-app.log}"
+LOG_LEVEL="${LOG_LEVEL:-info}"
+STORAGE_TYPE="${STORAGE_TYPE:-local}"
+RATE_LIMIT_ENABLED="${RATE_LIMIT_ENABLED:-false}"
+SECKILL_ASYNC_ENABLED="${SECKILL_ASYNC_ENABLED:-false}"
+SPRING_PROFILES="${SPRING_PROFILES:-}"
+HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-40}"
+FORCE_KILL_AFTER="${FORCE_KILL_AFTER:-10}"
+
+# 监听指定端口的 PID（可能多个，一行一个）
+listen_pids() {
+  lsof -ti "tcp:$PORT" -sTCP:LISTEN 2>/dev/null || true
+}
+
+# 等待 PID 退出；返回 0=已退出，1=超时仍在
+wait_pid_gone() {
+  local pid="$1" deadline=$((SECONDS + FORCE_KILL_AFTER))
+  while kill -0 "$pid" 2>/dev/null; do
+    if ((SECONDS >= deadline)); then
+      return 1
+    fi
+    sleep 0.5
+  done
+  return 0
+}
+
+# 等待端口释放
+wait_port_free() {
+  for _ in $(seq 1 20); do
+    if [[ -z "$(listen_pids)" ]]; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  return 1
+}
+
+# 精确停止后端：先按端口找 PID，再兜底按 jar 名清理
+stop_backend() {
+  local pids
+  pids="$(listen_pids)"
+  if [[ -n "$pids" ]]; then
+    echo "      端口 $PORT 被占用，按 PID 停止：$(echo "$pids" | tr '\n' ' ')"
+    local pid
+    for pid in $pids; do
+      kill "$pid" 2>/dev/null || true
+    done
+    for pid in $pids; do
+      if ! wait_pid_gone "$pid"; then
+        echo "      PID $pid 未在 ${FORCE_KILL_AFTER}s 内退出，强制 kill -9"
+        kill -9 "$pid" 2>/dev/null || true
+      fi
+    done
+  else
+    echo "      端口 $PORT 无监听进程"
+  fi
+
+  # 兜底：清理按 jar 名匹配的其他实例（别的端口 / 未监听成功的僵尸进程）
+  pkill -f "$(basename "$JAR")" 2>/dev/null || true
+}
 
 # 秒杀商品基线（与 docs/第一次压力测试.md 的说明保持一致）
 ITEM1_STOCK=200      # 压力测试用：mkt_seckill_item.id=1 → pms_product.id=1
@@ -64,25 +144,70 @@ docker exec geek-mall-redis sh -c "redis-cli --scan --pattern 'mall:seckill:*' |
 # 返回一个数据库里并不存在的悬空订单号。必须一起清掉。
 docker exec geek-mall-redis sh -c "redis-cli --scan --pattern 'mall:order:idempotent:*' | xargs -r redis-cli del" >/dev/null
 
-echo "[4/5] 重启后端服务..."
-pkill -f geek-mall-server-1.0.0.jar 2>/dev/null || true
-sleep 3
+if [[ "$MANAGE_BACKEND" != "1" ]]; then
+  echo "[4/5] MANAGE_BACKEND=0：仅重置数据，不重启后端"
+  echo "      提醒：请自行重启后端，否则 Caffeine 令牌缓存不会清、Redis 秒杀计数不会预热"
+  echo "[5/5] 跳过健康检查"
+  echo "完成（未接管后端）。"
+  exit 0
+fi
+
+echo "[4/5] 停止旧后端并启动新后端..."
+
+if [[ ! -f "$JAR" ]]; then
+  echo "      找不到 $JAR" >&2
+  echo "      请先打包：cd backend && mvn -DskipTests package" >&2
+  exit 1
+fi
+
+stop_backend
+
+# 启动前必须确认端口已释放，否则新进程会因端口占用启动失败（旧进程仍在时健康检查还会假通过）
+if ! wait_port_free; then
+  echo "      端口 $PORT 仍被占用：$(listen_pids | tr '\n' ' ')，停止失败" >&2
+  exit 1
+fi
+
 cd "$BACKEND_DIR"
+
 # 压测时关闭 MyBatis SQL 与 debug 日志：
 # dev 默认逐条打印 SQL，会把磁盘 I/O 变成瓶颈，压出来的数字无法反映业务真实吞吐。
-STORAGE_TYPE=local nohup java -jar "$JAR" --server.port=8080 \
-  --logging.level.com.geekmall=info \
-  --mybatis-plus.configuration.log-impl=org.apache.ibatis.logging.nologging.NoLoggingImpl \
-  > "$LOG_FILE" 2>&1 &
-echo "      pid=$!  日志：$LOG_FILE"
+# 限流开关做成可配：压测默认关闭，专门验证限流时用 RATE_LIMIT_ENABLED=true 打开。
+ARGS=(
+  "--server.port=$PORT"
+  "--logging.level.com.geekmall=$LOG_LEVEL"
+  "--mybatis-plus.configuration.log-impl=org.apache.ibatis.logging.nologging.NoLoggingImpl"
+  "--mall.rate-limit.enabled=$RATE_LIMIT_ENABLED"
+  "--mall.seckill.async.enabled=$SECKILL_ASYNC_ENABLED"
+)
+if [[ -n "$SPRING_PROFILES" ]]; then
+  ARGS+=("--spring.profiles.active=$SPRING_PROFILES")
+fi
 
-echo "[5/5] 等待健康检查通过..."
-for i in $(seq 1 40); do
-  if curl -sf -m 2 http://localhost:8080/actuator/health >/dev/null 2>&1; then
-    echo "      服务已就绪（${i}s）"
+STORAGE_TYPE="$STORAGE_TYPE" nohup java -jar "$JAR" "${ARGS[@]}" > "$LOG_FILE" 2>&1 &
+NEW_PID=$!
+echo "      pid=$NEW_PID  端口=$PORT  限流=$RATE_LIMIT_ENABLED  秒杀削峰=$SECKILL_ASYNC_ENABLED  日志：$LOG_FILE"
+
+echo "[5/5] 等待健康检查通过（并确认新进程真的接管了端口）..."
+for i in $(seq 1 "$HEALTH_TIMEOUT"); do
+  # 新进程已死就没必要再等，直接看日志定位原因
+  if ! kill -0 "$NEW_PID" 2>/dev/null; then
+    echo "      新进程已退出（pid=$NEW_PID），最近日志：" >&2
+    tail -n 40 "$LOG_FILE" >&2 || true
+    exit 1
+  fi
+  if curl -sf -m 2 "http://localhost:$PORT/actuator/health" >/dev/null 2>&1; then
+    OWNER="$(listen_pids | head -n1)"
+    if [[ "$OWNER" != "$NEW_PID" ]]; then
+      echo "      健康检查通过，但端口 $PORT 的监听者($OWNER)不是新进程($NEW_PID)，判定为假成功" >&2
+      tail -n 40 "$LOG_FILE" >&2 || true
+      exit 1
+    fi
+    echo "      服务已就绪（${i}s），pid=$NEW_PID 已接管端口 $PORT"
     exit 0
   fi
   sleep 1
 done
-echo "      启动超时，请检查 $LOG_FILE" >&2
+echo "      启动超时（${HEALTH_TIMEOUT}s），请检查 $LOG_FILE" >&2
+tail -n 40 "$LOG_FILE" >&2 || true
 exit 1

@@ -30,3 +30,6 @@ backend/uploads/
 # users.js 由 scripts/gen_k6_users.py 从其派生，二者都是产物而非源码。
 loadtest/data/
 loadtest/k6/data/
+
+# ---------- 临时打包产物（不入库）----------
+loadtest.zip

@@ -1,5 +1,6 @@
 package com.geekmall.common.ratelimit;
 
+import com.geekmall.common.cluster.ClusterProperties;
 import com.geekmall.security.LoginUser;
 import com.geekmall.security.MerchantLoginUser;
 import jakarta.servlet.DispatcherType;
@@ -47,6 +48,7 @@ class RateLimitInterceptorTest {
     private DistributedRateLimiter distributedRateLimiter;
 
     private RateLimitProperties properties;
+    private ClusterProperties clusterProperties;
     private RateLimitInterceptor interceptor;
 
     /** 供 HandlerMethod 使用的占位控制器。 */
@@ -61,8 +63,9 @@ class RateLimitInterceptorTest {
     void setUp() {
         properties = new RateLimitProperties();
         properties.setEnabled(true);
+        clusterProperties = new ClusterProperties();
         interceptor = new RateLimitInterceptor(properties, new RateLimitPolicies(),
-                localRateLimiter, distributedRateLimiter);
+                localRateLimiter, distributedRateLimiter, clusterProperties);
     }
 
     @AfterEach
@@ -336,6 +339,49 @@ class RateLimitInterceptorTest {
             interceptor.afterCompletion(request, new MockHttpServletResponse(), handlerMethod(), null);
 
             verify(localRateLimiter, never()).releaseConcurrent(anyString());
+        }
+    }
+
+    @Nested
+    @DisplayName("LOCAL 配额按实例数切分（P1-4）")
+    class Sharding {
+
+        @Test
+        @DisplayName("多实例：本地规则使用切分后的额度，避免 N 个实例把全局总量放大 N 倍")
+        void localLimitIsShardedByInstanceCount() throws Exception {
+            clusterProperties.setInstanceCount(3);
+            when(localRateLimiter.tryAcquire(anyString(), anyInt(), anyInt()))
+                    .thenReturn(RateLimitResult.allow(67, 66));
+
+            interceptor.preHandle(request("GET", "/api/v1/products"), new MockHttpServletResponse(), handlerMethod());
+
+            // product-read 配置为 200 次 / 1s（IP 维度）；3 实例 → ceil(200 / 3) = 67
+            verify(localRateLimiter).tryAcquire(anyString(), eq(67), eq(1));
+        }
+
+        @Test
+        @DisplayName("单实例：额度原样使用（引入切分不改变单机行为）")
+        void singleInstanceKeepsConfiguredLimit() throws Exception {
+            clusterProperties.setInstanceCount(1);
+            when(localRateLimiter.tryAcquire(anyString(), anyInt(), anyInt()))
+                    .thenReturn(RateLimitResult.allow(200, 199));
+
+            interceptor.preHandle(request("GET", "/api/v1/products"), new MockHttpServletResponse(), handlerMethod());
+
+            verify(localRateLimiter).tryAcquire(anyString(), eq(200), eq(1));
+        }
+
+        @Test
+        @DisplayName("DISTRIBUTED 规则本就是全局计数，不参与切分")
+        void distributedLimitIsNotSharded() throws Exception {
+            clusterProperties.setInstanceCount(4);
+            when(distributedRateLimiter.tryAcquire(anyString(), anyInt(), anyInt(), any()))
+                    .thenReturn(RateLimitResult.allow(10, 9));
+
+            interceptor.preHandle(request("POST", "/api/v1/auth/login"), new MockHttpServletResponse(),
+                    handlerMethod());
+
+            verify(distributedRateLimiter).tryAcquire(anyString(), eq(10), eq(60), any());
         }
     }
 }

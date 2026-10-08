@@ -56,6 +56,15 @@ mall:
   sms:
     # 是否在接口响应中回显验证码，仅供开发联调，生产必须为 false
     expose-code: false
+  # 集群 / 部署容量：多实例部署必须按实际副本数声明 instance-count
+  cluster:
+    # 本服务实例数。用于把「进程内」资源分摊到全局：
+    #  · 限流 LOCAL 层：每实例额度 = ceil(配置值 / 实例数)（至少 1），避免 N 实例把总量放大 N 倍
+    #  · 连接池容量校验：实例数 × 单实例池大小 必须 ≤ mysql-max-connections
+    instance-count: 1
+    # 与 MySQL max_connections 对齐，启动时用于连接池总量校验
+    mysql-max-connections: 300
+    capacity-check-enabled: true
   rate-limit:
     # 全站接口限流总开关；规则集中在 common/ratelimit/RateLimitPolicies
     enabled: true
@@ -163,9 +172,12 @@ mall:
       # 未确认消息闲置多久后可被回收重投（消费者崩溃兜底），以及扫描间隔
       reclaim-min-idle: 1m
       reclaim-interval: 30s
+      # 单条消息最大投递次数：超过即转死信（回补预扣 + 写失败终态 + 丢弃），避免无限重投
+      max-deliveries: 3
       # 抢购结果保留时长（前端轮询窗口）
       result-ttl: 30m
-      # 轮询各实例应显式配置唯一名；留空则自动生成，多实例下可能撞名
+      # 消费者名：留空则自动取「主机名 + server.port」，同机多实例 / 多机都不会撞名；
+      # 容器编排下若主机名不唯一（如统一 hostname）才需显式配置
       consumer-name: ""
       # 消息流最大长度（近似裁剪），防止 Redis 内存无限增长
       max-stream-length: 100000

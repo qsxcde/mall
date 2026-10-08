@@ -6,9 +6,10 @@ spring:
     password: ${MYSQL_PASSWORD:root}
     hikari:
       pool-name: GeekMallHikariCP
-      minimum-idle: 10
-      # P0-1：本地压测同样需要足够连接 + 快速失败，避免复现「挂起 30s」
-      maximum-pool-size: 50
+      minimum-idle: ${MYSQL_POOL_MIN_IDLE:10}
+      # P0-1：本地压测同样需要足够连接 + 快速失败，避免复现「挂起 30s」。
+      # 多实例验证时按实例数调小（实例数 × 本值 ≤ MySQL max_connections）
+      maximum-pool-size: ${MYSQL_POOL_SIZE:50}
       connection-timeout: 3000
       idle-timeout: 600000
       max-lifetime: 1800000

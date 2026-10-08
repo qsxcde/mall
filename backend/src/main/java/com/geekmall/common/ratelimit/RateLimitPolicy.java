@@ -56,6 +56,35 @@ public record RateLimitPolicy(String name,
         return methods.stream().anyMatch(m -> m.matches(httpMethod));
     }
 
+    /**
+     * 按实例数切分后的「本实例额度」。
+     *
+     * <p>LOCAL 层计数在进程内，N 个实例的总放行量 = 配置值 × N。声明实例数后，
+     * 每实例只放行 {@code ceil(limit / N)}，全局总量回到配置值附近；
+     * DISTRIBUTED 层已经是全局计数，<b>不</b>切分。</p>
+     */
+    public int effectiveLimit(int instanceCount) {
+        return tier == RateLimitTier.DISTRIBUTED ? limit : shard(limit, instanceCount);
+    }
+
+    /** 并发槽位同样是进程内计数，按同一规则切分。 */
+    public int effectiveMaxConcurrent(int instanceCount) {
+        return maxConcurrent <= 0 ? 0 : shard(maxConcurrent, instanceCount);
+    }
+
+    /**
+     * 向上取整分摊，且至少保留 1。
+     *
+     * <p>「至少 1」是刻意的：额度再小也不能把接口彻底锁死 ——
+     * 例如 5 次/60s 的规则在 10 个实例下取整会得到 0，那等于直接禁用该接口。</p>
+     */
+    private static int shard(int configured, int instanceCount) {
+        if (instanceCount <= 1) {
+            return configured;
+        }
+        return Math.max(1, (int) Math.ceil((double) configured / instanceCount));
+    }
+
     /** 供文档与测试使用的单行描述。 */
     public String describe() {
         String methodText = anyMethod() ? "ALL" : String.join("/", methods.stream().map(HttpMethod::name).toList());

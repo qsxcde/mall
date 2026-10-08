@@ -63,7 +63,15 @@ public interface SeckillOrderQueue {
      */
     List<Delivery> reclaimStale(String consumer, Duration minIdle, int maxCount);
 
-    /** 一条已取出的消息及其确认句柄。 */
-    record Delivery(String handle, SeckillOrderMessage message) {
+    /**
+     * 一条已取出的消息及其确认句柄。
+     *
+     * @param handle     确认句柄（Redis Stream 的 record id）
+     * @param message    消息体
+     * @param deliveries 该消息的<b>累计投递次数</b>：首次投递为 1，每次回收重投 +1。
+     *                   消费端据此判断是否已达上限，从而转入死信而不是无限重投；
+     *                   换成任何 MQ 都应能提供等价语义（重投计数 / redelivery flag）。
+     */
+    record Delivery(String handle, SeckillOrderMessage message, long deliveries) {
     }
 }

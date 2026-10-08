@@ -1,6 +1,6 @@
 # 极客商家中心 · Merchant Hub
 
-极客数码商城**商家端后台**。基于 Vue 3 + Element Plus，覆盖经营、商品、交易、财务、增长五大模块，共 9 个业务页面。
+极客数码商城**商家端后台**。基于 Vue 3 + Element Plus，覆盖经营、商品、交易、财务、增长五大模块，共 10 个页面（9 个业务页面 + 独立登录页）。
 
 与 C 端前台（`../frontend`）共用同一套接口约定与工程规范，但视觉上刻意区分：
 前台做生意（明亮、促销感），后台管生意（沉稳、报表感）。
@@ -81,10 +81,13 @@ frontendMerchant/
     │   └── useElementSize.js  # ResizeObserver 尺寸观测（图表用）
     │
     ├── api/
-    │   ├── request.js         # axios 封装（已就绪，可直连接口）
+    │   ├── request.js         # axios 封装（已接真实接口）
+    │   ├── auth.js            # 商家登录 / 店铺 / 登出
+    │   ├── token.js           # 令牌读写
     │   ├── catalog.js         # 商品域 + 概览 + 看板 + 导航角标
     │   ├── trade.js           # 订单 / 发货 / 售后
-    │   └── growth.js          # 营销 / 评价 / 结算
+    │   ├── growth.js          # 营销 / 评价 / 结算
+    │   └── adapters.js        # 后端 VO → 视图字段适配
     │
     ├── mock/
     │   ├── shared.js          # 商品池、买家、地区等基础字典 + 伪随机源
@@ -99,7 +102,7 @@ frontendMerchant/
     │   ├── dict.js            # 业务字典（状态、类型、Tab 定义）
     │   ├── chart.js           # 图表公共算法（刻度、色板、路径）
     │   └── mock.js            # Mock 适配器
-    └── views/                 # 9 个业务页面
+    └── views/                 # 10 个页面（9 业务 + 登录）
         ├── OverviewView.vue      经营概览
         ├── AnalyticsView.vue     数据看板
         ├── ProductListView.vue   商品管理
@@ -108,7 +111,8 @@ frontendMerchant/
         ├── AfterSaleView.vue     售后管理
         ├── FinanceSettleView.vue 财务结算
         ├── MarketingView.vue     营销中心
-        └── ReviewView.vue        评价管理
+        ├── ReviewView.vue        评价管理
+        └── LoginView.vue         商家登录
 ```
 
 ---
@@ -221,9 +225,8 @@ plugins: [
 
 3. 抽掉 `src/mock/` 与 `utils/mock.js`。
 
-> 注意：商家端接口目前**尚未落地**。`backend/` 只有 C 端买家侧接口
-> （`AfterSaleController` 仅覆盖「申请/列表/详情/取消」），商家侧的订单履约、
-> 结算账户、电子面单对接等都需要新建 API。
+> 商家端接口**已落地**：`backend/src/main/java/com/geekmall/modules/merchant/**` 覆盖认证、工作台、
+> 商品、订单、发货、售后、财务、营销、评价（统一前缀 `/api/v1/merchant`，独立 `ROLE_MERCHANT` 过滤器链）。
 
 ---
 

@@ -16,6 +16,7 @@ import com.geekmall.modules.auth.vo.SmsCodeVO;
 import com.geekmall.modules.user.converter.UserConverter;
 import com.geekmall.modules.user.entity.SysUser;
 import com.geekmall.modules.user.mapper.SysUserMapper;
+import com.geekmall.security.LoginSessionBroadcaster;
 import com.geekmall.security.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,6 +48,8 @@ public class AuthServiceImpl implements AuthService {
     private final JwtUtil jwtUtil;
     private final StringRedisTemplate redisTemplate;
     private final SmsCodeService smsCodeService;
+    /** 会话失效广播（P1-6）：让其他实例立即清掉本地令牌缓存 */
+    private final LoginSessionBroadcaster sessionBroadcaster;
 
     @Value("${mall.sms.expose-code:false}")
     private boolean exposeCode;
@@ -111,6 +114,8 @@ public class AuthServiceImpl implements AuthService {
         userMapper.updateById(update);
         // 密码已变更，强制旧令牌失效
         redisTemplate.delete(RedisKeys.loginToken(user.getId()));
+        // P1-6：再广播一次，让各实例立即丢弃本地缓存的旧令牌（否则最长 30s 内仍被放行）
+        sessionBroadcaster.invalidate(user.getId());
     }
 
     @Override
@@ -118,6 +123,8 @@ public class AuthServiceImpl implements AuthService {
         try {
             Long userId = SecurityUtils.getUserId();
             redisTemplate.delete(RedisKeys.loginToken(userId));
+            // P1-6：广播失效，登出在其他实例上立即生效（不必等本地缓存 30s 过期）
+            sessionBroadcaster.invalidate(userId);
         } catch (Exception e) {
             log.debug("登出时未获取到登录态，忽略：{}", e.getMessage());
         }
@@ -133,6 +140,8 @@ public class AuthServiceImpl implements AuthService {
         // 服务端留存会话，支持登出与单点登录踢下线
         redisTemplate.opsForValue().set(RedisKeys.loginToken(user.getId()), token,
                 jwtUtil.getExpireSeconds(), TimeUnit.SECONDS);
+        // P1-6：新会话已覆盖旧会话（单点登录语义），广播让各实例立即丢弃旧令牌的本地缓存
+        sessionBroadcaster.invalidate(user.getId());
         return new LoginVO(token, "Bearer", jwtUtil.getExpireSeconds(), UserConverter.toProfile(user));
     }
 

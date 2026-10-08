@@ -9,6 +9,7 @@ import com.geekmall.modules.marketing.service.CouponService;
 import com.geekmall.modules.marketing.vo.UserCouponVO;
 import com.geekmall.modules.product.mapper.ProductMapper;
 import com.geekmall.modules.trade.dto.PreOrderDTO;
+import com.geekmall.modules.trade.dto.SubmitOrderDTO;
 import com.geekmall.modules.trade.entity.Order;
 import com.geekmall.modules.trade.entity.OrderItem;
 import com.geekmall.modules.trade.mapper.InventoryRollbackLogMapper;
@@ -16,6 +17,7 @@ import com.geekmall.modules.trade.mapper.OrderItemMapper;
 import com.geekmall.modules.trade.mapper.OrderMapper;
 import com.geekmall.modules.trade.mapper.OrderStatusLogMapper;
 import com.geekmall.modules.trade.service.OrderStateMachine;
+import com.geekmall.modules.trade.support.OrderNoGenerator;
 import com.geekmall.modules.trade.vo.PreOrderVO;
 import com.geekmall.modules.user.service.UserService;
 import com.geekmall.modules.user.vo.AddressVO;
@@ -24,23 +26,29 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.RedisScript;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -76,7 +84,11 @@ class TradeServiceImplTest {
     @Mock
     private OrderStateMachine orderStateMachine;
     @Mock
+    private OrderNoGenerator orderNoGenerator;
+    @Mock
     private StringRedisTemplate redisTemplate;
+    @Mock
+    private ValueOperations<String, String> valueOps;
     @Mock
     private ApplicationEventPublisher eventPublisher;
     @Mock
@@ -88,7 +100,7 @@ class TradeServiceImplTest {
     void setUp() {
         tradeService = new TradeServiceImpl(cartService, userService, couponService, productMapper,
                 orderMapper, orderItemMapper, orderStatusLogMapper, rollbackLogMapper,
-                orderStateMachine, redisTemplate, eventPublisher, selfProvider);
+                orderStateMachine, orderNoGenerator, redisTemplate, eventPublisher, selfProvider);
     }
 
     private static CartItemVO cartItem(long id, long productId, String amount, boolean checked) {
@@ -465,6 +477,42 @@ class TradeServiceImplTest {
                     eq(OrderStateMachine.OPERATOR_SYSTEM), anyString());
             verify(couponService).releaseByOrderNo("GM-A");
             verify(couponService).releaseByOrderNo("GM-B");
+        }
+    }
+
+    @Nested
+    @DisplayName("下单幂等键释放（P1-6）")
+    class ReleaseIdempotentKey {
+
+        @Test
+        @DisplayName("下单失败时用 Lua 比对令牌删除占位，绝不裸 DEL 误删他人占位")
+        void shouldReleaseOwnPlaceholderByCompareAndDelete() {
+            SubmitOrderDTO dto = new SubmitOrderDTO();
+            dto.setRequestId("REQ-P1-6");
+            dto.setAddressId(1L);
+
+            when(redisTemplate.opsForValue()).thenReturn(valueOps);
+            when(valueOps.get(anyString())).thenReturn(null);
+            when(valueOps.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true);
+
+            TradeServiceImpl delegate = mock(TradeServiceImpl.class);
+            when(selfProvider.getObject()).thenReturn(delegate);
+            when(delegate.doSubmit(anyLong(), any(), anyString(), any(Duration.class)))
+                    .thenThrow(new IllegalStateException("模拟写库失败"));
+
+            assertThatThrownBy(() -> tradeService.submit(USER_ID, dto))
+                    .isInstanceOf(IllegalStateException.class);
+
+            // 说明：失败释放走 Lua 脚本，且脚本入参是「本请求写入的占位令牌」
+            ArgumentCaptor<String> token = ArgumentCaptor.forClass(String.class);
+            verify(redisTemplate).execute(org.mockito.ArgumentMatchers.<RedisScript<Long>>any(),
+                    anyList(), token.capture());
+            assertThat(token.getValue())
+                    .as("占位值必须带唯一令牌，才能保证只删自己的")
+                    .startsWith("__PENDING__:");
+
+            // 关键断言：不能用裸 DEL —— 那会在占位过期后误删他人的重新占位
+            verify(redisTemplate, never()).delete(anyString());
         }
     }
 }

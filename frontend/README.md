@@ -1,6 +1,6 @@
 # 极客数码商城（Vue 3 + Element Plus 重构版）
 
-原静态多页站点（`legacy/` 目录保留原始 HTML + common.css 以便对照）已重构为
+原静态多页站点已重构为
 **Vue 3 + Vite + Element Plus + Vue Router + Pinia** 的单页应用。
 
 ## 技术栈
@@ -52,14 +52,23 @@ src/
 │   ├── aftersale/          # 售后申请 / 售后详情
 │   ├── UserCenterView.vue  # 个人中心（资料/优惠券/地址/安全/售后）
 │   ├── MemberView.vue      # 会员中心
-│   ├── LoginView.vue       # 登录 / 注册（已合并）
+│   ├── FavoritesView.vue   # 收藏夹
+│   ├── HistoryView.vue     # 浏览足迹
+│   ├── MessagesView.vue    # 消息中心
+│   ├── MyReviewsView.vue   # 我的评价
+│   ├── PointsMallView.vue  # 积分商城
+│   ├── LoginView.vue       # 登录（注册 / 找回密码见 auth/）
+│   ├── auth/               # 注册 / 找回密码
 │   ├── AboutView.vue / HelpView.vue / PolicyView.vue
 ├── stores/                 # Pinia
 │   ├── user.js             # 登录态 / 资料 / 收货地址
 │   ├── cart.js             # 购物车
 │   ├── coupon.js           # 优惠券领取状态
+│   ├── aftersale.js        # 售后记录
+│   ├── collection.js       # 收藏 + 浏览历史
+│   ├── message.js          # 消息中心
 │   └── persist.js          # localStorage 持久化助手
-├── data/shop.js            # 全站演示数据（商品/分类/秒杀/券/订单/会员…）
+├── data/constants.js       # 纯前端 UI 常量（订单状态映射、表单选项等）
 └── styles/
     ├── base.css            # 全局基础 / 顶栏 / 头部 / 页脚 / EP 主题变量
     └── pages.css           # 各页面样式

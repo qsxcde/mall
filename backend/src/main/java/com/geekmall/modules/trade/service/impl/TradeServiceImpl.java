@@ -25,6 +25,7 @@ import com.geekmall.modules.trade.mapper.OrderMapper;
 import com.geekmall.modules.trade.mapper.OrderStatusLogMapper;
 import com.geekmall.modules.trade.service.OrderStateMachine;
 import com.geekmall.modules.trade.service.TradeService;
+import com.geekmall.modules.trade.support.OrderNoGenerator;
 import com.geekmall.modules.trade.vo.OptionVO;
 import com.geekmall.modules.trade.vo.PreOrderVO;
 import com.geekmall.modules.user.service.UserService;
@@ -36,6 +37,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -48,7 +50,6 @@ import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -56,8 +57,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -76,17 +76,38 @@ public class TradeServiceImpl implements TradeService {
     /** 订单未支付自动关闭时长（分钟） */
     private static final int ORDER_EXPIRE_MINUTES = 15;
 
-    private static final String IDEMPOTENT_PENDING = "__PENDING__";
+    /**
+     * 幂等占位值的<b>前缀</b>。真实值是「前缀 + 本次请求的随机令牌」。
+     *
+     * <p>令牌的存在是为了失败释放时能判断「这个占位还是不是我的」——
+     * 只比对固定常量是不够的：占位 TTL 过期后，另一个同 requestId 的请求会写入
+     * <b>同样</b>的常量值，此时裸删除仍会误删他人的占位。</p>
+     */
+    private static final String IDEMPOTENT_PENDING_PREFIX = "__PENDING__:";
     private static final Duration IDEMPOTENT_LOCK_TTL = Duration.ofMinutes(5);
     private static final Duration IDEMPOTENT_RESULT_TTL = Duration.ofMinutes(30);
     /** 未传 requestId 时的指纹防重窗口（够覆盖用户手抖重复点击） */
     private static final Duration IDEMPOTENT_FP_TTL = Duration.ofSeconds(15);
 
+    /**
+     * 幂等键「比对删除」脚本（Lua，原子）。
+     *
+     * <p><b>为什么不能直接 {@code DEL}</b>：占位键有 5 分钟 TTL。若本次下单执行超过 TTL
+     * （例如遭遇长时间锁等待），键已过期并被另一个同 requestId 的请求重新占位；
+     * 此时失败清理若是裸 {@code DEL}，就会把<b>他人的占位</b>删掉 ——
+     * 幂等防线被从内部拆掉，并发的重复下单会真的产生两张订单。</p>
+     *
+     * <p>Lua 里「GET 相等才 DEL」保证只清理自己写下的那一个占位。</p>
+     */
+    private static final RedisScript<Long> RELEASE_IDEMPOTENT_SCRIPT = RedisScript.of("""
+            if redis.call('GET', KEYS[1]) == ARGV[1] then
+                return redis.call('DEL', KEYS[1])
+            end
+            return 0
+            """, Long.class);
+
     /** P0-3：死锁 / 锁等待超时的最大重试次数 */
     private static final int MAX_RETRY_ON_LOCK = 3;
-
-    /** 订单号「秒内自增序列」，保证单实例内同一秒不重号（见 generateOrderNo） */
-    private static final AtomicLong ORDER_SEQ = new AtomicLong();
 
     private static final Map<String, BigDecimal> SHIPPING_FEES = new LinkedHashMap<>();
     private static final Map<String, String> SHIPPING_LABELS = new LinkedHashMap<>();
@@ -110,6 +131,8 @@ public class TradeServiceImpl implements TradeService {
     private final OrderStatusLogMapper orderStatusLogMapper;
     private final InventoryRollbackLogMapper rollbackLogMapper;
     private final OrderStateMachine orderStateMachine;
+    /** 订单号生成器（Redis 号段模式，多实例安全） */
+    private final OrderNoGenerator orderNoGenerator;
     private final StringRedisTemplate redisTemplate;
     private final ApplicationEventPublisher eventPublisher;
     /** 自引用代理：让 doSubmit 真正走 @Transactional 代理，从而支持死锁重试时重开事务 */
@@ -190,18 +213,21 @@ public class TradeServiceImpl implements TradeService {
         Duration resultTtl = StringUtils.hasText(dto.getRequestId())
                 ? IDEMPOTENT_RESULT_TTL : IDEMPOTENT_FP_TTL;
 
+        String placeholder = null;
         if (idempotentKey != null) {
             String cached = redisTemplate.opsForValue().get(idempotentKey);
-            if (cached != null && !IDEMPOTENT_PENDING.equals(cached)) {
+            if (isIdempotentResult(cached)) {
                 log.info("命中下单幂等键，直接返回订单号 {}（requestId={}）", cached, dto.getRequestId());
                 return cached;
             }
-            // P1-4：必须用 setIfAbsent，否则并发同 requestId 会互相覆盖占位，形同没有幂等
+            // P1-4：必须用 setIfAbsent，否则并发同 requestId 会互相覆盖占位，形同没有幂等。
+            // P1-6：占位值带上本次请求的随机令牌，失败释放时才能保证「只删自己的」。
+            placeholder = IDEMPOTENT_PENDING_PREFIX + UUID.randomUUID();
             Boolean acquired = redisTemplate.opsForValue()
-                    .setIfAbsent(idempotentKey, IDEMPOTENT_PENDING, IDEMPOTENT_LOCK_TTL);
+                    .setIfAbsent(idempotentKey, placeholder, IDEMPOTENT_LOCK_TTL);
             if (!Boolean.TRUE.equals(acquired)) {
                 String again = redisTemplate.opsForValue().get(idempotentKey);
-                if (again != null && !IDEMPOTENT_PENDING.equals(again)) {
+                if (isIdempotentResult(again)) {
                     return again;
                 }
                 throw new BizException(ResultCode.BIZ_ERROR, "订单正在处理中，请勿重复提交");
@@ -211,11 +237,33 @@ public class TradeServiceImpl implements TradeService {
         try {
             return submitWithRetry(userId, dto, idempotentKey, resultTtl);
         } catch (RuntimeException e) {
-            // 下单失败要释放幂等键，否则用户重试会被自己的占位锁住
-            if (idempotentKey != null) {
-                redisTemplate.delete(idempotentKey);
-            }
+            // 下单失败要释放幂等键，否则用户重试会被自己的占位锁住。
+            // 用 Lua 比对令牌删除：只清自己写的那一个，绝不误删他人的重新占位（P1-6）
+            releaseIdempotentKey(idempotentKey, placeholder);
             throw e;
+        }
+    }
+
+    /** 幂等键里存的是「结果」（订单号），而不是占位值。 */
+    private boolean isIdempotentResult(String value) {
+        return value != null && !value.startsWith(IDEMPOTENT_PENDING_PREFIX);
+    }
+
+    /**
+     * 释放幂等占位（P1-6）：仅当值仍是本请求写入的令牌时才删除。
+     *
+     * <p>用「比对删除」而不是裸 {@code DEL}，是为了避免占位 TTL 过期后
+     * 误删其他请求重新写入的占位（那会让幂等失效、并发出两张订单）。</p>
+     */
+    private void releaseIdempotentKey(String idempotentKey, String placeholder) {
+        if (idempotentKey == null || placeholder == null) {
+            return;
+        }
+        try {
+            redisTemplate.execute(RELEASE_IDEMPOTENT_SCRIPT, List.of(idempotentKey), placeholder);
+        } catch (Exception ex) {
+            // 释放失败不影响本次下单结果：占位会随 TTL 自行过期，用户稍后可重试
+            log.warn("释放下单幂等键失败（将由 TTL 兜底）：key={}, error={}", idempotentKey, ex.getMessage());
         }
     }
 
@@ -501,7 +549,7 @@ public class TradeServiceImpl implements TradeService {
         BigDecimal payAmount = goodsAmount.add(safeShipping).subtract(safeDiscount)
                 .max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
 
-        String orderNo = generateOrderNo();
+        String orderNo = orderNoGenerator.next();
         Order order = new Order();
         order.setOrderNo(orderNo);
         order.setUserId(userId);
@@ -660,23 +708,6 @@ public class TradeServiceImpl implements TradeService {
             }
             productMapper.restoreStock(item.getProductId(), qty);
         }
-    }
-
-    /**
-     * 生成订单号：{@code GM + yyyyMMddHHmmss + 6 位秒内自增序列 + 4 位实例随机位}（共 26 位）。
-     *
-     * <p><b>为什么不能用纯随机</b>：原实现是「时间戳 + 6 位随机数」，单秒内 620 单时，
-     * 按生日问题每秒撞号概率约 17%，实测 16 秒内撞号 4 次，直接以
-     * {@code Duplicate entry ... for key 'oms_order.uk_order_no'} 抛 500。</p>
-     *
-     * <p>自增序列保证<b>单实例内同一秒绝不重号</b>；末尾随机位用于降低多实例同时扩容时的撞号概率。
-     * 若将来实例数很多，应换成 Snowflake / 号段服务。</p>
-     */
-    private String generateOrderNo() {
-        long seq = Math.floorMod(ORDER_SEQ.incrementAndGet(), 1_000_000L);
-        return "GM" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
-                + String.format("%06d", seq)
-                + String.format("%04d", ThreadLocalRandom.current().nextInt(10_000));
     }
 
     /**
