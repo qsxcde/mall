@@ -44,6 +44,8 @@ mall:
   mock:
     # 注册模拟发货等联调接口，打通「支付 → 发货 → 收货 → 评价」链路
     enabled: true
+  rate-limit:
+    enabled: false
 
 logging:
   level:

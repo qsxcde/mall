@@ -10,25 +10,74 @@
 
 B 机只负责"发压"，**数据准备、库存重置、结果校验都在 A 机**（那些脚本用 `docker exec` 直连 MySQL/Redis 容器，B 机上没有这些容器）。
 
+**A 机 = 本机（Windows）**，以下命令**全部在 Git Bash 里执行**，项目根目录记作 `/d/Project/JavaProject/mall`。
+Git Bash 自带 `bash` / `curl` / `mvn` / `java` / `docker` / `python3` / `netstat` / `ssh` / `scp`，
+但**没有 `lsof` / `pkill` / `pgrep` / `nc`** —— 用到这几条的命令必须换写法（见本节末尾对照表）。
+
 A 机需确认：
 
 ```bash
-# ① 中间件与后端已启动
-docker compose -f infra/docker-compose.yml up -d
-mvn spring-boot:run          # 或 java -jar target/geek-mall-server-1.0.0.jar
+cd /d/Project/JavaProject/mall
 
-# ② 压测数据已准备（生成 k6/data/users.js）
+# ① 中间件已启动（容器已存在时幂等；三个都应 healthy）
+docker compose -f infra/docker-compose.yml up -d
+docker ps --format "table {{.Names}}\t{{.Status}}"
+
+# ② 打包 jar —— reset_env.sh 以 java -jar 启动，且只认这个固定文件名
+cd backend && mvn -DskipTests package && cd ..
+ls -l backend/target/geek-mall-server-1.0.0.jar
+
+# ③ 起一个后端用于造数据（造账号要走真实登录接口换 JWT），压测口径：关限流
+cd backend
+mvn spring-boot:run "-Dspring-boot.run.arguments=--mall.rate-limit.enabled=false"
+# ↑ 前台运行会占住窗口，请另开一个 Git Bash 窗口从 ④ 继续；
+#   想留在当前窗口，就改用后台方式：
+#   nohup java -jar target/geek-mall-server-1.0.0.jar \
+#     --mall.rate-limit.enabled=false --logging.level.com.geekmall=info > /tmp/gm-dev.log 2>&1 &
+
+# ④ 造压测数据（产出 loadtest/data/users.csv 与 loadtest/k6/data/users.js）
+cd /d/Project/JavaProject/mall
 python3 loadtest/scripts/prepare_data.py 1000
 python3 loadtest/scripts/gen_k6_users.py loadtest/data/users.csv loadtest/k6/data/users.js 1000
 
-# ③ 环境已重置（重置库存 + 清 Redis 计数）
+# ⑤ 停掉 ③ 起的后端（二选一）
+#   a) 最省事：回到 ③ 的窗口按 Ctrl+C
+#   b) 找不到那个窗口时，按端口找 PID 再杀：
+netstat -ano | grep -E ":8080\s"      # 有输出即为占用，最后一列是 PID
+taskkill //PID <上面的PID> //F         # 必须双斜杠！单斜杠会被 MSYS 改写成路径
+
+# ⑥ 重置环境：重置秒杀库存 + 清 Redis 计数 + 以压测口径重启后端
 bash loadtest/scripts/reset_env.sh
 
-# ④ 拿到 A 的内网 IP
-ipconfig getifaddr en0       # macOS；Linux 用 ip addr / hostname -I
+# ⑦ 拿到 A 的内网 IP（填给 B 机用的 <A_IP>）
+ipconfig                              # 看「IPv4 地址」，一般是 192.168.x.x
 ```
 
-> 注意：**限流必须已关闭**（`mall.rate-limit.enabled=false`）。`reset_env.sh` 默认已按压测口径关闭限流；若是手动起的后端，请自行加上该参数，否则批量登录与读链路会大量返回 429。
+> ⚠️ **限流必须已关闭**（`mall.rate-limit.enabled=false`）：`reset_env.sh` 默认已按压测口径关闭；
+> 步骤 ③ 手动起的后端也必须带上该参数，否则批量登录与读链路会大量返回 429。
+
+> ⚠️ **步骤 ⑤ 不能省**：`reset_env.sh` 靠 `lsof` 找监听端口的进程 ——
+> `listen_pids() { lsof -ti "tcp:$PORT" -sTCP:LISTEN ... }`，而 Git Bash 里没有 `lsof`，
+> 该函数恒为空 → 脚本误判「端口无监听进程」而跳过停服 → 紧接着 `java -jar` 因端口冲突秒退 →
+> 最终在第 5 步报「新进程已退出」并 exit 1（`wait_port_free` 也因同一原因假通过）。
+
+### Git Bash 下的排错与命令对照
+
+| 现象 | 原因 | 处理 |
+| --- | --- | --- |
+| `WSL (xxx - Relay) ERROR: execvpe(/bin/bash) failed` | 从 PowerShell 敲了 `bash`，命中 `C:\WINDOWS\system32\bash.exe`（本机 WSL 只有 `docker-desktop`，无 bash） | 在 Git Bash 终端里执行；或从 PowerShell 用绝对路径调 `& 'D:\software\code\Git\bin\bash.exe' -lc '...'` |
+| `python3` 报 `uv trampoline failed to spawn Python child process` / `entity not found (os error 2)` | uv 的 Python 安装目录被移动，旧 trampoline 指向已失效的解释器 | 执行 `uv python install 3.12 --force`，再用 `python3 -V` 验证 |
+| `taskkill` 报 `Invalid argument/option - 'D:/.../PID'` | MSYS 把 `/PID` 当成路径转换了 | 参数一律写双斜杠：`//PID` / `//F` |
+| `reset_env.sh` 报「找不到 .../geek-mall-server-1.0.0.jar」 | 跳过了步骤 ② | 先 `cd backend && mvn -DskipTests package` |
+
+| 目的 | macOS / Linux | Git Bash 等效写法 |
+| --- | --- | --- |
+| 查端口占用 | `lsof -i :8080` | `netstat -ano \| grep -E ":8080\s"` |
+| 看 ESTABLISHED 连接 | `lsof -i :8080 \| grep ESTABLISHED` | `netstat -ano \| grep ESTABLISHED \| grep :8080` |
+| 端口连通测试 | `nc -vz <host> 8080` | `curl -s -o /dev/null -w "%{http_code}\n" --max-time 3 http://<host>:8080/actuator/health` |
+| 按 PID 停进程 | `kill <pid>` / `pkill -f xxx` | `taskkill //PID <pid> //F` |
+| 查本机 IP | `ipconfig getifaddr en0` | `ipconfig` |
+| 看日志尾部 | `tail -f app.log` | `tail -f app.log`（Git Bash 自带，可直用） |
 
 ---
 
@@ -327,9 +376,11 @@ set BASE_URL=http://<A_IP>:8080 && k6 run k6\read.js
 | 拷贝文件 | `scp / rsync` | `scp`（内置 OpenSSH）或 WinSCP |
 | 路径分隔符 | `/` | `\`（k6 参数里 `/` 也可用） |
 
-### 若在 Windows 上用 WSL / Git Bash
+### 若在 Windows 上用 Git Bash
 
-直接照本指南 macOS/Linux 那一套命令即可，环境变量用 `VAR=value k6 run ...` 的前缀写法。
+Git Bash（MSYS2）能跑本指南大部分 macOS/Linux 命令（`curl` / `scp` / `ssh` / `tail` / `grep` 都自带），
+但**缺 `lsof` / `pkill` / `pgrep` / `nc`**，且从 PowerShell 敲 `bash` 会命中 WSL（本机只有 `docker-desktop`，无 bash）。
+A 机侧的完整步骤、替代命令与排错见上文 **第 0 节**；环境变量用 `VAR=value k6 run ...` 的前缀写法可正常工作。
 
 ---
 
