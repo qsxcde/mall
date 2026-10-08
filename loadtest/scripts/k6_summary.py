@@ -120,6 +120,62 @@ def render(jtl_data, label):
     lines.append(f"| 最大 | {fmt(pick(overall, 'max'))} | - |")
     lines.append(f"| 最小 | {fmt(pick(overall, 'min'))} | - |")
     lines.append("")
+
+    # 秒杀脚本（含端到端口径）：受理 / 排队 / 端到端 三档必须分开看。
+    # 否则「异步 P99 更低」可能只是口径差异（方案文档 D2：苹果比橘子）。
+    accept = get_metric(metrics, "accept_latency") or {}
+    queue_wait = get_metric(metrics, "queue_wait_latency") or {}
+    e2e_ok = get_metric(metrics, "e2e_success") or {}
+    e2e_bad = get_metric(metrics, "e2e_failed") or {}
+    e2e_missing = get_metric(metrics, "e2e_missing") or {}
+    poll_timeout = get_metric(metrics, "poll_timeout") or {}
+    polls = get_metric(metrics, "poll_requests") or {}
+    if queue_wait or e2e_ok:
+        lines.append("| 口径 | P50 | P90 | P99 | 平均 |")
+        lines.append("|---|---|---|---|---|")
+        for name, trend in (("受理（两组同口径）", accept),
+                            ("排队（异步特有）", queue_wait),
+                            ("端到端（用户体感）", ok_trend)):
+            if not trend:
+                continue
+            cells = " | ".join(fmt(trend_pct(trend, p)) for p in PERCENTILES)
+            lines.append(f"| {name} | {cells} | {fmt(pick(trend, 'avg'))} |")
+        lines.append("")
+        ok_e2e = int(pick(e2e_ok, "count", default=0))
+        bad_e2e = int(pick(e2e_bad, "count", default=0))
+        miss_e2e = int(pick(e2e_missing, "count", default=0))
+        timeout_e2e = int(pick(poll_timeout, "count", default=0))
+        lines.append(f"- 端到端终态：成功 **{ok_e2e}** / 落库失败 {bad_e2e} / "
+                     f"查不到结果 {miss_e2e} / 轮询超时 {timeout_e2e}"
+                     f"（合计 {ok_e2e + bad_e2e + miss_e2e + timeout_e2e}）")
+        if polls:
+            poll_count = int(pick(polls, "count", default=0))
+            base = ok_count or int(pick(get_metric(metrics, "grab_ok") or {}, "count", default=0))
+            amp = f"，读放大 **{poll_count / base:.1f} 次/单**" if base else ""
+            lines.append(f"- 轮询请求数：**{poll_count}**{amp}（异步新增的读放大路径，P0-5）")
+        lines.append("")
+
+    # 结果查询接口专项（seckill-result.js / seckill-result-read.js）：
+    # 这条读路径是削峰模式新增的，必须单独看「接口延迟 + 三类异常占比」
+    result_trend = get_metric(metrics, "result_latency") or {}
+    if result_trend:
+        r_ok = int(pick(get_metric(metrics, "result_success") or {}, "count", default=0))
+        r_queued = int(pick(get_metric(metrics, "result_queued") or {}, "count", default=0))
+        r_missing = int(pick(get_metric(metrics, "result_not_found") or {}, "count", default=0))
+        r_limited = int(pick(get_metric(metrics, "result_rate_limited") or {}, "count", default=0))
+        r_error = int(pick(get_metric(metrics, "result_server_error") or {}, "count", default=0))
+        lines.append("| 结果查询接口 | 数值 |")
+        lines.append("|---|---|")
+        for p in PERCENTILES:
+            lines.append(f"| P{p} | {fmt(trend_pct(result_trend, p))} |")
+        lines.append(f"| 平均 | {fmt(pick(result_trend, 'avg'))} |")
+        lines.append("")
+        lines.append(f"- 查询终态：查到记录 **{r_ok}**（其中仍排队中 {r_queued}）/ "
+                     f"不存在或过期 {r_missing} / 限流 {r_limited} / 系统错误 {r_error}")
+        if r_missing > r_ok:
+            lines.append("- ⚠️ 不存在占比偏高：结果 key 已过期（TTL 默认 30m），"
+                         "请重新运行 collect_seckill_results.py 后再压")
+        lines.append("")
     if waiting:
         # http_req_waiting = 服务端首字节时间(TTFB)，不含客户端建连/排队开销，
         # 是判断「延迟到底是服务端慢还是压测机慢」的关键指标。
