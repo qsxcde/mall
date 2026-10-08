@@ -1,0 +1,92 @@
+# ============================================================
+# 极客数码商城 - 多实例部署 overlay
+#
+# 用途：在既有中间件（MySQL / Redis / MinIO）之上，再起 N 个后端实例，
+#      用于验证「多实例部署能力」：限流全局量 / 号段不撞号 / 缓存互斥单次回源 /
+#      ShedLock 单点执行 / 会话失效广播跨实例生效 / 连接池容量自检。
+#
+# 用法（与主 compose 叠加，不能单独使用）：
+#   # 1) 先确保中间件在跑
+#   docker compose -f infra/docker-compose.yml up -d
+#
+#   # 2) 构建后端镜像（Dockerfile 只 COPY 现成 jar，需先打包）
+#   cd backend && mvn -DskipTests package
+#   docker build -t geek-mall-server:1.0.0 .
+#
+#   # 3) 起 3 个实例
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.multi.yml up -d app1 app2 app3
+#
+#   # 4) 查看
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.multi.yml ps
+#   curl -s localhost:8081/actuator/health   # app1
+#   docker logs -f geek-mall-app1
+#
+#   # 5) 停止
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.multi.yml down
+#
+# 可覆盖的环境变量（在命令前导出，或写入 infra/.env）：
+#   APP_IMAGE=geek-mall-server:1.0.0   后端镜像
+#   APP_REPLICAS=3                     实例数，**必须与 mall.cluster.instance-count 一致**
+#   MYSQL_POOL_SIZE=50                 单实例连接池；须满足 实例数 × 本值 ≤ max_connections
+#   RATE_LIMIT_ENABLED=true            限流总开关（验证限流时必须为 true）
+#   SECKILL_ASYNC_ENABLED=false        秒杀削峰开关
+# ============================================================
+name: geek-mall
+
+# ---- 共享环境变量：三个实例只有端口/实例名不同 ----
+x-app-env: &app-env
+  # Dockerfile 已固定 prod；prod 的 datasource 无默认值，必须显式给全
+  SPRING_PROFILES_ACTIVE: prod
+  # 容器内走 compose 服务名，不能用 localhost（那是容器自己）
+  MYSQL_HOST: mysql
+  MYSQL_PORT: "3306"
+  MYSQL_USER: root
+  MYSQL_PASSWORD: root
+  MYSQL_DB: geek_mall
+  # 配比铁律：实例数 × 单实例池 ≤ MySQL max_connections(=300)
+  # 3 × 50 = 150，留出余量；设成 prod 默认的 100 会正好顶格 300，再加实例就超
+  MYSQL_POOL_SIZE: "${MYSQL_POOL_SIZE:-50}"
+  MYSQL_POOL_MIN_IDLE: "5"
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  # 压测/验证实例不依赖 MinIO（未起该容器时走本地磁盘，避免启动期连不上对象存储）
+  STORAGE_TYPE: local
+  TZ: Asia/Shanghai
+  # 用 -D 系统属性（优先级高于 application.yml 与 OS env），避免驼峰/短横线环境变量名的歧义
+  JAVA_OPTS: >-
+    -Xms256m -Xmx512m -XX:+UseG1GC -Duser.timezone=Asia/Shanghai
+    -Dmall.cluster.instance-count=${APP_REPLICAS:-3}
+    -Dmall.rate-limit.enabled=${RATE_LIMIT_ENABLED:-true}
+    -Dmall.seckill.async.enabled=${SECKILL_ASYNC_ENABLED:-false}
+
+x-app: &app
+  image: "${APP_IMAGE:-geek-mall-server:1.0.0}"
+  restart: unless-stopped
+  environment: *app-env
+  # ⚠️ 必须显式声明网络：主 compose 的服务都挂在自定义网络 geek-mall-net 上，
+  #    不声明会落到默认网络 geek-mall_default，导致连不上 mysql / redis
+  networks: [geek-mall-net]
+  depends_on:
+    mysql:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  app1:
+    <<: *app
+    container_name: geek-mall-app1
+    ports:
+      - "${APP1_PORT:-8081}:8080"
+
+  app2:
+    <<: *app
+    container_name: geek-mall-app2
+    ports:
+      - "${APP2_PORT:-8082}:8080"
+
+  app3:
+    <<: *app
+    container_name: geek-mall-app3
+    ports:
+      - "${APP3_PORT:-8083}:8080"
