@@ -472,8 +472,10 @@
 .m-card { background: #ff7a45; }
 .m-balance { background: var(--primary); }
 .pay-qr { display: flex; align-items: center; gap: 26px; margin-top: 8px; padding: 22px; border: 1px dashed var(--border); border-radius: 10px; }
-.pay-qr .qr { width: 180px; height: 180px; border-radius: 10px; background: repeating-conic-gradient(#333 0 25%, #fff 0 50%) 50% / 20px 20px; flex-shrink: 0; position: relative; }
-.pay-qr .qr::after { content: "扫码支付"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #333; font-size: 13px; background: rgba(255,255,255,.85); }
+.pay-qr .qr { width: 180px; height: 180px; border-radius: 10px; flex-shrink: 0; object-fit: contain; background: #fff; border: 1px solid var(--border); }
+/* 占位态：二维码尚未就绪时显示示意图案（真二维码渲染后会换成 img，不再叠加覆盖层） */
+.pay-qr .qr-placeholder { background: repeating-conic-gradient(#333 0 25%, #fff 0 50%) 50% / 20px 20px; position: relative; }
+.pay-qr .qr-placeholder::after { content: "扫码支付"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #333; font-size: 13px; background: rgba(255,255,255,.85); }
 .pay-qr .qrtip { font-size: 14px; color: #555; line-height: 2; }
 .pay-qr .qrtip b { color: var(--price); font-size: 20px; }
 .pay-actions { margin-top: 26px; display: flex; gap: 14px; }

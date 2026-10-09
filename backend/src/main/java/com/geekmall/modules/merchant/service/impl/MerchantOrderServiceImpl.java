@@ -20,6 +20,7 @@ import com.geekmall.modules.merchant.support.MerchantOrderStatus;
 import com.geekmall.modules.merchant.support.Numbers;
 import com.geekmall.modules.merchant.vo.MerchantOrderVO;
 import com.geekmall.modules.merchant.vo.MerchantPageVO;
+import com.geekmall.modules.payment.service.PaymentRefundService;
 import com.geekmall.modules.trade.entity.Order;
 import com.geekmall.modules.trade.entity.OrderItem;
 import com.geekmall.modules.trade.mapper.OrderItemMapper;
@@ -28,12 +29,6 @@ import com.geekmall.modules.trade.service.OrderStateMachine;
 import com.geekmall.modules.user.entity.SysUser;
 import com.geekmall.modules.user.mapper.SysUserMapper;
 import com.geekmall.security.MerchantSecurityUtils;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
-
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -44,6 +39,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 /**
  * 商家端订单管理服务实现。
@@ -53,14 +54,17 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class MerchantOrderServiceImpl implements MerchantOrderService {
 
-    private static final List<String> TAB_KEYS = List.of(
-            "all", "wait_pay", "wait_ship", "shipped", "wait_review", "done", "closed", "after");
+    private static final List<String> TAB_KEYS =
+            List.of("all", "wait_pay", "wait_ship", "shipped", "wait_review", "done", "closed", "after");
 
     private static final Map<String, java.math.BigDecimal[]> AMOUNT_RANGES = Map.of(
-            "0-1000", new java.math.BigDecimal[]{java.math.BigDecimal.ZERO, new java.math.BigDecimal("1000")},
-            "1000-5000", new java.math.BigDecimal[]{new java.math.BigDecimal("1000"), new java.math.BigDecimal("5000")},
-            "5000-10000", new java.math.BigDecimal[]{new java.math.BigDecimal("5000"), new java.math.BigDecimal("10000")},
-            "10000-999999", new java.math.BigDecimal[]{new java.math.BigDecimal("10000"), new java.math.BigDecimal("999999")});
+            "0-1000", new java.math.BigDecimal[] {java.math.BigDecimal.ZERO, new java.math.BigDecimal("1000")},
+            "1000-5000",
+                    new java.math.BigDecimal[] {new java.math.BigDecimal("1000"), new java.math.BigDecimal("5000")},
+            "5000-10000",
+                    new java.math.BigDecimal[] {new java.math.BigDecimal("5000"), new java.math.BigDecimal("10000")},
+            "10000-999999",
+                    new java.math.BigDecimal[] {new java.math.BigDecimal("10000"), new java.math.BigDecimal("999999")});
 
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
@@ -69,6 +73,10 @@ public class MerchantOrderServiceImpl implements MerchantOrderService {
     private final MerchantStatsMapper statsMapper;
     private final OrderStateMachine orderStateMachine;
     private final ObjectMapper objectMapper;
+    /** 自引用代理：把批量关闭的状态变更收进独立事务，退款在事务提交后再发起。 */
+    private final ObjectProvider<MerchantOrderServiceImpl> selfProvider;
+    /** 退款编排：关闭一笔「已支付」订单后触发渠道退款。 */
+    private final PaymentRefundService paymentRefundService;
 
     @Override
     public MerchantPageVO<MerchantOrderVO> page(MerchantOrderQueryDTO query) {
@@ -81,8 +89,8 @@ public class MerchantOrderServiceImpl implements MerchantOrderService {
         IPage<Order> result = orderMapper.selectPage(page, wrapper);
         List<MerchantOrderVO> list = assemble(shopId, result.getRecords());
 
-        MerchantPageVO<MerchantOrderVO> vo = new MerchantPageVO<>(
-                list, result.getTotal(), result.getCurrent(), result.getSize());
+        MerchantPageVO<MerchantOrderVO> vo =
+                new MerchantPageVO<>(list, result.getTotal(), result.getCurrent(), result.getSize());
         vo.put("tabs", buildTabs(shopId));
         vo.put("stats", buildStats(shopId));
         return vo;
@@ -110,12 +118,10 @@ public class MerchantOrderServiceImpl implements MerchantOrderService {
         for (Order order : orders) {
             OrderStatus current = OrderStatus.of(order.getStatus());
             if (current != OrderStatus.PENDING_SHIP) {
-                throw new BizException(ResultCode.BIZ_ERROR,
-                        "订单 " + order.getOrderNo() + " 当前不可发货");
+                throw new BizException(ResultCode.BIZ_ERROR, "订单 " + order.getOrderNo() + " 当前不可发货");
             }
             // 状态机负责合法性校验、时间戳与流转日志
-            orderStateMachine.transfer(order, OrderStatus.PENDING_RECEIVE,
-                    OrderStateMachine.OPERATOR_MERCHANT, "商家发货");
+            orderStateMachine.transfer(order, OrderStatus.PENDING_RECEIVE, OrderStateMachine.OPERATOR_MERCHANT, "商家发货");
             // 快递公司与运单号单独落库
             if (StringUtils.hasText(dto.getExpress()) || StringUtils.hasText(dto.getWaybill())) {
                 Order update = new Order();
@@ -130,15 +136,26 @@ public class MerchantOrderServiceImpl implements MerchantOrderService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public int close(OrderBatchDTO dto) {
         Long shopId = MerchantSecurityUtils.getShopId();
         List<Order> orders = selectOwned(shopId, dto.getIds());
+        String remark = StringUtils.hasText(dto.getReason()) ? dto.getReason() : "商家关闭订单";
+        // 状态变更收在一个事务里（保持原有「要么全成要么全败」语义）
+        int affected = selfProvider.getObject().doClose(orders, remark);
+        // 退款必须在事务提交之后：渠道调用是 HTTP，放进事务里会长时间持有订单行锁。
+        // 未支付的订单在 refundIfPaid 内部直接 no-op。
+        for (Order order : orders) {
+            paymentRefundService.refundIfPaid(order.getOrderNo(), "商家关闭订单退款");
+        }
+        return affected;
+    }
+
+    /** 批量关闭的事务单元，仅供 {@link #close} 经代理调用。 */
+    @Transactional(rollbackFor = Exception.class)
+    public int doClose(List<Order> orders, String remark) {
         int affected = 0;
         for (Order order : orders) {
-            String remark = StringUtils.hasText(dto.getReason()) ? dto.getReason() : "商家关闭订单";
-            orderStateMachine.transfer(order, OrderStatus.CANCELED,
-                    OrderStateMachine.OPERATOR_MERCHANT, remark);
+            orderStateMachine.transfer(order, OrderStatus.CANCELED, OrderStateMachine.OPERATOR_MERCHANT, remark);
             affected += 1;
         }
         return affected;
@@ -195,8 +212,12 @@ public class MerchantOrderServiceImpl implements MerchantOrderService {
         if (StringUtils.hasText(query.getKeyword())) {
             String kw = query.getKeyword().trim();
             wrapper.and(w -> w.like(Order::getOrderNo, kw)
-                    .or().apply("user_id IN (SELECT id FROM sys_user WHERE nickname LIKE CONCAT('%', {0}, '%'))", kw)
-                    .or().apply("order_no IN (SELECT order_no FROM oms_order_item WHERE title LIKE CONCAT('%', {0}, '%'))", kw));
+                    .or()
+                    .apply("user_id IN (SELECT id FROM sys_user WHERE nickname LIKE CONCAT('%', {0}, '%'))", kw)
+                    .or()
+                    .apply(
+                            "order_no IN (SELECT order_no FROM oms_order_item WHERE title LIKE CONCAT('%', {0}, '%'))",
+                            kw));
         }
         applySort(wrapper, query.getSort());
     }
@@ -218,24 +239,31 @@ public class MerchantOrderServiceImpl implements MerchantOrderService {
         }
         List<String> orderNos = orders.stream().map(Order::getOrderNo).toList();
 
-        Map<String, OrderItem> itemMap = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
-                        .in(OrderItem::getOrderNo, orderNos)).stream()
-                .collect(Collectors.toMap(OrderItem::getOrderNo, Function.identity(), (a, b) -> a));
+        Map<String, OrderItem> itemMap =
+                orderItemMapper
+                        .selectList(new LambdaQueryWrapper<OrderItem>().in(OrderItem::getOrderNo, orderNos))
+                        .stream()
+                        .collect(Collectors.toMap(OrderItem::getOrderNo, Function.identity(), (a, b) -> a));
 
-        Set<Long> userIds = orders.stream().map(Order::getUserId).filter(java.util.Objects::nonNull).collect(Collectors.toSet());
-        Map<Long, SysUser> userMap = userIds.isEmpty() ? Map.of()
+        Set<Long> userIds = orders.stream()
+                .map(Order::getUserId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, SysUser> userMap = userIds.isEmpty()
+                ? Map.of()
                 : sysUserMapper.selectBatchIds(userIds).stream()
-                .collect(Collectors.toMap(SysUser::getId, Function.identity(), (a, b) -> a));
+                        .collect(Collectors.toMap(SysUser::getId, Function.identity(), (a, b) -> a));
 
         Set<String> afterOrderNos = afterOrderNos(shopId, orderNos);
 
-        return orders.stream().map(order -> MerchantOrderConverter.toVO(
-                order,
-                itemMap.get(order.getOrderNo()),
-                userMap.get(order.getUserId()),
-                parseAddress(order.getAddressSnap()),
-                afterOrderNos.contains(order.getOrderNo())
-        )).toList();
+        return orders.stream()
+                .map(order -> MerchantOrderConverter.toVO(
+                        order,
+                        itemMap.get(order.getOrderNo()),
+                        userMap.get(order.getUserId()),
+                        parseAddress(order.getAddressSnap()),
+                        afterOrderNos.contains(order.getOrderNo())))
+                .toList();
     }
 
     private Set<String> afterOrderNos(Long shopId, Collection<String> orderNos) {
@@ -267,9 +295,8 @@ public class MerchantOrderServiceImpl implements MerchantOrderService {
         if (orderNos == null || orderNos.isEmpty()) {
             return List.of();
         }
-        return orderMapper.selectList(new LambdaQueryWrapper<Order>()
-                .eq(Order::getShopId, shopId)
-                .in(Order::getOrderNo, orderNos));
+        return orderMapper.selectList(
+                new LambdaQueryWrapper<Order>().eq(Order::getShopId, shopId).in(Order::getOrderNo, orderNos));
     }
 
     private Map<String, Object> buildTabs(Long shopId) {

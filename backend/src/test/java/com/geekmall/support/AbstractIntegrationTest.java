@@ -1,13 +1,19 @@
 package com.geekmall.support;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.geekmall.common.constant.RedisKeys;
 import com.geekmall.common.constant.SecurityConstants;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -17,13 +23,6 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.utility.DockerImageName;
-
-import java.nio.charset.StandardCharsets;
-import java.util.Map;
-import java.util.concurrent.ThreadLocalRandom;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * 集成测试基类：真实 MySQL + Redis（Testcontainers），真实 Flyway 迁移，真实过滤器链。
@@ -59,8 +58,7 @@ public abstract class AbstractIntegrationTest {
                 .withCommand("--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci");
         MYSQL.start();
 
-        REDIS = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
-                .withExposedPorts(6379);
+        REDIS = new GenericContainer<>(DockerImageName.parse("redis:7-alpine")).withExposedPorts(6379);
         REDIS.start();
 
         // 容器生命周期与 JVM 对齐：退出时主动释放，避免残留容器长期占用端口与内存
@@ -93,10 +91,12 @@ public abstract class AbstractIntegrationTest {
 
     /** 买家演示账号（由 DemoDataInitializer 在测试 profile 下创建）。 */
     protected static final String DEMO_BUYER = "13800000000";
+
     protected static final String DEMO_PASSWORD = "123456";
 
     /** 商家演示账号（由 MerchantDataInitializer 创建，店铺 id=1）。 */
     protected static final String DEMO_MERCHANT = "merchant";
+
     protected static final long DEMO_SHOP_ID = 1L;
 
     /* ------------------------------ 请求辅助 ------------------------------ */
@@ -143,11 +143,33 @@ public abstract class AbstractIntegrationTest {
         }
     }
 
+    /**
+     * 提交表单并返回<b>原始响应文本</b>。
+     *
+     * <p>支付渠道回调是 {@code application/x-www-form-urlencoded} 且应答是裸文本
+     * （{@code success} / {@code failure}）——既不能复用 {@link #post}（它强制 JSON 并 readTree），
+     * 也不能用 {@link #assertCode}。</p>
+     */
+    protected String postFormRaw(String url, Map<String, String> form) {
+        try {
+            MockHttpServletRequestBuilder builder = MockMvcRequestBuilders.post(url)
+                    .contentType(org.springframework.http.MediaType.APPLICATION_FORM_URLENCODED);
+            if (form != null) {
+                form.forEach(builder::param);
+            }
+            return mockMvc.perform(builder)
+                    .andExpect(status().isOk())
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString(StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new IllegalStateException("表单请求执行失败：" + url, e);
+        }
+    }
+
     /** 断言业务码并返回 data 节点。 */
     protected JsonNode assertCode(JsonNode response, int code) {
-        assertThat(response.get("code").asInt())
-                .as("响应体：%s", response)
-                .isEqualTo(code);
+        assertThat(response.get("code").asInt()).as("响应体：%s", response).isEqualTo(code);
         return response.get("data");
     }
 
@@ -160,8 +182,8 @@ public abstract class AbstractIntegrationTest {
 
     /** 买家密码登录，返回令牌。 */
     protected String loginBuyer(String account, String password) {
-        JsonNode data = assertSuccess(post("/api/v1/auth/login",
-                Map.of("account", account, "password", password), null));
+        JsonNode data =
+                assertSuccess(post("/api/v1/auth/login", Map.of("account", account, "password", password), null));
         return data.get("token").asText();
     }
 
@@ -172,8 +194,8 @@ public abstract class AbstractIntegrationTest {
 
     /** 商家登录，返回商家令牌。 */
     protected String loginMerchant(String account, String password) {
-        JsonNode data = assertSuccess(post("/api/v1/merchant/auth/login",
-                Map.of("account", account, "password", password), null));
+        JsonNode data = assertSuccess(
+                post("/api/v1/merchant/auth/login", Map.of("account", account, "password", password), null));
         return data.get("token").asText();
     }
 
@@ -187,17 +209,19 @@ public abstract class AbstractIntegrationTest {
     }
 
     protected String registerAndLogin(String phone, String password) {
-        JsonNode sms = assertSuccess(post("/api/v1/auth/sms-code",
-                Map.of("phone", phone, "scene", "register"), null));
+        JsonNode sms = assertSuccess(post("/api/v1/auth/sms-code", Map.of("phone", phone, "scene", "register"), null));
         // 回显字段名为 devCode（仅测试/开发环境返回，生产为 null）
         String code = sms.get("devCode").asText();
 
-        assertSuccess(post("/api/v1/auth/register", Map.of(
-                "phone", phone,
-                "smsCode", code,
-                "password", password,
-                "nickname", "集成测试用户",
-                "agreed", true), null));
+        assertSuccess(post(
+                "/api/v1/auth/register",
+                Map.of(
+                        "phone", phone,
+                        "smsCode", code,
+                        "password", password,
+                        "nickname", "集成测试用户",
+                        "agreed", true),
+                null));
 
         return loginBuyer(phone, password);
     }
@@ -214,7 +238,6 @@ public abstract class AbstractIntegrationTest {
      * 连续校验两次验证码（例如「注册两次」验证重复注册），走发送接口会被冷却拦下。</p>
      */
     protected void seedSmsCode(String scene, String phone, String code) {
-        stringRedisTemplate.opsForValue()
-                .set(RedisKeys.smsCode(scene, phone), code, java.time.Duration.ofMinutes(5));
+        stringRedisTemplate.opsForValue().set(RedisKeys.smsCode(scene, phone), code, java.time.Duration.ofMinutes(5));
     }
 }

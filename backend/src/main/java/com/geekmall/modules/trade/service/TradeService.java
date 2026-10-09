@@ -38,11 +38,32 @@ public interface TradeService {
      */
     void ship(String orderNo);
 
-    /** 支付成功回调：待付款 → 待发货。供支付域调用。 */
-    void markPaid(String orderNo, String tradeNo, String payMethod);
+    /**
+     * 支付落账：待付款 → 待发货。供支付域「渠道回调」与「主动查单补偿」共用。
+     *
+     * <p><b>刻意不抛「订单已关闭」异常</b>：若订单在支付到达前已被超时任务或用户取消关闭，
+     * 返回 {@link PaymentApplyResult#ORDER_CLOSED}，交由支付域转退款。
+     * 若此处抛异常，支付域会连带回滚「支付单已成功」的落库，
+     * 退款就永远触发不了（只能等渠道重试，重试耗尽后彻底丢失）。</p>
+     */
+    PaymentApplyResult applyPayment(String orderNo, String tradeNo, String payMethod);
+
+    /** 支付落账结果。 */
+    enum PaymentApplyResult {
+        /** 已落账（待付款 → 待发货；或本已是待发货的幂等返回）。 */
+        APPLIED,
+        /** 订单已关闭，资金需转退款。 */
+        ORDER_CLOSED
+    }
 
     /** 发起支付前校验订单可支付，并返回应付金额；不可支付时抛业务异常。供支付域调用。 */
     java.math.BigDecimal requirePayableAmount(Long userId, String orderNo);
+
+    /**
+     * 订单剩余可支付秒数，供支付域给渠道设置支付超时（避免渠道侧订单比本地订单活得久）。
+     * 已过期或无到期时间返回 0。供支付域调用。
+     */
+    long remainingPaySeconds(String orderNo);
 
     /**
      * 按指定单价创建订单，供秒杀等特殊通道使用（单价由营销域校验后传入，不经购物车）。
@@ -53,8 +74,14 @@ public interface TradeService {
      *                  传 {@code null} 表示不做幂等（同步秒杀路径由 Redis「一人一单」保证）。
      * @return 订单号
      */
-    String createOrderWithFixedPrice(Long userId, Long addressId, Long productId,
-                                     java.math.BigDecimal unitPrice, int qty, String remark, String requestId);
+    String createOrderWithFixedPrice(
+            Long userId,
+            Long addressId,
+            Long productId,
+            java.math.BigDecimal unitPrice,
+            int qty,
+            String remark,
+            String requestId);
 
     /**
      * 按幂等键查已建订单号；不存在返回 {@code null}。

@@ -9,10 +9,11 @@ import com.geekmall.common.exception.BizException;
 import com.geekmall.common.result.ResultCode;
 import com.geekmall.modules.cart.service.CartService;
 import com.geekmall.modules.cart.vo.CartItemVO;
-import com.geekmall.modules.marketing.service.CouponService;
-import com.geekmall.modules.marketing.vo.UserCouponVO;
 import com.geekmall.modules.inventory.dto.BucketDeductDTO;
 import com.geekmall.modules.inventory.service.InventoryBucketService;
+import com.geekmall.modules.marketing.service.CouponService;
+import com.geekmall.modules.marketing.vo.UserCouponVO;
+import com.geekmall.modules.payment.service.PaymentRefundService;
 import com.geekmall.modules.product.entity.Product;
 import com.geekmall.modules.product.mapper.ProductMapper;
 import com.geekmall.modules.trade.converter.OrderConverter;
@@ -32,21 +33,6 @@ import com.geekmall.modules.trade.vo.OptionVO;
 import com.geekmall.modules.trade.vo.PreOrderVO;
 import com.geekmall.modules.user.service.UserService;
 import com.geekmall.modules.user.vo.AddressVO;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.dao.ConcurrencyFailureException;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.RedisScript;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.springframework.util.DigestUtils;
-import org.springframework.util.StringUtils;
-
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
@@ -62,6 +48,20 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.ConcurrencyFailureException;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.util.DigestUtils;
+import org.springframework.util.StringUtils;
 
 /**
  * 交易服务实现。
@@ -86,6 +86,7 @@ public class TradeServiceImpl implements TradeService {
      * <b>同样</b>的常量值，此时裸删除仍会误删他人的占位。</p>
      */
     private static final String IDEMPOTENT_PENDING_PREFIX = "__PENDING__:";
+
     private static final Duration IDEMPOTENT_LOCK_TTL = Duration.ofMinutes(5);
     private static final Duration IDEMPOTENT_RESULT_TTL = Duration.ofMinutes(30);
     /** 未传 requestId 时的指纹防重窗口（够覆盖用户手抖重复点击） */
@@ -101,12 +102,14 @@ public class TradeServiceImpl implements TradeService {
      *
      * <p>Lua 里「GET 相等才 DEL」保证只清理自己写下的那一个占位。</p>
      */
-    private static final RedisScript<Long> RELEASE_IDEMPOTENT_SCRIPT = RedisScript.of("""
+    private static final RedisScript<Long> RELEASE_IDEMPOTENT_SCRIPT = RedisScript.of(
+            """
             if redis.call('GET', KEYS[1]) == ARGV[1] then
                 return redis.call('DEL', KEYS[1])
             end
             return 0
-            """, Long.class);
+            """,
+            Long.class);
 
     /** P0-3：死锁 / 锁等待超时的最大重试次数 */
     private static final int MAX_RETRY_ON_LOCK = 3;
@@ -135,6 +138,7 @@ public class TradeServiceImpl implements TradeService {
      * {@link ProductMapper} 的单行扣减。两条路径共用同一事务与同一业务语义。</p>
      */
     private final InventoryBucketService inventoryBucketService;
+
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
     private final OrderStatusLogMapper orderStatusLogMapper;
@@ -142,10 +146,13 @@ public class TradeServiceImpl implements TradeService {
     private final OrderStateMachine orderStateMachine;
     /** 订单号生成器（Redis 号段模式，多实例安全） */
     private final OrderNoGenerator orderNoGenerator;
+
     private final StringRedisTemplate redisTemplate;
     private final ApplicationEventPublisher eventPublisher;
     /** 自引用代理：让 doSubmit 真正走 @Transactional 代理，从而支持死锁重试时重开事务 */
     private final ObjectProvider<TradeServiceImpl> selfProvider;
+    /** 退款编排：取消 / 关闭一笔「已支付」订单后触发渠道退款。 */
+    private final PaymentRefundService paymentRefundService;
 
     /* ------------------------------ 结算试算 ------------------------------ */
 
@@ -184,8 +191,11 @@ public class TradeServiceImpl implements TradeService {
         vo.setGoodsAmount(goodsAmount);
         vo.setShippingFee(shippingFee);
         vo.setDiscount(discount);
-        vo.setPayTotal(goodsAmount.add(shippingFee).subtract(discount)
-                .max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP));
+        vo.setPayTotal(goodsAmount
+                .add(shippingFee)
+                .subtract(discount)
+                .max(BigDecimal.ZERO)
+                .setScale(2, RoundingMode.HALF_UP));
         vo.setShippingOptions(buildOptions(SHIPPING_FEES, SHIPPING_LABELS));
         vo.setPaymentOptions(buildPaymentOptions());
         vo.setSelectedShippingType(shippingType);
@@ -219,8 +229,7 @@ public class TradeServiceImpl implements TradeService {
     @Override
     public String submit(Long userId, SubmitOrderDTO dto) {
         String idempotentKey = buildIdempotentKey(userId, dto);
-        Duration resultTtl = StringUtils.hasText(dto.getRequestId())
-                ? IDEMPOTENT_RESULT_TTL : IDEMPOTENT_FP_TTL;
+        Duration resultTtl = StringUtils.hasText(dto.getRequestId()) ? IDEMPOTENT_RESULT_TTL : IDEMPOTENT_FP_TTL;
 
         String placeholder = null;
         if (idempotentKey != null) {
@@ -232,8 +241,7 @@ public class TradeServiceImpl implements TradeService {
             // P1-4：必须用 setIfAbsent，否则并发同 requestId 会互相覆盖占位，形同没有幂等。
             // P1-6：占位值带上本次请求的随机令牌，失败释放时才能保证「只删自己的」。
             placeholder = IDEMPOTENT_PENDING_PREFIX + UUID.randomUUID();
-            Boolean acquired = redisTemplate.opsForValue()
-                    .setIfAbsent(idempotentKey, placeholder, IDEMPOTENT_LOCK_TTL);
+            Boolean acquired = redisTemplate.opsForValue().setIfAbsent(idempotentKey, placeholder, IDEMPOTENT_LOCK_TTL);
             if (!Boolean.TRUE.equals(acquired)) {
                 String again = redisTemplate.opsForValue().get(idempotentKey);
                 if (isIdempotentResult(again)) {
@@ -295,8 +303,7 @@ public class TradeServiceImpl implements TradeService {
                 if (existing == null) {
                     throw e;
                 }
-                log.warn("命中订单唯一索引兜底，直接返回已存在订单 {}（userId={}, requestId={}）",
-                        existing, userId, dto.getRequestId());
+                log.warn("命中订单唯一索引兜底，直接返回已存在订单 {}（userId={}, requestId={}）", existing, userId, dto.getRequestId());
                 if (idempotentKey != null) {
                     redisTemplate.opsForValue().set(idempotentKey, existing, resultTtl);
                 }
@@ -328,7 +335,8 @@ public class TradeServiceImpl implements TradeService {
         AddressVO address = userService.getAddress(userId, dto.getAddressId());
 
         // 以商品当前价格为准重新计价；一次批量查回，消除逐条 selectById 的 N+1
-        List<Long> productIds = items.stream().map(CartItemVO::getProductId).distinct().toList();
+        List<Long> productIds =
+                items.stream().map(CartItemVO::getProductId).distinct().toList();
         Map<Long, Product> productMap = productMapper.selectBatchIds(productIds).stream()
                 .collect(Collectors.toMap(Product::getId, Function.identity(), (a, b) -> a));
 
@@ -359,12 +367,23 @@ public class TradeServiceImpl implements TradeService {
                 shippingFee = BigDecimal.ZERO;
             }
         }
-        BigDecimal payAmount = goodsAmount.add(shippingFee).subtract(discount)
-                .max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal payAmount = goodsAmount
+                .add(shippingFee)
+                .subtract(discount)
+                .max(BigDecimal.ZERO)
+                .setScale(2, RoundingMode.HALF_UP);
 
         // 1) 先落订单主表 + 明细（批量）+ 状态日志，此时尚未持有商品行锁
-        String orderNo = persistOrder(userId, address, drafts, shippingFee, discount,
-                dto.getCouponId(), dto.getPayMethod(), dto.getRemark(), dto.getRequestId());
+        String orderNo = persistOrder(
+                userId,
+                address,
+                drafts,
+                shippingFee,
+                discount,
+                dto.getCouponId(),
+                dto.getPayMethod(),
+                dto.getRemark(),
+                dto.getRequestId());
 
         // 2) 扣库存：同一商品可能出现在多个结算项，先按商品合并数量 —— 既避免分桶路径下
         //    「同商品重复调用命中幂等」漏扣，也减少对同一行的锁获取次数
@@ -389,10 +408,9 @@ public class TradeServiceImpl implements TradeService {
 
         // 5) 购物车清理移出主事务（AFTER_COMMIT + 异步），不再占用库存行锁；
         //    带上「下单那一刻的数量」做乐观守卫，避免删掉下单后又被加购合并进来的同一行
-        Map<Long, Integer> cartItemQty = items.stream().collect(Collectors.toMap(
-                CartItemVO::getId,
-                item -> item.getQty() == null ? 1 : item.getQty(),
-                (a, b) -> a));
+        Map<Long, Integer> cartItemQty = items.stream()
+                .collect(Collectors.toMap(
+                        CartItemVO::getId, item -> item.getQty() == null ? 1 : item.getQty(), (a, b) -> a));
         eventPublisher.publishEvent(new OrderCreatedEvent(userId, cartItemQty));
 
         log.info("用户 {} 下单成功：{}，应付 ¥{}", userId, orderNo, payAmount);
@@ -402,12 +420,22 @@ public class TradeServiceImpl implements TradeService {
     /* ------------------------------ 订单操作 ------------------------------ */
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void cancel(Long userId, String orderNo, String reason) {
+        // 拆成两步：取消是本地事务，退款要调渠道（HTTP）——
+        // 把渠道调用放进取消事务里会长时间持有订单行锁。
+        selfProvider.getObject().doCancel(userId, orderNo, reason);
+        // 已支付订单被取消 → 转退款；未支付订单在 refundIfPaid 内部直接 no-op
+        paymentRefundService.refundIfPaid(orderNo, "订单取消退款");
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void doCancel(Long userId, String orderNo, String reason) {
         Order order = requireOwnOrder(userId, orderNo);
         // P0-4：状态机 CAS 保证并发取消 / 取消与超时任务竞争时只有一方真正流转，
         // 从而 restoreStock 与 releaseByOrderNo 各自最多执行一次
-        orderStateMachine.transfer(order, OrderStatus.CANCELED,
+        orderStateMachine.transfer(
+                order,
+                OrderStatus.CANCELED,
                 OrderStateMachine.OPERATOR_USER,
                 StringUtils.hasText(reason) ? reason : "用户取消订单");
         restoreStock(orderNo);
@@ -418,8 +446,7 @@ public class TradeServiceImpl implements TradeService {
     @Transactional(rollbackFor = Exception.class)
     public void confirmReceipt(Long userId, String orderNo) {
         Order order = requireOwnOrder(userId, orderNo);
-        orderStateMachine.transfer(order, OrderStatus.PENDING_COMMENT,
-                OrderStateMachine.OPERATOR_USER, "确认收货");
+        orderStateMachine.transfer(order, OrderStatus.PENDING_COMMENT, OrderStateMachine.OPERATOR_USER, "确认收货");
     }
 
     @Override
@@ -435,25 +462,50 @@ public class TradeServiceImpl implements TradeService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void ship(String orderNo) {
-        Order order = orderMapper.selectOne(new LambdaQueryWrapper<Order>()
-                .eq(Order::getOrderNo, orderNo)
-                .last("limit 1"));
+        Order order = orderMapper.selectOne(
+                new LambdaQueryWrapper<Order>().eq(Order::getOrderNo, orderNo).last("limit 1"));
         if (order == null) {
             throw orderNotFound(orderNo);
         }
-        orderStateMachine.transfer(order, OrderStatus.PENDING_RECEIVE,
-                OrderStateMachine.OPERATOR_SYSTEM, "商家已发货");
+        orderStateMachine.transfer(order, OrderStatus.PENDING_RECEIVE, OrderStateMachine.OPERATOR_SYSTEM, "商家已发货");
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void markPaid(String orderNo, String tradeNo, String payMethod) {
-        Order order = orderMapper.selectOne(new LambdaQueryWrapper<Order>()
-                .eq(Order::getOrderNo, orderNo)
-                .last("limit 1"));
+    public PaymentApplyResult applyPayment(String orderNo, String tradeNo, String payMethod) {
+        Order order = orderMapper.selectOne(
+                new LambdaQueryWrapper<Order>().eq(Order::getOrderNo, orderNo).last("limit 1"));
         if (order == null) {
             throw orderNotFound(orderNo);
         }
+        OrderStatus current = OrderStatus.of(order.getStatus());
+        if (current == OrderStatus.CANCELED) {
+            log.warn("订单 {} 已关闭，支付成功需转退款", orderNo);
+            return PaymentApplyResult.ORDER_CLOSED;
+        }
+        if (current == OrderStatus.PENDING_SHIP) {
+            // 幂等：回调与主动查单可能都走到这里
+            log.info("订单 {} 已是待发货，支付落账按幂等返回", orderNo);
+            return PaymentApplyResult.APPLIED;
+        }
+        try {
+            // 走代理开启独立事务：tradeNo 写入与状态流转要么一起成功、要么一起回滚
+            selfProvider.getObject().doApplyPayment(order, tradeNo, payMethod);
+            return PaymentApplyResult.APPLIED;
+        } catch (BizException e) {
+            // 状态在「读到」与「流转」之间被并发改成已关闭：不能把异常抛给支付域
+            // （那会回滚掉支付单已成功），而要转成「需退款」信号
+            Order latest = orderMapper.selectById(order.getId());
+            if (latest != null && OrderStatus.of(latest.getStatus()) == OrderStatus.CANCELED) {
+                log.warn("订单 {} 在支付落账过程中被并发关闭，转退款", orderNo);
+                return PaymentApplyResult.ORDER_CLOSED;
+            }
+            throw e;
+        }
+    }
+
+    /** 支付落账的事务单元，仅供 {@link #applyPayment} 经代理调用。 */
+    @Transactional(rollbackFor = Exception.class)
+    public void doApplyPayment(Order order, String tradeNo, String payMethod) {
         Order update = new Order();
         update.setId(order.getId());
         update.setTradeNo(tradeNo);
@@ -461,8 +513,7 @@ public class TradeServiceImpl implements TradeService {
             update.setPayMethod(payMethod);
         }
         orderMapper.updateById(update);
-        orderStateMachine.transfer(order, OrderStatus.PENDING_SHIP,
-                OrderStateMachine.OPERATOR_PAY, "支付成功");
+        orderStateMachine.transfer(order, OrderStatus.PENDING_SHIP, OrderStateMachine.OPERATOR_PAY, "支付成功");
     }
 
     @Override
@@ -470,16 +521,33 @@ public class TradeServiceImpl implements TradeService {
         Order order = requireOwnOrder(userId, orderNo);
         OrderStatus status = OrderStatus.of(order.getStatus());
         if (status != OrderStatus.PENDING_PAY) {
-            throw new BizException(ResultCode.BIZ_ERROR,
-                    "订单当前为「" + (status == null ? "未知" : status.getText()) + "」，无需支付");
+            throw new BizException(
+                    ResultCode.BIZ_ERROR, "订单当前为「" + (status == null ? "未知" : status.getText()) + "」，无需支付");
         }
         return order.getPayAmount();
     }
 
     @Override
+    public long remainingPaySeconds(String orderNo) {
+        Order order = orderMapper.selectOne(
+                new LambdaQueryWrapper<Order>().eq(Order::getOrderNo, orderNo).last("limit 1"));
+        if (order == null || order.getExpireTime() == null) {
+            return 0L;
+        }
+        return Math.max(
+                0L, Duration.between(LocalDateTime.now(), order.getExpireTime()).getSeconds());
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class, timeout = 10)
-    public String createOrderWithFixedPrice(Long userId, Long addressId, Long productId,
-                                           BigDecimal unitPrice, int qty, String remark, String requestId) {
+    public String createOrderWithFixedPrice(
+            Long userId,
+            Long addressId,
+            Long productId,
+            BigDecimal unitPrice,
+            int qty,
+            String remark,
+            String requestId) {
         if (unitPrice == null || unitPrice.compareTo(BigDecimal.ZERO) < 0 || qty <= 0) {
             throw new BizException(ResultCode.PARAM_ERROR, "订单参数不合法");
         }
@@ -492,8 +560,8 @@ public class TradeServiceImpl implements TradeService {
         // 与普通下单一致：先落订单，再在事务尾段扣库存
         String orderNo;
         try {
-            orderNo = persistOrder(userId, address, drafts, BigDecimal.ZERO, BigDecimal.ZERO,
-                    null, null, remark, requestId);
+            orderNo = persistOrder(
+                    userId, address, drafts, BigDecimal.ZERO, BigDecimal.ZERO, null, null, remark, requestId);
         } catch (DuplicateKeyException ex) {
             // 幂等命中：同一 (userId, requestId) 已建过单 —— 秒杀异步落库的重复消费会走到这里。
             // 唯一键冲突只影响这一条语句、不会让整个事务失效，因此可以安全地回查并返回已有订单号。
@@ -501,8 +569,7 @@ public class TradeServiceImpl implements TradeService {
             if (existing == null) {
                 throw ex;
             }
-            log.warn("特殊通道下单命中幂等：userId={}, requestId={}, 返回已有订单 {}",
-                    userId, requestId, existing);
+            log.warn("特殊通道下单命中幂等：userId={}, requestId={}, 返回已有订单 {}", userId, requestId, existing);
             return existing;
         }
         deductProductStock(productId, qty, product.getTitle(), orderNo);
@@ -514,12 +581,10 @@ public class TradeServiceImpl implements TradeService {
     @Transactional(rollbackFor = Exception.class)
     public void markReviewed(Long userId, String orderNo) {
         Order order = requireOwnOrder(userId, orderNo);
-        orderStateMachine.transfer(order, OrderStatus.FINISHED,
-                OrderStateMachine.OPERATOR_USER, "评价完成");
+        orderStateMachine.transfer(order, OrderStatus.FINISHED, OrderStateMachine.OPERATOR_USER, "评价完成");
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public int closeExpiredOrders(int batchSize) {
         List<Order> expired = orderMapper.selectList(new LambdaQueryWrapper<Order>()
                 .eq(Order::getStatus, OrderStatus.PENDING_PAY.getCode())
@@ -530,14 +595,28 @@ public class TradeServiceImpl implements TradeService {
         if (expired.isEmpty()) {
             return 0;
         }
+        int closed = 0;
         for (Order order : expired) {
-            orderStateMachine.transfer(order, OrderStatus.CANCELED,
-                    OrderStateMachine.OPERATOR_SYSTEM, "超时未支付，系统自动取消");
-            restoreStock(order.getOrderNo());
-            couponService.releaseByOrderNo(order.getOrderNo());
+            try {
+                // 逐单独立事务：某笔订单在「扫描到」与「关闭」之间被并发支付时，
+                // 只跳过这一笔 —— 否则异常会向上冒泡，把整批（含其它已关闭订单的
+                // 库存回补与优惠券释放）一起回滚掉（支付闭环上线后这个窗口会被真实触发）
+                selfProvider.getObject().cancelExpiredOne(order);
+                closed++;
+            } catch (Exception e) {
+                log.warn("订单 {} 超时关闭失败（可能已被并发支付），跳过本轮", order.getOrderNo(), e);
+            }
         }
-        log.info("超时未支付订单已关闭 {} 笔", expired.size());
-        return expired.size();
+        log.info("超时未支付订单已关闭 {} 笔（本批扫描 {} 笔）", closed, expired.size());
+        return closed;
+    }
+
+    /** 单笔超时关闭的事务单元，仅供 {@link #closeExpiredOrders} 经代理调用。 */
+    @Transactional(rollbackFor = Exception.class)
+    public void cancelExpiredOne(Order order) {
+        orderStateMachine.transfer(order, OrderStatus.CANCELED, OrderStateMachine.OPERATOR_SYSTEM, "超时未支付，系统自动取消");
+        restoreStock(order.getOrderNo());
+        couponService.releaseByOrderNo(order.getOrderNo());
     }
 
     /* ------------------------------ 私有方法 ------------------------------ */
@@ -547,17 +626,27 @@ public class TradeServiceImpl implements TradeService {
      *
      * <p>购物车下单与特殊通道下单（秒杀）共用同一段写入逻辑，避免两处实现漂移。</p>
      */
-    private String persistOrder(Long userId, AddressVO address, List<OrderItemDraft> drafts,
-                                BigDecimal shippingFee, BigDecimal discount, Long couponId,
-                                String payMethod, String remark, String requestId) {
+    private String persistOrder(
+            Long userId,
+            AddressVO address,
+            List<OrderItemDraft> drafts,
+            BigDecimal shippingFee,
+            BigDecimal discount,
+            Long couponId,
+            String payMethod,
+            String remark,
+            String requestId) {
         BigDecimal safeShipping = shippingFee == null ? BigDecimal.ZERO : shippingFee;
         BigDecimal safeDiscount = discount == null ? BigDecimal.ZERO : discount;
         BigDecimal goodsAmount = drafts.stream()
                 .map(draft -> draft.price().multiply(BigDecimal.valueOf(draft.qty())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .setScale(2, RoundingMode.HALF_UP);
-        BigDecimal payAmount = goodsAmount.add(safeShipping).subtract(safeDiscount)
-                .max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal payAmount = goodsAmount
+                .add(safeShipping)
+                .subtract(safeDiscount)
+                .max(BigDecimal.ZERO)
+                .setScale(2, RoundingMode.HALF_UP);
 
         String orderNo = orderNoGenerator.next();
         Order order = new Order();
@@ -577,18 +666,20 @@ public class TradeServiceImpl implements TradeService {
         orderMapper.insert(order);
 
         // P2-4：明细由循环单条 insert 改为一条多值 INSERT
-        List<OrderItem> orderItems = drafts.stream().map(draft -> {
-            OrderItem orderItem = new OrderItem();
-            orderItem.setOrderId(order.getId());
-            orderItem.setOrderNo(orderNo);
-            orderItem.setProductId(draft.product().getId());
-            orderItem.setTitle(draft.product().getTitle());
-            orderItem.setCover(draft.product().getCover());
-            orderItem.setSpec(draft.spec());
-            orderItem.setPrice(draft.price());
-            orderItem.setQty(draft.qty());
-            return orderItem;
-        }).toList();
+        List<OrderItem> orderItems = drafts.stream()
+                .map(draft -> {
+                    OrderItem orderItem = new OrderItem();
+                    orderItem.setOrderId(order.getId());
+                    orderItem.setOrderNo(orderNo);
+                    orderItem.setProductId(draft.product().getId());
+                    orderItem.setTitle(draft.product().getTitle());
+                    orderItem.setCover(draft.product().getCover());
+                    orderItem.setSpec(draft.spec());
+                    orderItem.setPrice(draft.price());
+                    orderItem.setQty(draft.qty());
+                    return orderItem;
+                })
+                .toList();
         orderItemMapper.batchInsert(orderItems);
 
         OrderStatusLog statusLog = new OrderStatusLog();
@@ -640,7 +731,8 @@ public class TradeServiceImpl implements TradeService {
 
     private String resolveShippingType(String shippingType) {
         return (StringUtils.hasText(shippingType) && SHIPPING_FEES.containsKey(shippingType))
-                ? shippingType : "standard";
+                ? shippingType
+                : "standard";
     }
 
     private BigDecimal resolveShippingFee(String shippingType) {
@@ -668,9 +760,8 @@ public class TradeServiceImpl implements TradeService {
     }
 
     private Order requireOwnOrder(Long userId, String orderNo) {
-        Order order = orderMapper.selectOne(new LambdaQueryWrapper<Order>()
-                .eq(Order::getOrderNo, orderNo)
-                .last("limit 1"));
+        Order order = orderMapper.selectOne(
+                new LambdaQueryWrapper<Order>().eq(Order::getOrderNo, orderNo).last("limit 1"));
         if (order == null || !order.getUserId().equals(userId)) {
             throw orderNotFound(orderNo);
         }
@@ -712,8 +803,8 @@ public class TradeServiceImpl implements TradeService {
      * <p>两条路径都保证「即便状态机出现意外，也不会把库存退回两次」。</p>
      */
     private void restoreStock(String orderNo) {
-        List<OrderItem> items = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
-                .eq(OrderItem::getOrderNo, orderNo));
+        List<OrderItem> items =
+                orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderNo, orderNo));
         for (OrderItem item : items) {
             int qty = item.getQty() == null ? 0 : item.getQty();
             // 分桶商品：交回桶服务，把数量还回「原来那些桶」，幂等由桶审计流水保证
@@ -723,8 +814,7 @@ public class TradeServiceImpl implements TradeService {
             }
             int firstTime = rollbackLogMapper.tryInsert(orderNo, item.getProductId(), qty);
             if (firstTime == 0) {
-                log.warn("库存回退已执行过，跳过幂等回退：orderNo={}, productId={}",
-                        orderNo, item.getProductId());
+                log.warn("库存回退已执行过，跳过幂等回退：orderNo={}, productId={}", orderNo, item.getProductId());
                 continue;
             }
             productMapper.restoreStock(item.getProductId(), qty);
@@ -774,8 +864,12 @@ public class TradeServiceImpl implements TradeService {
             return RedisKeys.ORDER_IDEMPOTENT + userId + ":" + dto.getRequestId();
         }
         String fingerprint = userId + "|" + dto.getAddressId() + "|" + dto.getCouponId() + "|"
-                + (dto.getCartItemIds() == null ? "" : dto.getCartItemIds().stream()
-                .sorted().map(String::valueOf).collect(Collectors.joining(",")));
+                + (dto.getCartItemIds() == null
+                        ? ""
+                        : dto.getCartItemIds().stream()
+                                .sorted()
+                                .map(String::valueOf)
+                                .collect(Collectors.joining(",")));
         String hash = DigestUtils.md5DigestAsHex(fingerprint.getBytes(StandardCharsets.UTF_8));
         return RedisKeys.ORDER_IDEMPOTENT + "fp:" + userId + ":" + hash;
     }
@@ -789,6 +883,5 @@ public class TradeServiceImpl implements TradeService {
     }
 
     /** 下单明细草稿：以下单瞬间的商品数据为准。 */
-    private record OrderItemDraft(Product product, String spec, int qty, BigDecimal price) {
-    }
+    private record OrderItemDraft(Product product, String spec, int qty, BigDecimal price) {}
 }

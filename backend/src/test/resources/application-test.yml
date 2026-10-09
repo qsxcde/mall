@@ -37,6 +37,14 @@ mall:
     local-dir: ./target/test-uploads
   minio:
     enabled: false
+  payment:
+    # 测试固定走本地沙箱渠道：进程内自签自发，走完整验签链路但不产生网络请求
+    channel: local
+    compensation:
+      # 关掉定时调度（避免测试期间被并发触发）；补偿逻辑由测试直接调 compensatePending 验证。
+      # min-age 设为 0，让刚创建的支付单也能进入扫描窗口
+      enabled: false
+      min-age-seconds: 0
 
 logging:
   level:

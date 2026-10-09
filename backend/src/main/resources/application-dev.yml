@@ -1,4 +1,10 @@
 spring:
+  config:
+    import:
+      # 本地联调支付宝沙箱时，密钥写在 infra/.env（已 gitignore），
+      # 这里按 properties 格式读进来，免去每次手动 export。
+      # optional: 文件不存在不报错（默认走本地渠道，无需密钥）。
+      - optional:file:../infra/.env[.properties]
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     # 默认端口 3307：与 infra/docker-compose.yml 的兜底值、infra/.env.example 的 MYSQL_PORT 一致，

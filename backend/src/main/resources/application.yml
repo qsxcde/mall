@@ -161,6 +161,18 @@ mall:
         # 入队本身是毫秒级 Redis 命令，真正保护线程池的是 Tomcat 的 max-threads，
         # 这里取 256（> 单实例 Tomcat max-threads 120）保证它不会先于 Tomcat 成为「假瓶颈」。
         max-concurrent-calls: 256
+      # 支付宝网关：外部 HTTP 依赖，慢调用阈值按网关实际响应取 2s；
+      # 并发上限挡住慢请求堆积 —— 下单建码是用户可感知路径，
+      # 熔断打开时让用户稍后重试，好过把 Tomcat 线程一起拖住。
+      alipay:
+        minimum-calls: 10
+        failure-rate-threshold: 50
+        slow-call-duration: 2s
+        slow-call-rate-threshold: 60
+        sliding-window: 60s
+        wait-duration-in-open: 15s
+        permitted-calls-in-half-open: 2
+        max-concurrent-calls: 50
   # 秒杀
   seckill:
     async:
@@ -204,6 +216,36 @@ mall:
     bucket: ${MINIO_BUCKET:geek-mall}
     # 对外访问前缀，留空则直接用 endpoint 拼接
     public-base-url: ${MINIO_PUBLIC_URL:}
+  payment:
+    # local：本地沙箱渠道（进程内自签自发，零配置可启动，默认）
+    # alipay：支付宝沙箱（需配好下方密钥；密钥齐备前切过去会导致下单失败）
+    channel: ${MALL_PAYMENT_CHANNEL:local}
+    alipay:
+      app-id: ${MALL_ALIPAY_APP_ID:}
+      # 应用私钥（PKCS#8 或 PKCS#1 均可，支持带 PEM 头尾）
+      private-key: ${MALL_ALIPAY_PRIVATE_KEY:}
+      # 支付宝公钥（验签用）—— 注意不是应用公钥，两者不是同一个东西
+      public-key: ${MALL_ALIPAY_PUBLIC_KEY:}
+      # 收款方 PID（可选）：配了就校验通知里的 seller_id，确认「这笔钱确实打给了你」
+      seller-id: ${MALL_ALIPAY_SELLER_ID:}
+      gateway-url: ${MALL_ALIPAY_GATEWAY_URL:https://openapi-sandbox.dl.alipaydev.com/gateway.do}
+      # 异步通知地址：必须公网可达，本地联调填隧道地址（如 https://xxx.ngrok.io/api/v1/pay/callback）
+      notify-url: ${MALL_ALIPAY_NOTIFY_URL:}
+      sign-type: RSA2
+      charset: utf-8
+      connect-timeout: 3s
+      read-timeout: 10s
+    # 主动查单补偿：渠道异步通知会丢（网络抖动 / 服务重启 / 重试耗尽），
+    # 用 alipay.trade.query 定时兜底对账，避免「已付款却仍是待支付」
+    compensation:
+      enabled: true
+      batch-size: 100
+      # 只处理「创建满 1 分钟」的待支付单，避开刚下单、渠道还在回调的正常窗口
+      min-age-seconds: 60
+      # 超过 30 分钟仍未支付的不再查（多半本地已关闭）
+      max-age-seconds: 1800
+      initial-delay-ms: 60000
+      interval-ms: 60000
 
 springdoc:
   api-docs:
