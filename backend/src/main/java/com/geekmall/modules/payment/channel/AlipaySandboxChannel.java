@@ -83,7 +83,7 @@ public class AlipaySandboxChannel implements PaymentChannelClient {
         biz.put("subject", subject);
         biz.put("timeout_express", timeoutExpress(timeout));
 
-        JsonNode response = execute("alipay.trade.precreate", biz);
+        JsonNode response = requireSuccess(execute("alipay.trade.precreate", biz));
         String qrCode = response.path("qr_code").asText(null);
         if (!StringUtils.hasText(qrCode)) {
             throw new BizException(ResultCode.BIZ_ERROR, "支付宝预下单未返回 qr_code");
@@ -95,7 +95,7 @@ public class AlipaySandboxChannel implements PaymentChannelClient {
     @Override
     public ChannelTradeState query(String outTradeNo) {
         try {
-            JsonNode response = execute("alipay.trade.query", Map.of("out_trade_no", outTradeNo));
+            JsonNode response = requireSuccess(execute("alipay.trade.query", Map.of("out_trade_no", outTradeNo)));
             return new ChannelTradeState(
                     outTradeNo,
                     response.path("trade_no").asText(null),
@@ -112,7 +112,7 @@ public class AlipaySandboxChannel implements PaymentChannelClient {
     @Override
     public void close(String outTradeNo) {
         try {
-            execute("alipay.trade.close", Map.of("out_trade_no", outTradeNo));
+            requireSuccess(execute("alipay.trade.close", Map.of("out_trade_no", outTradeNo)));
             log.info("[支付·支付宝] 关单成功 {}", outTradeNo);
         } catch (Exception e) {
             // best-effort：本地订单已经关了，渠道侧关不掉只会多一笔待退款，不该阻断主流程
@@ -131,7 +131,7 @@ public class AlipaySandboxChannel implements PaymentChannelClient {
             biz.put("refund_reason", reason);
         }
         try {
-            JsonNode response = execute("alipay.trade.refund", biz);
+            JsonNode response = requireSuccess(execute("alipay.trade.refund", biz));
             String fundChange = response.path("fund_change").asText("");
             log.info("[支付·支付宝] 退款 {} 金额 ¥{} fund_change={}", outTradeNo, amount, fundChange);
             return new RefundResult(true, response.path("trade_no").asText(null), response.toString(), null);
@@ -207,26 +207,40 @@ public class AlipaySandboxChannel implements PaymentChannelClient {
         if (node.isMissingNode()) {
             throw new BizException(ResultCode.BIZ_ERROR, "支付宝响应缺少节点 " + responseNode(method));
         }
+        // 说明：支付宝响应的 sign 是对响应节点「原始 JSON 子串」的签名，
+        // 反序列化再序列化会破坏字节一致性，因此本轮不做响应验签（见 package-info 的取舍说明）
+        return node;
+    }
+
+    /**
+     * 调网关，返回响应节点（<b>可能是一个业务错误节点</b>）。
+     *
+     * <p><b>熔断器只应统计基础设施故障</b>（连不上、超时、HTTP 非 200、响应不可解析），
+     * 不应统计业务返回码 —— 否则像 {@code ACQ.TRADE_NOT_EXIST}（查单时交易还没创建/尚未支付，
+     * 属完全正常的业务态）这种返回，会被当成下游失败累积，最后把熔断器打开。</p>
+     *
+     * <p>因此这里把「取 code」这一步从 {@link ResilienceGuard} 保护范围内移出来：
+     * 业务错误由调用方用 {@link #requireSuccess} 显式判定。</p>
+     */
+    private JsonNode execute(String method, Map<String, Object> bizContent) {
+        try {
+            return resilienceGuard.execute(RESOURCE, () -> callGateway(method, bizContent));
+        } catch (BizException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BizException(ResultCode.BIZ_ERROR, "支付宝接口调用失败：" + e.getMessage());
+        }
+    }
+
+    /** 业务返回码非成功时抛出 {@link AlipayApiException}（<b>在熔断器之外</b>判定）。 */
+    private JsonNode requireSuccess(JsonNode node) {
         String code = node.path("code").asText();
         if (!CODE_SUCCESS.equals(code)) {
             throw new AlipayApiException(
                     node.path("sub_code").asText(null),
                     node.path("sub_msg").asText(node.path("msg").asText(null)));
         }
-        // 说明：支付宝响应的 sign 是对响应节点「原始 JSON 子串」的签名，
-        // 反序列化再序列化会破坏字节一致性，因此本轮不做响应验签（见 package-info 的取舍说明）
         return node;
-    }
-
-    /** 统一走熔断器：网关变慢/不可用时尽快失败，避免占满应用线程。 */
-    private JsonNode execute(String method, Map<String, Object> bizContent) {
-        try {
-            return resilienceGuard.execute(RESOURCE, () -> callGateway(method, bizContent));
-        } catch (AlipayApiException | BizException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new BizException(ResultCode.BIZ_ERROR, "支付宝接口调用失败：" + e.getMessage());
-        }
     }
 
     /** {@code alipay.trade.precreate} → {@code alipay_trade_precreate_response}。 */
