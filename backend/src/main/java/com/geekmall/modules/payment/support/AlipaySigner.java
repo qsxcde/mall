@@ -20,13 +20,15 @@ import java.util.stream.Collectors;
 /**
  * 支付宝 RSA2 签名 / 验签（纯 JDK 实现，不依赖官方 SDK）。
  *
- * <p><b>签名串算法（官方规则）</b>：</p>
+ * <p><b>签名串算法（以支付宝网关实际行为为准）</b>：</p>
  * <ol>
- *     <li>取请求/通知的<b>全部参数</b>，剔除 {@code sign} 与 {@code sign_type}，剔除空值；</li>
+ *     <li>取请求/通知的<b>全部参数</b>，剔除 {@code sign}，剔除空值；</li>
  *     <li>按参数名<b>字典序</b>升序；</li>
  *     <li>拼成 {@code k1=v1&k2=v2...}（<b>值不做 URL 编码</b>，用原始值）；</li>
  *     <li>RSA2 = {@code SHA256withRSA}（RSA 为 {@code SHA1withRSA}）签名，结果 Base64。</li>
  * </ol>
+ *
+ * <p>⚠️ {@code sign_type} <b>参与</b>签名（见 {@link #buildSignContent} 里的说明与实证）。</p>
  *
  * <p><b>传输编码</b>：签名串里的值是<b>原始值</b>，但表单提交时每个值都要 URL 编码
  * （尤其 {@code biz_content} 含 {@code {}":,}、{@code timestamp} 含空格与冒号）——
@@ -95,7 +97,14 @@ public final class AlipaySigner {
     }
 
     /**
-     * 构造待签名字符串：剔除 sign / sign_type / 空值 → 字典序 → {@code k=v&}。
+     * 构造待签名字符串：<b>只剔除 {@code sign}</b> 与空值 → 字典序 → {@code k=v&}。
+     *
+     * <p><b>{@code sign_type} 必须参与签名</b>（易错点）：网上大量文章写「除去 sign、sign_type」，
+     * 但支付宝网关实际使用（并在报错里回显）的验签串是<b>包含 sign_type</b> 的。
+     * 联调时网关报 {@code isv.invalid-signature} 并回显：
+     * {@code ...&method=alipay.trade.precreate&sign_type=RSA2&timestamp=...&version=1.0} ——
+     * 与我们的签名串只差 {@code sign_type=RSA2} 这一段，剔除它必然验签失败。
+     * 以服务器实际行为为准。</p>
      *
      * <p>公开以便单测直接断言拼接结果。</p>
      */
@@ -104,10 +113,7 @@ public final class AlipaySigner {
         for (Map.Entry<String, String> entry : params.entrySet()) {
             String key = entry.getKey();
             String value = entry.getValue();
-            if (key == null || key.isEmpty()) {
-                continue;
-            }
-            if ("sign".equals(key) || "sign_type".equals(key)) {
+            if (key == null || key.isEmpty() || "sign".equals(key)) {
                 continue;
             }
             if (value == null || value.isEmpty()) {

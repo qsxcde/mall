@@ -153,6 +153,12 @@ mvn -DskipTests clean package
 java -jar target/geek-mall-server-1.0.0.jar
 ```
 
+若需要读取 `infra/.env`（例如支付宝沙箱密钥等外部配置），用启动脚本 —— 它会显式加载该文件并回显生效的支付渠道：
+
+```bash
+bash scripts/run-backend.sh          # 默认 8080；SERVER_PORT=8081 可改端口
+```
+
 启动后可访问：
 
 | 地址 | 用途 |

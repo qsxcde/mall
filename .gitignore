@@ -21,6 +21,8 @@ yarn-error.log*
 backend/target/
 backend/logs/
 backend/uploads/
+# 从仓库根直接 java -jar 时，logback 的相对日志目录会落在根下
+/logs/
 
 # ---------- 环境变量（可能含真实密钥，只提交 .example 模板）----------
 .env

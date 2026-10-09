@@ -1,8 +1,9 @@
 spring:
   config:
     import:
-      # 本地联调支付宝沙箱时，密钥写在 infra/.env（已 gitignore），
-      # 这里按 properties 格式读进来，免去每次手动 export。
+      # 本地联调时把密钥写在 infra/.env（已 gitignore），这里按 properties 格式读进来。
+      # 注意：相对路径是相对「进程工作目录」解析的 —— 因此建议从 backend/ 目录启动
+      # （或直接用 scripts/run-backend.sh，它显式 source .env 且不依赖工作目录）。
       # optional: 文件不存在不报错（默认走本地渠道，无需密钥）。
       - optional:file:../infra/.env[.properties]
   datasource:

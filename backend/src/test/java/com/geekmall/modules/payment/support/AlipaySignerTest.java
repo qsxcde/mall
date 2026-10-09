@@ -94,7 +94,7 @@ class AlipaySignerTest {
         Map<String, String> params = new LinkedHashMap<>();
         params.put("total_amount", "159.00");
         params.put("out_trade_no", "PAY20261009120000001");
-        params.put("sign_type", "RSA2"); // 应剔除
+        params.put("sign_type", "RSA2"); // 参与签名（见 buildSignContent 的实证说明）
         params.put("sign", "xxx"); // 应剔除
         params.put("subject", ""); // 空值应剔除
         params.put("app_id", "2021000000000000");
@@ -102,18 +102,22 @@ class AlipaySignerTest {
         String content = AlipaySigner.buildSignContent(params);
 
         assertThat(content)
-                .isEqualTo("app_id=2021000000000000" + "&out_trade_no=PAY20261009120000001" + "&total_amount=159.00");
+                .isEqualTo("app_id=2021000000000000"
+                        + "&out_trade_no=PAY20261009120000001"
+                        + "&sign_type=RSA2"
+                        + "&total_amount=159.00");
     }
 
     @Test
-    @DisplayName("签名串里 sign_type 不参与，因此其取值不影响签名结果")
-    void signTypeDoesNotAffectSignature() {
-        Map<String, String> withType = notifyParams();
-        withType.put("sign_type", "RSA"); // 与另一份的 RSA2 不同，但都应被剔除
-        Map<String, String> withoutType = notifyParams();
+    @DisplayName("sign_type 参与签名：取值不同则签名不同（剔除它会导致网关 isv.invalid-signature）")
+    void signTypeParticipatesInSignature() {
+        Map<String, String> rsa2 = notifyParams();
+        rsa2.put("sign_type", "RSA2");
+        Map<String, String> rsa = notifyParams();
+        rsa.put("sign_type", "RSA");
 
-        assertThat(AlipaySigner.sign(withType, privateKeyPkcs8, "utf-8"))
-                .isEqualTo(AlipaySigner.sign(withoutType, privateKeyPkcs8, "utf-8"));
+        assertThat(AlipaySigner.sign(rsa2, privateKeyPkcs8, "utf-8"))
+                .isNotEqualTo(AlipaySigner.sign(rsa, privateKeyPkcs8, "utf-8"));
     }
 
     @Test
