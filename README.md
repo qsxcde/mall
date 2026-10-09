@@ -53,7 +53,7 @@
 
 后端按业务域分包（`backend/src/main/java/com/geekmall/modules/`），共 13 个域，每个域内部统一 `controller → service(+impl) → mapper`，配合 `entity / dto / vo / converter`：
 
-`auth`（登录注册验证码）· `user`（资料/地址/签到）· `product`（分类/列表/搜索/详情/首页）· `cart`（购物车）· `trade`（结算/下单/状态机/物流）· `payment`（支付单/回调）· `marketing`（优惠券/秒杀/积分）· `inventory`（商品库存分桶）· `review`（评价）· `aftersale`（售后）· `message`（消息中心）· `content`（CMS/上传）· `merchant`（商家中心）
+`auth`（登录注册验证码）· `user`（资料/地址/签到）· `product`（分类/列表/搜索/详情/首页）· `cart`（购物车）· `trade`（结算/下单/状态机/物流）· `payment`（支付单/渠道回调/退款）· `marketing`（优惠券/秒杀/积分）· `inventory`（商品库存分桶）· `review`（评价）· `aftersale`（售后）· `message`（消息中心）· `content`（CMS/上传）· `merchant`（商家中心）
 
 ### 1.4 高并发治理 —— 本项目的核心
 
@@ -78,7 +78,7 @@
 
 ### 1.5 质量与验证
 
-- **46 个测试类**（+1 基类，共 **569 个用例**），`mvn test` 一键运行全绿；集成测试用 Testcontainers 起**真实 MySQL 8 + Redis 7**，跑真实 Flyway 迁移与真实过滤器链
+- **48 个测试类**（+1 基类，共 **587 个用例**），`mvn test` 一键运行全绿；集成测试用 Testcontainers 起**真实 MySQL 8 + Redis 7**，跑真实 Flyway 迁移与真实过滤器链
 - **代码风格有工具约束且已接入 CI**：后端 Spotless + palantir-java-format，前端 ESLint 9（flat config）+ Prettier 3。
   两边都用 **ratchet**（只约束「相对基线有改动的文件」）——因为全库重排会产生覆盖数百文件的 diff，
   而 ratchet 既能让 CI 立刻变绿，又能让此后每次改动自动收敛到统一风格
@@ -276,8 +276,8 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
 
 ### 3.3 更远的想法
 
-- **业务补全**：真实支付渠道、真实物流轨迹、真实短信通道（当前均为 mock）
-- **稳定性纵深**：缓存层已有独立熔断器，但下游调用（如 MinIO）还没有业务级熔断保护，可考虑统一到 Resilience4j；订单超时关闭目前靠轮询扫描，可改为延迟队列/时间轮
+- **业务补全**：✅ 支付宝沙箱支付已接入（验签 / 回调幂等 / 关单转退款 / 主动查单补偿，见 `docs/benchmark/支付宝沙箱支付闭环-2026-10-09.md`）；真实物流轨迹、真实短信通道仍为 mock
+- **稳定性纵深**：下游调用已统一到自研业务级熔断（`ResilienceGuard`，含 MinIO 上传、支付宝网关、秒杀队列等资源）；订单超时关闭目前靠轮询扫描，可改为延迟队列/时间轮
 - **工程化**：✅ 已补 CI（`.github/workflows/ci.yml`：后端 **Spotless 格式检查 + `mvn test`（含 Testcontainers 集成测试）**、
   双前端 **ESLint + Prettier ratchet + `vite build`**）；✅ 压测账号令牌（`users.csv` / 派生 `users.js`）与 `node_modules` / `dist` 已移出仓库并加入 `.gitignore`；
   ✅ 前端依赖升级到 vite 7；待办：把 k6 压测纳入 CI 回归

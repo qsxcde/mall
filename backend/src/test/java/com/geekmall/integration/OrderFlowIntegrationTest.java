@@ -1,23 +1,24 @@
 package com.geekmall.integration;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.geekmall.common.enums.OrderStatus;
+import com.geekmall.modules.payment.channel.LocalSandboxChannel;
 import com.geekmall.modules.product.entity.Product;
 import com.geekmall.modules.product.mapper.ProductMapper;
 import com.geekmall.modules.trade.entity.Order;
 import com.geekmall.modules.trade.mapper.OrderMapper;
 import com.geekmall.support.AbstractIntegrationTest;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-
 import java.math.BigDecimal;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * 订单全链路集成测试。
@@ -32,6 +33,10 @@ class OrderFlowIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private OrderMapper orderMapper;
+
+    /** 测试 profile 固定走本地沙箱渠道：用它自签通知，等价于渠道服务器发来的报文。 */
+    @Autowired
+    private LocalSandboxChannel localChannel;
 
     /** 新建一个独立商品，避免与其它测试竞争同一行库存。 */
     private Product createOnShelfProduct(String title, int stock, String price) {
@@ -78,8 +83,8 @@ class OrderFlowIntegrationTest extends AbstractIntegrationTest {
 
     /** 加购并返回购物车项 ID。 */
     private long addToCart(String token, long productId, int qty) {
-        return assertSuccess(post("/api/v1/cart/items",
-                Map.of("productId", productId, "qty", qty), token)).asLong();
+        return assertSuccess(post("/api/v1/cart/items", Map.of("productId", productId, "qty", qty), token))
+                .asLong();
     }
 
     /** 提交订单，返回订单号。 */
@@ -95,9 +100,8 @@ class OrderFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     private Order reload(String orderNo) {
-        return orderMapper.selectOne(new LambdaQueryWrapper<Order>()
-                .eq(Order::getOrderNo, orderNo)
-                .last("limit 1"));
+        return orderMapper.selectOne(
+                new LambdaQueryWrapper<Order>().eq(Order::getOrderNo, orderNo).last("limit 1"));
     }
 
     @Test
@@ -108,7 +112,8 @@ class OrderFlowIntegrationTest extends AbstractIntegrationTest {
         long addressId = createAddress(token);
         long cartItemId = addToCart(token, product.getId(), 2);
 
-        String orderNo = submitOrder(token, addressId, cartItemId, UUID.randomUUID().toString());
+        String orderNo =
+                submitOrder(token, addressId, cartItemId, UUID.randomUUID().toString());
 
         assertThat(orderNo).startsWith("GM");
         Order order = reload(orderNo);
@@ -147,7 +152,8 @@ class OrderFlowIntegrationTest extends AbstractIntegrationTest {
         String token = registerAndLogin(randomPhone());
         long addressId = createAddress(token);
         long cartItemId = addToCart(token, product.getId(), 1);
-        String orderNo = submitOrder(token, addressId, cartItemId, UUID.randomUUID().toString());
+        String orderNo =
+                submitOrder(token, addressId, cartItemId, UUID.randomUUID().toString());
 
         // 用同一账号再下 1 件：此时库存已被前一单扣为 0
         assertThat(productMapper.selectById(product.getId()).getStock()).isZero();
@@ -171,11 +177,11 @@ class OrderFlowIntegrationTest extends AbstractIntegrationTest {
         String token = registerAndLogin(randomPhone());
         long addressId = createAddress(token);
         long cartItemId = addToCart(token, product.getId(), 2);
-        String orderNo = submitOrder(token, addressId, cartItemId, UUID.randomUUID().toString());
+        String orderNo =
+                submitOrder(token, addressId, cartItemId, UUID.randomUUID().toString());
         assertThat(productMapper.selectById(product.getId()).getStock()).isEqualTo(3);
 
-        assertSuccess(post("/api/v1/trade/orders/" + orderNo + "/cancel",
-                Map.of("reason", "集成测试取消"), token));
+        assertSuccess(post("/api/v1/trade/orders/" + orderNo + "/cancel", Map.of("reason", "集成测试取消"), token));
 
         assertThat(reload(orderNo).getStatus()).isEqualTo(OrderStatus.CANCELED.getCode());
         assertThat(productMapper.selectById(product.getId()).getStock()).isEqualTo(5);
@@ -188,7 +194,8 @@ class OrderFlowIntegrationTest extends AbstractIntegrationTest {
         String token = registerAndLogin(randomPhone());
         long addressId = createAddress(token);
         long cartItemId = addToCart(token, product.getId(), 1);
-        String orderNo = submitOrder(token, addressId, cartItemId, UUID.randomUUID().toString());
+        String orderNo =
+                submitOrder(token, addressId, cartItemId, UUID.randomUUID().toString());
 
         assertSuccess(post("/api/v1/trade/orders/" + orderNo + "/cancel", Map.of("reason", "第一次"), token));
         // 第二次取消：状态机对「已是目标状态」按幂等处理（不报错），
@@ -208,11 +215,12 @@ class OrderFlowIntegrationTest extends AbstractIntegrationTest {
         String token = registerAndLogin(randomPhone());
         long addressId = createAddress(token);
         long cartItemId = addToCart(token, product.getId(), 1);
-        String orderNo = submitOrder(token, addressId, cartItemId, UUID.randomUUID().toString());
+        String orderNo =
+                submitOrder(token, addressId, cartItemId, UUID.randomUUID().toString());
 
         // 1) 创建支付单：金额以服务端订单为准
-        var payment = assertSuccess(post("/api/v1/pay/create",
-                Map.of("orderNo", orderNo, "payMethod", "wechat"), token));
+        var payment =
+                assertSuccess(post("/api/v1/pay/create", Map.of("orderNo", orderNo, "payMethod", "wechat"), token));
         String tradeNo = payment.get("tradeNo").asText();
         assertThat(payment.get("amount").decimalValue()).isEqualByComparingTo("599.00");
         assertThat(payment.get("status").asInt()).isZero();
@@ -262,20 +270,22 @@ class OrderFlowIntegrationTest extends AbstractIntegrationTest {
         String token = registerAndLogin(randomPhone());
         long addressId = createAddress(token);
         long cartItemId = addToCart(token, product.getId(), 1);
-        String orderNo = submitOrder(token, addressId, cartItemId, UUID.randomUUID().toString());
+        String orderNo =
+                submitOrder(token, addressId, cartItemId, UUID.randomUUID().toString());
 
-        String tradeNo = assertSuccess(post("/api/v1/pay/create",
-                Map.of("orderNo", orderNo, "payMethod", "alipay"), token)).get("tradeNo").asText();
-        assertSuccess(post("/api/v1/pay/" + tradeNo + "/mock-pay", null, token));
+        String tradeNo = assertSuccess(
+                        post("/api/v1/pay/create", Map.of("orderNo", orderNo, "payMethod", "alipay"), token))
+                .get("tradeNo")
+                .asText();
 
-        // 渠道重复通知（白名单接口，无需登录态）
-        var callback = post("/api/v1/pay/callback", Map.of(
-                "tradeNo", tradeNo,
-                "orderNo", orderNo,
-                "amount", new BigDecimal("159.00"),
-                "status", 1), null);
+        // 渠道通知：表单参数 + 真实 RSA2 签名（本地渠道自签，等价于渠道服务器发来的报文）
+        Map<String, String> notify = localChannel.signNotify(paidNotify(tradeNo, "159.00"));
 
-        assertThat(callback.get("code").asInt()).isZero();
+        assertThat(postFormRaw("/api/v1/pay/callback", notify)).isEqualTo("success");
+        assertThat(reload(orderNo).getStatus()).isEqualTo(OrderStatus.PENDING_SHIP.getCode());
+
+        // 渠道重复通知：幂等，状态不再二次流转
+        assertThat(postFormRaw("/api/v1/pay/callback", notify)).isEqualTo("success");
         assertThat(reload(orderNo).getStatus()).isEqualTo(OrderStatus.PENDING_SHIP.getCode());
     }
 
@@ -286,18 +296,30 @@ class OrderFlowIntegrationTest extends AbstractIntegrationTest {
         String token = registerAndLogin(randomPhone());
         long addressId = createAddress(token);
         long cartItemId = addToCart(token, product.getId(), 1);
-        String orderNo = submitOrder(token, addressId, cartItemId, UUID.randomUUID().toString());
-        String tradeNo = assertSuccess(post("/api/v1/pay/create",
-                Map.of("orderNo", orderNo, "payMethod", "alipay"), token)).get("tradeNo").asText();
+        String orderNo =
+                submitOrder(token, addressId, cartItemId, UUID.randomUUID().toString());
+        String tradeNo = assertSuccess(
+                        post("/api/v1/pay/create", Map.of("orderNo", orderNo, "payMethod", "alipay"), token))
+                .get("tradeNo")
+                .asText();
 
-        var callback = post("/api/v1/pay/callback", Map.of(
-                "tradeNo", tradeNo,
-                "orderNo", orderNo,
-                "amount", new BigDecimal("0.01"),
-                "status", 1), null);
+        // 签名有效但金额被改小：应被「金额一致性校验」拦下（与验签失败是两层防护）
+        Map<String, String> notify = localChannel.signNotify(paidNotify(tradeNo, "0.01"));
 
-        assertThat(callback.get("code").asInt()).isNotZero();
+        assertThat(postFormRaw("/api/v1/pay/callback", notify)).isEqualTo("failure");
         assertThat(reload(orderNo).getStatus()).isEqualTo(OrderStatus.PENDING_PAY.getCode());
+    }
+
+    /** 构造一份「支付成功」通知的原始参数（未签名，字段名与支付宝一致）。 */
+    private Map<String, String> paidNotify(String tradeNo, String amount) {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("out_trade_no", tradeNo);
+        params.put("trade_no", "2026100922001" + tradeNo.substring(tradeNo.length() - 6));
+        params.put("total_amount", amount);
+        params.put("trade_status", "TRADE_SUCCESS");
+        params.put("app_id", "2021000000000000");
+        params.put("seller_id", "2088000000000000");
+        return params;
     }
 
     @Test
@@ -306,9 +328,10 @@ class OrderFlowIntegrationTest extends AbstractIntegrationTest {
         String token = registerAndLogin(randomPhone());
         long addressId = createAddress(token);
 
-        var response = post("/api/v1/trade/orders", Map.of(
-                "addressId", addressId,
-                "requestId", UUID.randomUUID().toString()), token);
+        var response = post(
+                "/api/v1/trade/orders",
+                Map.of("addressId", addressId, "requestId", UUID.randomUUID().toString()),
+                token);
 
         assertThat(response.get("code").asInt()).isNotZero();
     }
@@ -320,7 +343,8 @@ class OrderFlowIntegrationTest extends AbstractIntegrationTest {
         String ownerToken = registerAndLogin(randomPhone());
         long addressId = createAddress(ownerToken);
         long cartItemId = addToCart(ownerToken, product.getId(), 1);
-        String orderNo = submitOrder(ownerToken, addressId, cartItemId, UUID.randomUUID().toString());
+        String orderNo =
+                submitOrder(ownerToken, addressId, cartItemId, UUID.randomUUID().toString());
 
         String intruderToken = registerAndLogin(randomPhone());
         var response = get("/api/v1/orders/" + orderNo, intruderToken);

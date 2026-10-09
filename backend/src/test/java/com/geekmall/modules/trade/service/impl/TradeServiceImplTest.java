@@ -1,45 +1,5 @@
 package com.geekmall.modules.trade.service.impl;
 
-import com.geekmall.common.enums.OrderStatus;
-import com.geekmall.common.exception.BizException;
-import com.geekmall.common.result.ResultCode;
-import com.geekmall.modules.cart.service.CartService;
-import com.geekmall.modules.cart.vo.CartItemVO;
-import com.geekmall.modules.marketing.service.CouponService;
-import com.geekmall.modules.marketing.vo.UserCouponVO;
-import com.geekmall.modules.inventory.service.InventoryBucketService;
-import com.geekmall.modules.product.mapper.ProductMapper;
-import com.geekmall.modules.trade.dto.PreOrderDTO;
-import com.geekmall.modules.trade.dto.SubmitOrderDTO;
-import com.geekmall.modules.trade.entity.Order;
-import com.geekmall.modules.trade.entity.OrderItem;
-import com.geekmall.modules.trade.mapper.InventoryRollbackLogMapper;
-import com.geekmall.modules.trade.mapper.OrderItemMapper;
-import com.geekmall.modules.trade.mapper.OrderMapper;
-import com.geekmall.modules.trade.mapper.OrderStatusLogMapper;
-import com.geekmall.modules.trade.service.OrderStateMachine;
-import com.geekmall.modules.trade.support.OrderNoGenerator;
-import com.geekmall.modules.trade.vo.PreOrderVO;
-import com.geekmall.modules.user.service.UserService;
-import com.geekmall.modules.user.vo.AddressVO;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
-import org.springframework.data.redis.core.script.RedisScript;
-
-import java.math.BigDecimal;
-import java.time.Duration;
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -55,6 +15,46 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.geekmall.common.enums.OrderStatus;
+import com.geekmall.common.exception.BizException;
+import com.geekmall.common.result.ResultCode;
+import com.geekmall.modules.cart.service.CartService;
+import com.geekmall.modules.cart.vo.CartItemVO;
+import com.geekmall.modules.inventory.service.InventoryBucketService;
+import com.geekmall.modules.marketing.service.CouponService;
+import com.geekmall.modules.marketing.vo.UserCouponVO;
+import com.geekmall.modules.payment.service.PaymentRefundService;
+import com.geekmall.modules.product.mapper.ProductMapper;
+import com.geekmall.modules.trade.dto.PreOrderDTO;
+import com.geekmall.modules.trade.dto.SubmitOrderDTO;
+import com.geekmall.modules.trade.entity.Order;
+import com.geekmall.modules.trade.entity.OrderItem;
+import com.geekmall.modules.trade.mapper.InventoryRollbackLogMapper;
+import com.geekmall.modules.trade.mapper.OrderItemMapper;
+import com.geekmall.modules.trade.mapper.OrderMapper;
+import com.geekmall.modules.trade.mapper.OrderStatusLogMapper;
+import com.geekmall.modules.trade.service.OrderStateMachine;
+import com.geekmall.modules.trade.support.OrderNoGenerator;
+import com.geekmall.modules.trade.vo.PreOrderVO;
+import com.geekmall.modules.user.service.UserService;
+import com.geekmall.modules.user.vo.AddressVO;
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.RedisScript;
+
 /**
  * 交易服务单元测试（Mockito 隔离持久层与 Redis）。
  *
@@ -68,43 +68,76 @@ class TradeServiceImplTest {
 
     @Mock
     private CartService cartService;
+
     @Mock
     private UserService userService;
+
     @Mock
     private CouponService couponService;
+
     @Mock
     private ProductMapper productMapper;
     /** 分桶服务：默认 isBucketed=false / hasOutbound=false，即走原有的单行扣减路径。 */
     @Mock
     private InventoryBucketService inventoryBucketService;
+
     @Mock
     private OrderMapper orderMapper;
+
     @Mock
     private OrderItemMapper orderItemMapper;
+
     @Mock
     private OrderStatusLogMapper orderStatusLogMapper;
+
     @Mock
     private InventoryRollbackLogMapper rollbackLogMapper;
+
     @Mock
     private OrderStateMachine orderStateMachine;
+
     @Mock
     private OrderNoGenerator orderNoGenerator;
+
     @Mock
     private StringRedisTemplate redisTemplate;
+
     @Mock
     private ValueOperations<String, String> valueOps;
+
     @Mock
     private ApplicationEventPublisher eventPublisher;
+
     @Mock
     private ObjectProvider<TradeServiceImpl> selfProvider;
+
+    @Mock
+    private PaymentRefundService paymentRefundService;
 
     private TradeServiceImpl tradeService;
 
     @BeforeEach
     void setUp() {
-        tradeService = new TradeServiceImpl(cartService, userService, couponService, productMapper,
-                inventoryBucketService, orderMapper, orderItemMapper, orderStatusLogMapper, rollbackLogMapper,
-                orderStateMachine, orderNoGenerator, redisTemplate, eventPublisher, selfProvider);
+        tradeService = new TradeServiceImpl(
+                cartService,
+                userService,
+                couponService,
+                productMapper,
+                inventoryBucketService,
+                orderMapper,
+                orderItemMapper,
+                orderStatusLogMapper,
+                rollbackLogMapper,
+                orderStateMachine,
+                orderNoGenerator,
+                redisTemplate,
+                eventPublisher,
+                selfProvider,
+                paymentRefundService);
+        // cancel / closeExpiredOrders 经 selfProvider 调「本类的事务方法」；
+        // 单测里让它指回自身实例，等价于代理自调用。
+        // 用 lenient：多数用例并不触发自调用，严格模式会误报 UnnecessaryStubbing
+        lenient().when(selfProvider.getObject()).thenReturn(tradeService);
     }
 
     private static CartItemVO cartItem(long id, long productId, String amount, boolean checked) {
@@ -187,8 +220,7 @@ class TradeServiceImplTest {
         void shouldReturnPayableAmount() {
             when(orderMapper.selectOne(any())).thenReturn(order(USER_ID, OrderStatus.PENDING_PAY.getCode(), "GM1"));
 
-            assertThat(tradeService.requirePayableAmount(USER_ID, "GM1"))
-                    .isEqualByComparingTo("5967.00");
+            assertThat(tradeService.requirePayableAmount(USER_ID, "GM1")).isEqualByComparingTo("5967.00");
         }
     }
 
@@ -209,9 +241,8 @@ class TradeServiceImplTest {
         @Test
         @DisplayName("默认只结算已勾选项，未勾选的不计入金额")
         void shouldOnlyIncludeCheckedItems() {
-            when(cartService.list(USER_ID)).thenReturn(List.of(
-                    cartItem(1L, 11L, "100.00", true),
-                    cartItem(2L, 12L, "50.00", false)));
+            when(cartService.list(USER_ID))
+                    .thenReturn(List.of(cartItem(1L, 11L, "100.00", true), cartItem(2L, 12L, "50.00", false)));
             when(userService.listAddresses(USER_ID)).thenReturn(List.of());
 
             PreOrderVO vo = tradeService.preOrder(USER_ID, new PreOrderDTO());
@@ -223,9 +254,8 @@ class TradeServiceImplTest {
         @Test
         @DisplayName("显式指定购物车项时按 ID 筛选，忽略勾选状态")
         void shouldFilterByExplicitIds() {
-            when(cartService.list(USER_ID)).thenReturn(List.of(
-                    cartItem(1L, 11L, "100.00", false),
-                    cartItem(2L, 12L, "50.00", false)));
+            when(cartService.list(USER_ID))
+                    .thenReturn(List.of(cartItem(1L, 11L, "100.00", false), cartItem(2L, 12L, "50.00", false)));
             when(userService.listAddresses(USER_ID)).thenReturn(List.of());
 
             PreOrderDTO dto = new PreOrderDTO();
@@ -285,7 +315,8 @@ class TradeServiceImplTest {
             UserCouponVO coupon = new UserCouponVO();
             coupon.setId(5L);
             coupon.setType("full");
-            when(couponService.requireUsable(eq(USER_ID), eq(5L), any(BigDecimal.class))).thenReturn(coupon);
+            when(couponService.requireUsable(eq(USER_ID), eq(5L), any(BigDecimal.class)))
+                    .thenReturn(coupon);
             when(couponService.calcGoodsDiscount(eq(coupon), any(BigDecimal.class)))
                     .thenReturn(new BigDecimal("30.00"));
 
@@ -306,8 +337,10 @@ class TradeServiceImplTest {
             UserCouponVO coupon = new UserCouponVO();
             coupon.setId(5L);
             coupon.setType("shipping");
-            when(couponService.requireUsable(eq(USER_ID), eq(5L), any(BigDecimal.class))).thenReturn(coupon);
-            when(couponService.calcGoodsDiscount(eq(coupon), any(BigDecimal.class))).thenReturn(BigDecimal.ZERO);
+            when(couponService.requireUsable(eq(USER_ID), eq(5L), any(BigDecimal.class)))
+                    .thenReturn(coupon);
+            when(couponService.calcGoodsDiscount(eq(coupon), any(BigDecimal.class)))
+                    .thenReturn(BigDecimal.ZERO);
 
             PreOrderDTO dto = new PreOrderDTO();
             dto.setCouponId(5L);
@@ -344,7 +377,8 @@ class TradeServiceImplTest {
             UserCouponVO coupon = new UserCouponVO();
             coupon.setId(5L);
             coupon.setType("full");
-            when(couponService.requireUsable(eq(USER_ID), eq(5L), any(BigDecimal.class))).thenReturn(coupon);
+            when(couponService.requireUsable(eq(USER_ID), eq(5L), any(BigDecimal.class)))
+                    .thenReturn(coupon);
             when(couponService.calcGoodsDiscount(eq(coupon), any(BigDecimal.class)))
                     .thenReturn(new BigDecimal("999.00"));
 
@@ -359,20 +393,20 @@ class TradeServiceImplTest {
         @DisplayName("默认地址优先取标记为默认的地址，否则取第一条")
         void shouldResolveDefaultAddress() {
             when(cartService.list(USER_ID)).thenReturn(List.of(cartItem(1L, 11L, "100.00", true)));
-            when(userService.listAddresses(USER_ID))
-                    .thenReturn(List.of(address(7L, 0), address(8L, 1)));
+            when(userService.listAddresses(USER_ID)).thenReturn(List.of(address(7L, 0), address(8L, 1)));
 
-            assertThat(tradeService.preOrder(USER_ID, new PreOrderDTO()).getDefaultAddressId()).isEqualTo(8L);
+            assertThat(tradeService.preOrder(USER_ID, new PreOrderDTO()).getDefaultAddressId())
+                    .isEqualTo(8L);
         }
 
         @Test
         @DisplayName("无默认地址标记时取第一条地址")
         void shouldFallbackToFirstAddress() {
             when(cartService.list(USER_ID)).thenReturn(List.of(cartItem(1L, 11L, "100.00", true)));
-            when(userService.listAddresses(USER_ID))
-                    .thenReturn(List.of(address(7L, 0), address(8L, 0)));
+            when(userService.listAddresses(USER_ID)).thenReturn(List.of(address(7L, 0), address(8L, 0)));
 
-            assertThat(tradeService.preOrder(USER_ID, new PreOrderDTO()).getDefaultAddressId()).isEqualTo(7L);
+            assertThat(tradeService.preOrder(USER_ID, new PreOrderDTO()).getDefaultAddressId())
+                    .isEqualTo(7L);
         }
 
         @Test
@@ -381,7 +415,8 @@ class TradeServiceImplTest {
             when(cartService.list(USER_ID)).thenReturn(List.of(cartItem(1L, 11L, "100.00", true)));
             when(userService.listAddresses(USER_ID)).thenReturn(List.of());
 
-            assertThat(tradeService.preOrder(USER_ID, new PreOrderDTO()).getDefaultAddressId()).isNull();
+            assertThat(tradeService.preOrder(USER_ID, new PreOrderDTO()).getDefaultAddressId())
+                    .isNull();
         }
 
         @Test
@@ -401,14 +436,19 @@ class TradeServiceImplTest {
         @Test
         @DisplayName("取消后回退库存并释放优惠券")
         void shouldRestoreStockAndReleaseCoupon() {
-            when(orderMapper.selectOne(any())).thenReturn(order(USER_ID, OrderStatus.PENDING_PAY.getCode(), "GM202610010001"));
+            when(orderMapper.selectOne(any()))
+                    .thenReturn(order(USER_ID, OrderStatus.PENDING_PAY.getCode(), "GM202610010001"));
             when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItem(11L, 2), orderItem(12L, 1)));
             when(rollbackLogMapper.tryInsert(anyString(), anyLong(), anyInt())).thenReturn(1);
 
             tradeService.cancel(USER_ID, "GM202610010001", "不想要了");
 
-            verify(orderStateMachine).transfer(any(Order.class), eq(OrderStatus.CANCELED),
-                    eq(OrderStateMachine.OPERATOR_USER), eq("不想要了"));
+            verify(orderStateMachine)
+                    .transfer(
+                            any(Order.class),
+                            eq(OrderStatus.CANCELED),
+                            eq(OrderStateMachine.OPERATOR_USER),
+                            eq("不想要了"));
             verify(productMapper).restoreStock(11L, 2);
             verify(productMapper).restoreStock(12L, 1);
             verify(couponService).releaseByOrderNo("GM202610010001");
@@ -422,8 +462,12 @@ class TradeServiceImplTest {
 
             tradeService.cancel(USER_ID, "GM1", "   ");
 
-            verify(orderStateMachine).transfer(any(Order.class), eq(OrderStatus.CANCELED),
-                    eq(OrderStateMachine.OPERATOR_USER), eq("用户取消订单"));
+            verify(orderStateMachine)
+                    .transfer(
+                            any(Order.class),
+                            eq(OrderStatus.CANCELED),
+                            eq(OrderStateMachine.OPERATOR_USER),
+                            eq("用户取消订单"));
         }
 
         @Test
@@ -472,13 +516,19 @@ class TradeServiceImplTest {
             Order second = order(USER_ID, OrderStatus.PENDING_PAY.getCode(), "GM-B");
             when(orderMapper.selectList(any())).thenReturn(List.of(first, second));
             lenient().when(orderItemMapper.selectList(any())).thenReturn(List.of(orderItem(11L, 1)));
-            lenient().when(rollbackLogMapper.tryInsert(anyString(), anyLong(), anyInt())).thenReturn(1);
+            lenient()
+                    .when(rollbackLogMapper.tryInsert(anyString(), anyLong(), anyInt()))
+                    .thenReturn(1);
 
             int closed = tradeService.closeExpiredOrders(100);
 
             assertThat(closed).isEqualTo(2);
-            verify(orderStateMachine, times(2)).transfer(any(Order.class), eq(OrderStatus.CANCELED),
-                    eq(OrderStateMachine.OPERATOR_SYSTEM), anyString());
+            verify(orderStateMachine, times(2))
+                    .transfer(
+                            any(Order.class),
+                            eq(OrderStatus.CANCELED),
+                            eq(OrderStateMachine.OPERATOR_SYSTEM),
+                            anyString());
             verify(couponService).releaseByOrderNo("GM-A");
             verify(couponService).releaseByOrderNo("GM-B");
         }
@@ -497,23 +547,21 @@ class TradeServiceImplTest {
 
             when(redisTemplate.opsForValue()).thenReturn(valueOps);
             when(valueOps.get(anyString())).thenReturn(null);
-            when(valueOps.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true);
+            when(valueOps.setIfAbsent(anyString(), anyString(), any(Duration.class)))
+                    .thenReturn(true);
 
             TradeServiceImpl delegate = mock(TradeServiceImpl.class);
             when(selfProvider.getObject()).thenReturn(delegate);
             when(delegate.doSubmit(anyLong(), any(), anyString(), any(Duration.class)))
                     .thenThrow(new IllegalStateException("模拟写库失败"));
 
-            assertThatThrownBy(() -> tradeService.submit(USER_ID, dto))
-                    .isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> tradeService.submit(USER_ID, dto)).isInstanceOf(IllegalStateException.class);
 
             // 说明：失败释放走 Lua 脚本，且脚本入参是「本请求写入的占位令牌」
             ArgumentCaptor<String> token = ArgumentCaptor.forClass(String.class);
-            verify(redisTemplate).execute(org.mockito.ArgumentMatchers.<RedisScript<Long>>any(),
-                    anyList(), token.capture());
-            assertThat(token.getValue())
-                    .as("占位值必须带唯一令牌，才能保证只删自己的")
-                    .startsWith("__PENDING__:");
+            verify(redisTemplate)
+                    .execute(org.mockito.ArgumentMatchers.<RedisScript<Long>>any(), anyList(), token.capture());
+            assertThat(token.getValue()).as("占位值必须带唯一令牌，才能保证只删自己的").startsWith("__PENDING__:");
 
             // 关键断言：不能用裸 DEL —— 那会在占位过期后误删他人的重新占位
             verify(redisTemplate, never()).delete(anyString());

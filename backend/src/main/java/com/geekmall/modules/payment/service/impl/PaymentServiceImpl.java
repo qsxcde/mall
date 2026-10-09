@@ -5,23 +5,27 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.geekmall.common.enums.PayMethod;
 import com.geekmall.common.exception.BizException;
 import com.geekmall.common.result.ResultCode;
+import com.geekmall.modules.payment.channel.PaymentChannelClient;
+import com.geekmall.modules.payment.config.PaymentProperties;
 import com.geekmall.modules.payment.dto.CreatePaymentDTO;
-import com.geekmall.modules.payment.dto.PayCallbackDTO;
 import com.geekmall.modules.payment.entity.PaymentRecord;
 import com.geekmall.modules.payment.mapper.PaymentRecordMapper;
+import com.geekmall.modules.payment.service.PaymentRefundService;
 import com.geekmall.modules.payment.service.PaymentService;
+import com.geekmall.modules.payment.support.ChannelNotify;
 import com.geekmall.modules.payment.vo.PaymentVO;
 import com.geekmall.modules.trade.service.TradeService;
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 支付服务实现。
@@ -31,28 +35,66 @@ import java.util.concurrent.ThreadLocalRandom;
 @RequiredArgsConstructor
 public class PaymentServiceImpl implements PaymentService {
 
+    /** 支付宝对异步通知的应答约定：成功必须是裸字符串 {@code success}。 */
+    private static final String NOTIFY_SUCCESS = "success";
+
+    private static final String NOTIFY_FAILURE = "failure";
+
     private static final int STATUS_PENDING = 0;
     private static final int STATUS_SUCCESS = 1;
+    private static final int STATUS_CLOSED = 3;
+
+    /** 渠道要求支付超时最短 1 分钟（支付宝 timeout_express 下限）。 */
+    private static final long MIN_PREPAY_TIMEOUT_SECONDS = 60L;
+
+    private static final int MAX_CONTENT_LENGTH = 2000;
 
     private final PaymentRecordMapper paymentRecordMapper;
     private final TradeService tradeService;
+    private final PaymentRefundService paymentRefundService;
+    private final PaymentChannelClient paymentChannel;
+    private final PaymentProperties paymentProperties;
 
+    /**
+     * 创建支付单。
+     *
+     * <p>刻意<b>不加事务</b>：预下单是对渠道网关的网络调用，放进事务会长时间持有数据库连接与行锁。</p>
+     */
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public PaymentVO create(Long userId, CreatePaymentDTO dto) {
         // 让交易域校验订单归属与可支付状态，金额以服务端订单为准，禁止信任客户端
         BigDecimal amount = tradeService.requirePayableAmount(userId, dto.getOrderNo());
+        String payMethod = StringUtils.hasText(dto.getPayMethod()) ? dto.getPayMethod() : PayMethod.DEFAULT_CODE;
+        String channel = paymentChannel.channelCode();
 
-        String payMethod = StringUtils.hasText(dto.getPayMethod()) ? dto.getPayMethod() : "wechat";
+        // 复用未过期的待支付单：前端切换支付方式会重新 create，
+        // 不复用就会对同一订单产生多张可付的渠道订单，用户可能付两笔
+        PaymentRecord reusable = findReusable(dto.getOrderNo(), payMethod, channel);
+        if (reusable != null) {
+            log.info("支付单复用：订单 {} 已有待支付单 {}（{}）", dto.getOrderNo(), reusable.getTradeNo(), channel);
+            return toVO(reusable);
+        }
+
+        String tradeNo = generateTradeNo();
+        // 支付超时取订单剩余时间：写死固定值会让渠道订单比本地订单活得久，
+        // 制造「本地订单已超时关闭，二维码却还能付款」的场景
+        long remainSeconds = Math.max(MIN_PREPAY_TIMEOUT_SECONDS, tradeService.remainingPaySeconds(dto.getOrderNo()));
+        PaymentChannelClient.PrepayResult prepay = paymentChannel.prepay(
+                tradeNo, amount, "极客数码商城订单 " + dto.getOrderNo(), Duration.ofSeconds(remainSeconds));
+
         PaymentRecord record = new PaymentRecord();
-        record.setTradeNo(generateTradeNo());
+        record.setTradeNo(tradeNo);
         record.setOrderNo(dto.getOrderNo());
         record.setUserId(userId);
         record.setPayMethod(payMethod);
+        record.setChannel(channel);
+        record.setPrepayQr(prepay.qrCode());
         record.setAmount(amount);
         record.setStatus(STATUS_PENDING);
+        record.setRefundStatus(0);
+        record.setRefundAmount(BigDecimal.ZERO);
         paymentRecordMapper.insert(record);
-        log.info("创建支付单 {}，订单 {}，金额 ¥{}", record.getTradeNo(), record.getOrderNo(), amount);
+        log.info("创建支付单 {}，订单 {}，渠道 {}，金额 ¥{}", tradeNo, dto.getOrderNo(), channel, amount);
         return toVO(record);
     }
 
@@ -62,79 +104,199 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void mockPay(Long userId, String tradeNo) {
         PaymentRecord record = requireOwnRecord(userId, tradeNo);
-        PayCallbackDTO callback = new PayCallbackDTO();
-        callback.setTradeNo(record.getTradeNo());
-        callback.setOrderNo(record.getOrderNo());
-        callback.setAmount(record.getAmount());
-        callback.setStatus(STATUS_SUCCESS);
-        callback.setSign("mock");
-        handleCallback(callback);
+        if (paymentChannel.supportsSimulatedPayment()) {
+            // 本地渠道：签一份「渠道侧支付成功」通知投递给自己，等价于真实回调
+            Map<String, String> params = paymentChannel.simulatePaidNotify(
+                    record.getTradeNo(), "LOCAL" + record.getTradeNo(), record.getAmount());
+            if (!NOTIFY_SUCCESS.equals(handleNotify(params))) {
+                throw new BizException(ResultCode.BIZ_ERROR, "模拟付款失败");
+            }
+            return;
+        }
+        // 真实渠道没有「我已支付」按钮的语义，改为主动查单刷新
+        queryAndApply(record);
+    }
+
+    /**
+     * 处理渠道异步通知。
+     *
+     * <p>契约：<b>只返回裸字符串、永不向外抛异常</b>。抛异常会走全局异常处理器返回 JSON，
+     * 渠道按失败处理并反复重试。</p>
+     */
+    @Override
+    public String handleNotify(Map<String, String> params) {
+        try {
+            if (!paymentChannel.verifyNotify(params)) {
+                log.warn("[支付回调] 验签失败：out_trade_no={}", params.get("out_trade_no"));
+                return NOTIFY_FAILURE;
+            }
+            ChannelNotify notify = ChannelNotify.parse(params);
+            if (!StringUtils.hasText(notify.outTradeNo())) {
+                log.warn("[支付回调] 通知缺少 out_trade_no");
+                return NOTIFY_FAILURE;
+            }
+
+            PaymentRecord record = findByTradeNo(notify.outTradeNo());
+            if (record == null) {
+                // 非本系统的通知：应答 success，避免渠道做无意义的重试轰炸
+                log.warn("[支付回调] 支付单不存在，忽略：{}", notify.outTradeNo());
+                return NOTIFY_SUCCESS;
+            }
+            if (record.getStatus() != null && record.getStatus() == STATUS_SUCCESS) {
+                log.info("[支付回调] 支付单 {} 已成功，忽略重复通知", notify.outTradeNo());
+                return NOTIFY_SUCCESS;
+            }
+            // 金额必须一致，防伪造（out_trade_no 即平台流水号，映射关系唯一）
+            if (notify.amount() == null
+                    || record.getAmount() == null
+                    || notify.amount().compareTo(record.getAmount()) != 0) {
+                log.warn("[支付回调] 金额不一致：通知 {} vs 支付单 {}", notify.amount(), record.getAmount());
+                return NOTIFY_FAILURE;
+            }
+            if (notify.isWaitBuyerPay()) {
+                // 中间态：不动状态，但必须应答 success，否则渠道会一直重推
+                log.info("[支付回调] 支付单 {} 处于等待付款中间态，不改状态", notify.outTradeNo());
+                return NOTIFY_SUCCESS;
+            }
+            if (notify.isClosed()) {
+                markClosed(record, "渠道关闭通知");
+                return NOTIFY_SUCCESS;
+            }
+            if (!notify.isPaid()) {
+                log.warn("[支付回调] 未识别的交易状态 {}，忽略", notify.tradeStatus());
+                return NOTIFY_SUCCESS;
+            }
+            applySuccess(record, notify.channelTradeNo(), summarize(params));
+            return NOTIFY_SUCCESS;
+        } catch (Exception e) {
+            log.error("[支付回调] 处理异常", e);
+            return NOTIFY_FAILURE;
+        }
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class, timeout = 10)
-    public void handleCallback(PayCallbackDTO dto) {
-        PaymentRecord record = paymentRecordMapper.selectOne(new LambdaQueryWrapper<PaymentRecord>()
-                .eq(PaymentRecord::getTradeNo, dto.getTradeNo())
-                .last("limit 1"));
-        if (record == null) {
-            throw new BizException(ResultCode.NOT_FOUND, "支付单不存在：" + dto.getTradeNo());
+    public int compensatePending(int batchSize) {
+        LocalDateTime now = LocalDateTime.now();
+        PaymentProperties.Compensation cfg = paymentProperties.getCompensation();
+        List<PaymentRecord> pendings = paymentRecordMapper.selectList(new LambdaQueryWrapper<PaymentRecord>()
+                .eq(PaymentRecord::getStatus, STATUS_PENDING)
+                .lt(PaymentRecord::getCreateTime, now.minusSeconds(cfg.getMinAgeSeconds()))
+                .gt(PaymentRecord::getCreateTime, now.minusSeconds(cfg.getMaxAgeSeconds()))
+                .orderByAsc(PaymentRecord::getId)
+                .last("limit " + Math.max(1, batchSize)));
+        int changed = 0;
+        for (PaymentRecord pending : pendings) {
+            try {
+                if (queryAndApply(pending)) {
+                    changed++;
+                }
+            } catch (Exception e) {
+                // 单笔失败不中断整批
+                log.warn("支付单 {} 主动查单失败", pending.getTradeNo(), e);
+            }
         }
-
-        // 幂等：渠道会重复通知，已成功的直接返回
-        if (record.getStatus() != null && record.getStatus() == STATUS_SUCCESS) {
-            log.info("支付单 {} 已处理成功，忽略重复回调", dto.getTradeNo());
-            return;
+        if (changed > 0) {
+            log.info("[支付补偿] 主动查单修正 {} 笔（本批扫描 {} 笔）", changed, pendings.size());
         }
-
-        // 校验金额与订单号，防止伪造回调
-        if (dto.getAmount() == null || record.getAmount() == null
-                || dto.getAmount().compareTo(record.getAmount()) != 0) {
-            throw new BizException(ResultCode.BIZ_ERROR, "回调金额与支付单不一致");
-        }
-        if (StringUtils.hasText(dto.getOrderNo()) && !dto.getOrderNo().equals(record.getOrderNo())) {
-            throw new BizException(ResultCode.BIZ_ERROR, "回调订单号与支付单不一致");
-        }
-        // TODO 接入真实渠道时在此校验渠道签名（RSA/HMAC）与 out_trade_no
-
-        if (dto.getStatus() != null && dto.getStatus() != STATUS_SUCCESS) {
-            PaymentRecord failed = new PaymentRecord();
-            failed.setId(record.getId());
-            failed.setStatus(2);
-            failed.setCallbackTime(LocalDateTime.now());
-            failed.setCallbackContent("支付失败回调：" + dto.getTradeNo());
-            paymentRecordMapper.updateById(failed);
-            log.warn("支付单 {} 回调为失败状态", dto.getTradeNo());
-            return;
-        }
-
-        PaymentRecord update = new PaymentRecord();
-        update.setStatus(STATUS_SUCCESS);
-        update.setCallbackTime(LocalDateTime.now());
-        update.setCallbackContent("tradeNo=" + dto.getTradeNo() + ",amount=" + dto.getAmount());
-        // P1-7：check-then-update 改为 CAS 条件更新，并发/重复回调只有一个能成功落状态
-        int rows = paymentRecordMapper.update(update, new LambdaUpdateWrapper<PaymentRecord>()
-                .eq(PaymentRecord::getId, record.getId())
-                .ne(PaymentRecord::getStatus, STATUS_SUCCESS));
-        if (rows == 0) {
-            log.info("支付单 {} 已被并发处理为成功，忽略重复回调", dto.getTradeNo());
-            return;
-        }
-
-        // 驱动订单流转：待付款 → 待发货
-        // 注意：若订单已被超时关闭，此处会抛异常并回滚，真实场景应转为退款流程
-        tradeService.markPaid(record.getOrderNo(), record.getTradeNo(), record.getPayMethod());
+        return changed;
     }
 
     /* ------------------------------ 私有方法 ------------------------------ */
 
-    private PaymentRecord requireOwnRecord(Long userId, String tradeNo) {
-        PaymentRecord record = paymentRecordMapper.selectOne(new LambdaQueryWrapper<PaymentRecord>()
+    /**
+     * 落账：CAS 置成功 → 驱动订单 → 订单已关闭则转退款。
+     *
+     * <p>回调与主动查单都收敛到本方法，{@code status != 1} 的条件更新是「只落账一次」的唯一判定。</p>
+     */
+    private void applySuccess(PaymentRecord record, String channelTradeNo, String content) {
+        PaymentRecord update = new PaymentRecord();
+        update.setStatus(STATUS_SUCCESS);
+        if (StringUtils.hasText(channelTradeNo)) {
+            update.setChannelTradeNo(channelTradeNo);
+        }
+        update.setCallbackTime(LocalDateTime.now());
+        update.setCallbackContent(cap(content));
+        int rows = paymentRecordMapper.update(
+                update,
+                new LambdaUpdateWrapper<PaymentRecord>()
+                        .eq(PaymentRecord::getId, record.getId())
+                        .ne(PaymentRecord::getStatus, STATUS_SUCCESS));
+        if (rows == 0) {
+            log.info("支付单 {} 已被并发处理为成功，忽略", record.getTradeNo());
+            return;
+        }
+        record.setStatus(STATUS_SUCCESS);
+        if (StringUtils.hasText(channelTradeNo)) {
+            record.setChannelTradeNo(channelTradeNo);
+        }
+
+        TradeService.PaymentApplyResult result =
+                tradeService.applyPayment(record.getOrderNo(), record.getTradeNo(), record.getPayMethod());
+        if (result == TradeService.PaymentApplyResult.ORDER_CLOSED) {
+            // 钱收到了但订单已关闭 —— 资金必须有出路
+            log.warn("订单 {} 已关闭，支付单 {} 转退款", record.getOrderNo(), record.getTradeNo());
+            paymentRefundService.refundForClosedOrder(record, "订单已关闭，支付成功转退款");
+        }
+    }
+
+    private void markClosed(PaymentRecord record, String content) {
+        PaymentRecord update = new PaymentRecord();
+        update.setStatus(STATUS_CLOSED);
+        update.setCallbackContent(cap(content));
+        int rows = paymentRecordMapper.update(
+                update,
+                new LambdaUpdateWrapper<PaymentRecord>()
+                        .eq(PaymentRecord::getId, record.getId())
+                        .ne(PaymentRecord::getStatus, STATUS_SUCCESS));
+        if (rows > 0) {
+            log.info("支付单 {} 已置为关闭", record.getTradeNo());
+        }
+    }
+
+    /** 主动向渠道查单并按结果落账；返回是否发生状态变更。 */
+    private boolean queryAndApply(PaymentRecord record) {
+        PaymentChannelClient.ChannelTradeState state = paymentChannel.query(record.getTradeNo());
+        return switch (state.status()) {
+            case SUCCESS -> {
+                if (state.amount() != null
+                        && record.getAmount() != null
+                        && state.amount().compareTo(record.getAmount()) != 0) {
+                    log.warn(
+                            "支付单 {} 主动查单金额不一致：渠道 {} vs 本地 {}", record.getTradeNo(), state.amount(), record.getAmount());
+                    yield false;
+                }
+                applySuccess(record, state.channelTradeNo(), "主动查单确认支付成功");
+                yield true;
+            }
+            case CLOSED -> {
+                markClosed(record, "主动查单确认已关闭");
+                yield true;
+            }
+            case WAIT_PAY, NOT_FOUND -> false;
+        };
+    }
+
+    /** 查找同一订单 + 同一方式 + 同一渠道下未过期的待支付单。 */
+    private PaymentRecord findReusable(String orderNo, String payMethod, String channel) {
+        return paymentRecordMapper.selectOne(new LambdaQueryWrapper<PaymentRecord>()
+                .eq(PaymentRecord::getOrderNo, orderNo)
+                .eq(PaymentRecord::getPayMethod, payMethod)
+                .eq(PaymentRecord::getChannel, channel)
+                .eq(PaymentRecord::getStatus, STATUS_PENDING)
+                .orderByDesc(PaymentRecord::getId)
+                .last("limit 1"));
+    }
+
+    private PaymentRecord findByTradeNo(String tradeNo) {
+        return paymentRecordMapper.selectOne(new LambdaQueryWrapper<PaymentRecord>()
                 .eq(PaymentRecord::getTradeNo, tradeNo)
                 .last("limit 1"));
+    }
+
+    private PaymentRecord requireOwnRecord(Long userId, String tradeNo) {
+        PaymentRecord record = findByTradeNo(tradeNo);
         if (record == null || !record.getUserId().equals(userId)) {
             throw new BizException(ResultCode.NOT_FOUND, "支付单不存在：" + tradeNo);
         }
@@ -150,13 +312,28 @@ public class PaymentServiceImpl implements PaymentService {
         vo.setPayMethodLabel(PayMethod.labelOf(record.getPayMethod()));
         vo.setStatus(record.getStatus());
         vo.setStatusText(statusText(record.getStatus()));
+        vo.setChannel(record.getChannel());
+        vo.setRefundStatus(record.getRefundStatus());
         vo.setCallbackTime(record.getCallbackTime());
         vo.setExpireSecondsLeft(0L);
-        // 扫码类支付返回二维码内容，骨架阶段用占位串；接入渠道后替换为真实 code_url
-        if ("wechat".equals(record.getPayMethod()) || "alipay".equals(record.getPayMethod())) {
-            vo.setQrCode("https://pay.geekmall.local/qr?tradeNo=" + record.getTradeNo());
-        }
+        // 二维码来自渠道预下单（本地渠道为本地串，支付宝为真实 qr_code）
+        vo.setQrCode(record.getPrepayQr());
         return vo;
+    }
+
+    /** 只留关键字段做留痕，避免把整份通知（含 fund_bill_list）塞进 2000 字符的列。 */
+    private String summarize(Map<String, String> params) {
+        return "out_trade_no=" + params.get("out_trade_no")
+                + ",trade_no=" + params.get("trade_no")
+                + ",trade_status=" + params.get("trade_status")
+                + ",total_amount=" + params.get("total_amount");
+    }
+
+    private String cap(String content) {
+        if (content == null) {
+            return null;
+        }
+        return content.length() <= MAX_CONTENT_LENGTH ? content : content.substring(0, MAX_CONTENT_LENGTH);
     }
 
     private String statusText(Integer status) {
