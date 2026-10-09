@@ -30,7 +30,7 @@
 | 运行时 | JDK 21 |
 | 框架 | Spring Boot 3.3.5 |
 | 安全 | Spring Security 6 + JWT 无状态（Redis 保存会话，支持登出踢下线） |
-| 持久层 | MyBatis-Plus + MySQL 8 + Flyway（12 个版本化迁移，代码与库结构同源） |
+| 持久层 | MyBatis-Plus + MySQL 8 + Flyway（13 个版本化迁移，代码与库结构同源） |
 | 缓存 | Redis 7（分级 TTL + 本地 Caffeine L1） |
 | 分布式 | Redis Stream（秒杀削峰队列）、ShedLock（定时任务互斥） |
 | 可观测性 | Actuator + Micrometer/Prometheus + 结构化 JSON 日志 + TraceId 全链路（跨线程 / 跨队列） |
