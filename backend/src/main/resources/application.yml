@@ -244,8 +244,17 @@ mall:
       min-age-seconds: 60
       # 超过 30 分钟仍未支付的不再查（多半本地已关闭）
       max-age-seconds: 1800
-      initial-delay-ms: 60000
-      interval-ms: 60000
+      initial-delay-ms: 15000
+      # 无公网回调通道时的兜底节奏：15s 一轮（有回调时它只是安全网，可以调大）
+      interval-ms: 15000
+    # 「查询支付状态时顺带主动查单」—— 没有内网穿透（回调打不进来）时的主链路：
+    # 用户付款后由前端轮询驱动我们主动问支付宝要结果，延迟通常 < 5s
+    status-query:
+      enabled: true
+      # 同一支付单的查单节流窗口：防止多页面轮询打爆网关、误触发熔断。
+      # 这里刻意没有「创建满 N 秒」的前置过滤 —— create_time 由数据库时钟生成，
+      # 与应用时钟的毫秒级漂移会让刚写入的行「比现在还新」，从而静默跳过查单
+      throttle-seconds: 5
 
 springdoc:
   api-docs:

@@ -42,9 +42,13 @@ mall:
     channel: local
     compensation:
       # 关掉定时调度（避免测试期间被并发触发）；补偿逻辑由测试直接调 compensatePending 验证。
-      # min-age 设为 0，让刚创建的支付单也能进入扫描窗口
+      # min-age 保持 60s（与生产一致）：测试用「回拨创建时间」把支付单造成‘放了一会儿’的样子，
+      # 而不是靠把窗口调成 0（那会让判断贴在「应用时钟 vs 数据库时钟」的边界上，必然抖动）
       enabled: false
-      min-age-seconds: 0
+      min-age-seconds: 60
+    status-query:
+      enabled: true
+      throttle-seconds: 5
 
 logging:
   level:
