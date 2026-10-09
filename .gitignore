@@ -35,3 +35,8 @@ loadtest/k6/data/
 
 # ---------- 临时打包产物（不入库）----------
 loadtest.zip
+
+# ---------- Python 字节码缓存（产物，不入库）----------
+# loadtest/scripts/__pycache__ 下的 .pyc 曾被误提交，已 git rm --cached 清理。
+__pycache__/
+*.py[cod]
