@@ -5,8 +5,7 @@ package com.geekmall.common.constant;
  */
 public final class RedisKeys {
 
-    private RedisKeys() {
-    }
+    private RedisKeys() {}
 
     /** 短信验证码：mall:sms:code:{scene}:{phone} */
     public static final String SMS_CODE = "mall:sms:code:";
@@ -54,6 +53,19 @@ public final class RedisKeys {
 
     /** 订单号号段（多实例安全发号）：mall:order:no:segment */
     public static final String ORDER_NO_SEGMENT = "mall:order:no:segment";
+
+    /**
+     * 主动查单节流：mall:pay:query:throttle:{tradeNo}
+     *
+     * <p>无公网回调通道时，前端轮询 /pay/{tradeNo}/status 会顺带触发一次主动查单 ——
+     * 用该 key（SET NX + 短 TTL）把「同一支付单」的查询频率限制住，
+     * 否则一个用户开着多个页面就能把支付宝网关打爆、并误触发熔断。</p>
+     */
+    public static final String PAY_QUERY_THROTTLE = "mall:pay:query:throttle:";
+
+    public static String payQueryThrottle(String tradeNo) {
+        return PAY_QUERY_THROTTLE + tradeNo;
+    }
 
     /** 缓存重建互斥锁：mall:cache:lock:{cacheName}:{cacheKey}（防缓存击穿） */
     public static final String CACHE_LOCK = "mall:cache:lock:";

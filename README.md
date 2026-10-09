@@ -78,7 +78,7 @@
 
 ### 1.5 质量与验证
 
-- **48 个测试类**（+1 基类，共 **587 个用例**），`mvn test` 一键运行全绿；集成测试用 Testcontainers 起**真实 MySQL 8 + Redis 7**，跑真实 Flyway 迁移与真实过滤器链
+- **48 个测试类**（+1 基类，共 **589 个用例**），`mvn test` 一键运行全绿；集成测试用 Testcontainers 起**真实 MySQL 8 + Redis 7**，跑真实 Flyway 迁移与真实过滤器链
 - **代码风格有工具约束且已接入 CI**：后端 Spotless + palantir-java-format，前端 ESLint 9（flat config）+ Prettier 3。
   两边都用 **ratchet**（只约束「相对基线有改动的文件」）——因为全库重排会产生覆盖数百文件的 diff，
   而 ratchet 既能让 CI 立刻变绿，又能让此后每次改动自动收敛到统一风格

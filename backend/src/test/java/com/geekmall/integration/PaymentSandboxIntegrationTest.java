@@ -3,6 +3,7 @@ package com.geekmall.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.geekmall.common.constant.RedisKeys;
 import com.geekmall.common.enums.OrderStatus;
 import com.geekmall.modules.payment.channel.LocalSandboxChannel;
 import com.geekmall.modules.payment.entity.PaymentRecord;
@@ -16,11 +17,17 @@ import com.geekmall.modules.trade.entity.Order;
 import com.geekmall.modules.trade.mapper.OrderMapper;
 import com.geekmall.support.AbstractIntegrationTest;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -201,7 +208,9 @@ class PaymentSandboxIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("回调丢失时主动查单补偿落账；重复执行只落账一次")
     void compensationAppliesOnceEvenIfRunTwice() {
         Scenario s = newOrder("55.00");
-        // 模拟「用户已付款但回调没到」：渠道侧已支付，本地仍是待支付
+        // 模拟「用户已付款但回调没到」：渠道侧已支付，本地仍是待支付。
+        // 把创建时间回拨，贴近真实场景（卡住的支付单通常已经放了一会儿）
+        backdatePayment(s.tradeNo(), LocalDateTime.now().minusMinutes(5));
         localChannel.markPaid(s.tradeNo(), "CH" + s.tradeNo(), new BigDecimal("55.00"));
 
         assertThat(paymentService.compensatePending(200)).as("应有 1 笔被修正").isEqualTo(1);
@@ -210,6 +219,58 @@ class PaymentSandboxIntegrationTest extends AbstractIntegrationTest {
 
         // 再跑一遍：已不再是待支付，不应重复落账
         assertThat(paymentService.compensatePending(200)).as("幂等：第二次为 0").isZero();
+    }
+
+    /* ============================ 无回调通道：状态轮询驱动查单 ============================ */
+
+    @Test
+    @DisplayName("没有公网回调通道时：查状态会驱动主动查单，并按节流窗口防重")
+    void statusQueryDrivesPaymentWhenCallbackLost() {
+        Scenario s = newOrder("44.00");
+        localChannel.markPaid(s.tradeNo(), "CH" + s.tradeNo(), new BigDecimal("44.00"));
+        stringRedisTemplate.delete(RedisKeys.payQueryThrottle(s.tradeNo()));
+
+        // 用户付款后只轮询状态（回调打不进来），应被主动查单捞回来
+        var status = assertSuccess(get("/api/v1/pay/" + s.tradeNo() + "/status", s.token()));
+        assertThat(status.get("status").asInt()).isEqualTo(1);
+        assertThat(reloadOrder(s.orderNo()).getStatus()).isEqualTo(OrderStatus.PENDING_SHIP.getCode());
+
+        // 节流闸门已生效：窗口内同一支付单不会再次查网关（否则多页面轮询会打爆网关）
+        assertThat(stringRedisTemplate.hasKey(RedisKeys.payQueryThrottle(s.tradeNo())))
+                .as("节流 key 存在，说明本次确实发起了查单并设置了窗口")
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("回调与主动查单并发到达：只落账一次，不产生退款")
+    void notifyAndQueryConcurrentlyApplyOnce() throws Exception {
+        Scenario s = newOrder("123.00");
+        localChannel.markPaid(s.tradeNo(), "CH" + s.tradeNo(), new BigDecimal("123.00"));
+        Map<String, String> notify = signed(s, "TRADE_SUCCESS", "123.00");
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            Future<String> byNotify = pool.submit(() -> {
+                start.await();
+                return paymentService.handleNotify(notify);
+            });
+            Future<Integer> byQuery = pool.submit(() -> {
+                start.await();
+                return paymentService.compensatePending(200);
+            });
+            start.countDown();
+
+            assertThat(byNotify.get(15, TimeUnit.SECONDS)).isEqualTo(SUCCESS);
+            byQuery.get(15, TimeUnit.SECONDS);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        // 两条入口共用 `status != 1` 的条件更新，只有一个能落账；不应出现二次流转或误退款
+        assertThat(reloadOrder(s.orderNo()).getStatus()).isEqualTo(OrderStatus.PENDING_SHIP.getCode());
+        assertThat(reloadPayment(s.tradeNo()).getStatus()).isEqualTo(1);
+        assertThat(refundCount(s.tradeNo())).isZero();
     }
 
     /* ============================ 夹具 ============================ */
@@ -321,6 +382,15 @@ class PaymentSandboxIntegrationTest extends AbstractIntegrationTest {
     private long refundCount(String tradeNo) {
         return refundRecordMapper.selectCount(
                 new LambdaQueryWrapper<PaymentRefundRecord>().eq(PaymentRefundRecord::getTradeNo, tradeNo));
+    }
+
+    /** 回拨支付单创建时间，用于把支付单造成「放了一会儿还没回调」的样子。 */
+    private void backdatePayment(String tradeNo, LocalDateTime createTime) {
+        PaymentRecord record = reloadPayment(tradeNo);
+        PaymentRecord update = new PaymentRecord();
+        update.setId(record.getId());
+        update.setCreateTime(createTime);
+        paymentRecordMapper.updateById(update);
     }
 
     /** 一次下单场景的上下文。 */

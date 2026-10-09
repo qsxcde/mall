@@ -2,6 +2,7 @@ package com.geekmall.modules.payment.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.geekmall.common.constant.RedisKeys;
 import com.geekmall.common.enums.PayMethod;
 import com.geekmall.common.exception.BizException;
 import com.geekmall.common.result.ResultCode;
@@ -24,6 +25,7 @@ import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -54,6 +56,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentRefundService paymentRefundService;
     private final PaymentChannelClient paymentChannel;
     private final PaymentProperties paymentProperties;
+    private final StringRedisTemplate redisTemplate;
 
     /**
      * 创建支付单。
@@ -100,7 +103,8 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     public PaymentVO query(Long userId, String tradeNo) {
-        return toVO(requireOwnRecord(userId, tradeNo));
+        PaymentRecord record = requireOwnRecord(userId, tradeNo);
+        return toVO(queryChannelIfNeeded(record));
     }
 
     @Override
@@ -182,7 +186,8 @@ public class PaymentServiceImpl implements PaymentService {
         PaymentProperties.Compensation cfg = paymentProperties.getCompensation();
         List<PaymentRecord> pendings = paymentRecordMapper.selectList(new LambdaQueryWrapper<PaymentRecord>()
                 .eq(PaymentRecord::getStatus, STATUS_PENDING)
-                .lt(PaymentRecord::getCreateTime, now.minusSeconds(cfg.getMinAgeSeconds()))
+                // 「创建满 N 秒」用 <= ：create_time 是秒精度，用 < 会让「恰好同一秒创建」的单被漏掉
+                .le(PaymentRecord::getCreateTime, now.minusSeconds(cfg.getMinAgeSeconds()))
                 .gt(PaymentRecord::getCreateTime, now.minusSeconds(cfg.getMaxAgeSeconds()))
                 .orderByAsc(PaymentRecord::getId)
                 .last("limit " + Math.max(1, batchSize)));
@@ -276,6 +281,44 @@ public class PaymentServiceImpl implements PaymentService {
             }
             case WAIT_PAY, NOT_FOUND -> false;
         };
+    }
+
+    /**
+     * 无公网回调通道（内网穿透）时的主链路：前端轮询状态时顺带主动查单。
+     *
+     * <p>保护措施：只查待支付单 + 同一支付单在 {@code throttle-seconds} 内最多查一次
+     * （Redis SET NX）—— 否则一个用户开多个页面就能把网关打爆、并误触发熔断。</p>
+     *
+     * <p><b>刻意不用「创建满 N 秒」做前置过滤</b>：{@code create_time} 由数据库的
+     * {@code CURRENT_TIMESTAMP} 生成并截断到秒，而比较基准是 JVM 的 {@code now}。
+     * 应用与数据库的时钟只要有毫秒级漂移（NTP 同步误差、容器时钟偏移都会造成），
+     * 刚写入的行就可能「比现在还新」，导致查单被静默跳过。
+     * 真正需要的保护是节流，不是这个时间窗。</p>
+     *
+     * <p>查单失败（网关异常 / 熔断打开）不影响「查状态」：吞掉异常，等下一轮或补偿任务再试。</p>
+     */
+    private PaymentRecord queryChannelIfNeeded(PaymentRecord record) {
+        PaymentProperties.StatusQuery cfg = paymentProperties.getStatusQuery();
+        if (!cfg.isEnabled() || record.getStatus() == null || record.getStatus() != STATUS_PENDING) {
+            return record;
+        }
+        Boolean acquired = redisTemplate
+                .opsForValue()
+                .setIfAbsent(
+                        RedisKeys.payQueryThrottle(record.getTradeNo()),
+                        "1",
+                        Duration.ofSeconds(cfg.getThrottleSeconds()));
+        if (!Boolean.TRUE.equals(acquired)) {
+            return record;
+        }
+        try {
+            if (queryAndApply(record)) {
+                return findByTradeNo(record.getTradeNo());
+            }
+        } catch (Exception e) {
+            log.warn("支付单 {} 查询状态时主动查单失败：{}", record.getTradeNo(), e.getMessage());
+        }
+        return record;
     }
 
     /** 查找同一订单 + 同一方式 + 同一渠道下未过期的待支付单。 */

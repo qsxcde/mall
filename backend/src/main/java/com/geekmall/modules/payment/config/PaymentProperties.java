@@ -23,6 +23,8 @@ public class PaymentProperties {
 
     private Compensation compensation = new Compensation();
 
+    private StatusQuery statusQuery = new StatusQuery();
+
     @Data
     public static class Compensation {
 
@@ -37,6 +39,22 @@ public class PaymentProperties {
 
         /** 超过该秒数仍未支付的单不再查（多半已本地关闭，查了也无意义）。 */
         private long maxAgeSeconds = 1800;
+    }
+
+    /**
+     * 「查询支付状态时顺带主动查单」—— 无公网回调通道（内网穿透）时的主链路。
+     *
+     * <p>用户付款后，前端的 3s 轮询会驱动我们主动问支付宝要结果，
+     * 因此不必等补偿任务那 15s 一轮；代价是需要在有用户在页面上等待时才发生。</p>
+     */
+    @Data
+    public static class StatusQuery {
+
+        /** 是否启用（关掉后 /status 只读本地库，行为回到纯轮询补偿）。 */
+        private boolean enabled = true;
+
+        /** 同一支付单的查单节流窗口（秒），防止多页面轮询打爆网关。 */
+        private long throttleSeconds = 5;
     }
 
     @Data
