@@ -12,10 +12,10 @@
 | 维度 | 说明 |
 | --- | --- |
 | 项目定位 | 三端齐备的数码 3C 电商学习项目：**买家端 + 商家端 + 后端**，重点在后端高并发治理 |
-| 后端 | Spring Boot 3.3.5 + JDK 21 + MyBatis-Plus + MySQL 8 + Redis 7，132 个 REST 接口，统一前缀 `/api/v1` |
+| 后端 | Spring Boot 3.3.5 + JDK 21 + MyBatis-Plus + MySQL 8 + Redis 7，133 个 REST 接口，统一前缀 `/api/v1` |
 | 前端 | Vue 3 + Vite + Pinia + Element Plus，买家端（5173）与商家端（5174）两个独立工程 |
 | 基础设施 | Docker Compose 编排 MySQL / Redis / MinIO，`observability` profile 额外起 Prometheus / Grafana / Loki / Promtail |
-| 质量保障 | 589 个测试用例（Testcontainers 真实容器集成测试）+ k6/JMeter 压测体系 + GitHub Actions CI |
+| 质量保障 | 629 个测试用例（Testcontainers 真实容器集成测试）+ k6/JMeter 压测体系 + GitHub Actions CI |
 | 核心能力 | 全站限流、缓存三防、秒杀削峰、幂等与状态机、库存分桶、分布式锁、全链路 TraceId |
 
 ## 二、文档导航
@@ -33,7 +33,7 @@
 
 ```
 .
-├── backend/             # Spring Boot 后端（含 Dockerfile、Flyway 迁移、589 个测试）
+├── backend/             # Spring Boot 后端（含 Dockerfile、Flyway 迁移、629 个测试）
 ├── frontend/            # 买家端（Vue 3，Vite 端口 5173）
 ├── frontendMerchant/    # 商家端（Vue 3，Vite 端口 5174）
 ├── infra/               # docker-compose 编排 + Prometheus/Grafana/Loki provisioning

@@ -110,5 +110,30 @@ bash scripts/check-frontend-style.sh origin/main frontendMerchant
 - [ ] 本地已跑通第四节的全部门禁
 - [ ] 提交按语义拆分，信息符合第五节规范
 - [ ] 新增 HTTP 接口已在 `RateLimitPolicies` 中显式声明限流规则（覆盖度测试会强制校验）
+- [ ] 新增前端图标已登记到 `vite.config.js` 的 `ICON_NAMES`（`src/icons.test.js` 会强制校验）
 - [ ] 涉及当前状态的文档已同步更新
 - [ ] 性能相关改动附带可复现的压测脚本与结果归档
+
+## 八、发版流程
+
+采用[语义化版本](https://semver.org/lang/zh-CN/)，当前版本见 `CHANGELOG.md` 顶部。
+
+1. 把 `[未发布]` 小节改写为 `[x.y.z] - YYYY-MM-DD`，并在其上方重新插入空的 `[未发布]`
+2. 确认三类门禁全绿：后端 `mvn test` + `jacoco:check` + `spotless:check`；
+   前端 `npm run test` + `npm run lint` + `npm run build`
+3. 同步受影响的数字（端点总数、测试用例数、文档份数），`CONTRIBUTING.md` 的
+   「文档约定」要求现状类文档随代码更新
+4. 打 tag 并推送：
+
+   ```bash
+   git tag -a v1.0.0 -m "v1.0.0"
+   git push origin v1.0.0
+   ```
+
+版本号怎么定：
+
+| 变更内容 | 版本位 |
+| --- | --- |
+| 新增接口/页面/能力，向后兼容 | 次版本 +1 |
+| 修缺陷、改文档、调性能，接口不变 | 修订号 +1 |
+| 删改已有接口语义、需要数据迁移（如新增 Flyway 且不兼容旧数据） | 主版本 +1 |
