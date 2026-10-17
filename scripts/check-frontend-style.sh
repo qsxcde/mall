@@ -40,8 +40,15 @@ fi
 
 rc=0
 for app in "${APPS[@]}"; do
-  # 相对基线的「新增/修改/重命名」文件，限定到该前端的 src 下的 js/vue
-  changed="$(git diff --name-only --diff-filter=ACMR "$BASE" -- "$app/src" | grep -E '\.(js|vue)$' || true)"
+  # 相对基线的「新增/修改/重命名」文件，限定到该前端的 src 下的 js/vue。
+  # 另加 --others：未跟踪的新文件（例如新增的 *.test.js）也必须接受格式检查，
+  # 否则「新建的测试文件」可以永远绕过 ratchet。
+  changed="$(
+    {
+      git diff --name-only --diff-filter=ACMR "$BASE" -- "$app/src"
+      git ls-files --others --exclude-standard -- "$app/src"
+    } | grep -E '\.(js|vue)$' | sort -u
+  )"
 
   if [ -z "$changed" ]; then
     echo "[$app] 相对 $BASE 无 js/vue 改动 → 跳过 Prettier"
