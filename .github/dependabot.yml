@@ -4,6 +4,7 @@
 #   - 每周一次（避免每日 PR 噪音）
 #   - minor/patch 归组为一个 PR，major 单独开（major 常有破坏性变更，需人工评估）
 #   - 同时扫描 github-actions 本身，避免 actions 长期停留在旧版本
+#   - 已人工评估、确认需要专门迁移的 major 版本用 ignore 排除，避免每周重复开 PR
 version: 2
 
 updates:
@@ -20,6 +21,23 @@ updates:
     labels:
       - dependencies
       - backend
+    ignore:
+      # Spring Boot 3.3 → 4.x：Jakarta/配置/依赖管理全面变更，需专门迁移
+      - dependency-name: "org.springframework.boot:spring-boot-starter-parent"
+        update-types: ["version-update:semver-major"]
+      # springdoc 2.x → 3.x：随 Spring Boot 4 的 API 变更
+      - dependency-name: "org.springdoc:springdoc-openapi-starter-webmvc-ui"
+        update-types: ["version-update:semver-major"]
+      # MinIO 8.x → 9.x：客户端 API 重写
+      - dependency-name: "io.minio:minio"
+        update-types: ["version-update:semver-major"]
+      # jjwt 0.12 → 0.13：0.x 阶段按 semver 视为 major，API 有破坏性调整
+      - dependency-name: "io.jsonwebtoken:*"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      # mybatis-plus 3.5.7 → 3.5.17 移除了 PaginationInnerInterceptor 原包路径，
+      # 需迁移到 mybatis-plus-jsqlparser 模块后再升
+      - dependency-name: "com.baomidou:mybatis-plus-spring-boot3-starter"
+        versions: [">=3.5.9"]
     groups:
       # 补丁与小版本合并成一个 PR：这类升级通常向后兼容，逐条开 PR 只会淹没评审
       maven-minor-patch:
@@ -42,6 +60,16 @@ updates:
     labels:
       - dependencies
       - frontend
+    ignore:
+      # 与 frontendMerchant 保持一致：vite 7 → 8 与 vue-router 4 → 5 都是 major，
+      # 需要人工评估 Node 版本要求与插件 API 变更后再升
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vue-router"
+        update-types: ["version-update:semver-major"]
+      # pinia 2 → 4 跨两个 major，选项式 store 与 $reset 行为都有变更
+      - dependency-name: "pinia"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-frontend-minor-patch:
         patterns:
@@ -63,6 +91,16 @@ updates:
     labels:
       - dependencies
       - frontend
+    ignore:
+      # vue-router 4.x → 5.x：路由 API 与守卫签名变更
+      - dependency-name: "vue-router"
+        update-types: ["version-update:semver-major"]
+      # vite 7.x → 8.x：Node 版本要求与插件 API 变更
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      # pinia 2 → 4 跨两个 major
+      - dependency-name: "pinia"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-merchant-minor-patch:
         patterns:
