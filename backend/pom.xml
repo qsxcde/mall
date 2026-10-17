@@ -247,6 +247,60 @@
                     </execution>
                 </executions>
             </plugin>
+            <!--
+                覆盖率门禁（JaCoCo）：prepare-agent 在测试启动前挂 javaagent 采集，
+                report 绑定 test 阶段产出 HTML/CSV 报告，check 由 CI 单独调用校验下限。
+
+                之所以用「固定阈值下限」而非趋势 ratchet：本项目没有覆盖率基线文件，
+                逐次对比需要额外维护基线与其更新流程；固定下限的收益（挡住大幅下降）
+                已能覆盖主要风险，且零维护成本。
+            -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
+                <!--
+                    规则放在插件级而非 execution 级：execution 级配置只有绑定的 phase
+                    才会加载，CI 里单独执行 `mvn jacoco:check` 时会失效（静默跳过校验）。
+                -->
+                <configuration>
+                    <rules>
+                        <rule>
+                            <element>BUNDLE</element>
+                            <limits>
+                                <!-- 下限 60%，取当前实测 64.41% 的保守下沿：能挡住大幅下降，又不误红 -->
+                                <limit>
+                                    <counter>LINE</counter>
+                                    <value>COVEREDRATIO</value>
+                                    <minimum>0.60</minimum>
+                                </limit>
+                            </limits>
+                        </rule>
+                    </rules>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>jacoco-prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>jacoco-report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>jacoco-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 </project>

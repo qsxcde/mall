@@ -49,6 +49,11 @@ jobs:
       - name: 运行测试
         run: mvn -B -ntp test
 
+      # 覆盖率门禁：下限 60%（当前实测 64.41%），规则配置在 pom 的 jacoco 插件级。
+      # 单独成步的原因同上 —— 让「测试挂了」和「覆盖率跌破下限」在 Actions 页面一眼可分。
+      - name: 覆盖率门禁（JaCoCo · LINE ≥ 60%）
+        run: mvn -B -ntp jacoco:check
+
       # 测试失败时也上传，便于在 Actions 页面直接看用例明细
       - name: 上传测试报告
         if: always()
@@ -56,6 +61,14 @@ jobs:
         with:
           name: backend-surefire-reports
           path: backend/target/surefire-reports/
+          if-no-files-found: ignore
+
+      - name: 上传覆盖率报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jacoco-report
+          path: backend/target/site/jacoco/
           if-no-files-found: ignore
 
   # ------------------------------------------------------------
