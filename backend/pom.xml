@@ -22,7 +22,7 @@
         <mybatis-plus.version>3.5.7</mybatis-plus.version>
         <jjwt.version>0.12.6</jjwt.version>
         <springdoc.version>2.6.0</springdoc.version>
-        <shedlock.version>5.16.0</shedlock.version>
+        <shedlock.version>7.10.1</shedlock.version>
         <!--
           结构化日志（JSON）。8.0 对应 logback 1.5.x，与 Spring Boot 3.3.5 自带的
           logback 版本对齐；用 7.x 会在 logback 1.5 上引入兼容性风险。
