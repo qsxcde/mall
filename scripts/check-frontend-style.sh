@@ -43,11 +43,14 @@ for app in "${APPS[@]}"; do
   # 相对基线的「新增/修改/重命名」文件，限定到该前端的 src 下的 js/vue。
   # 另加 --others：未跟踪的新文件（例如新增的 *.test.js）也必须接受格式检查，
   # 否则「新建的测试文件」可以永远绕过 ratchet。
+  # 末尾的 `|| true` 不能省：pipefail 下 grep 无匹配会返回 1，
+  # 若不加则整个命令替换失败，脚本在 set -e 处**静默退出**（无任何输出、退出码 1）。
+  # 这正是「提交全部改动后再跑一遍」才会触发的坑 —— 本地改动未提交时 grep 总能匹配到。
   changed="$(
     {
       git diff --name-only --diff-filter=ACMR "$BASE" -- "$app/src"
       git ls-files --others --exclude-standard -- "$app/src"
-    } | grep -E '\.(js|vue)$' | sort -u
+    } | grep -E '\.(js|vue)$' | sort -u || true
   )"
 
   if [ -z "$changed" ]; then
