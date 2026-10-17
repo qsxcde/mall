@@ -1,0 +1,34 @@
+# 编辑器统一配置。
+#
+# 这份文件只影响「编辑器行为」，不替代格式化工具：真正的格式权威是
+#   - 后端：palantir-java-format（经 Spotless，4 空格 / 120 列）
+#   - 前端：Prettier（printWidth 100 / 单引号 / 无分号）
+# 二者的取值已与本文件对齐，避免预览与提交结果打架。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.java]
+# 对应 palantir-java-format 的 4 空格缩进与 120 列
+indent_size = 4
+max_line_length = 120
+
+[*.{js,vue,css}]
+# 对应 Prettier 的 printWidth 100
+max_line_length = 100
+
+[*.md]
+# Markdown 中行尾两空格表示硬换行，不能被裁剪
+trim_trailing_whitespace = false
+
+[{Makefile,*.mk}]
+indent_style = tab
+
+[*.{sh,bash}]
+indent_size = 2
