@@ -28,7 +28,7 @@ jobs:
         working-directory: backend
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Spotless 的 ratchetFrom=origin/main 要算「相对基线的改动文件」，
           # 依赖完整 git 历史；默认 fetch-depth: 1 的浅克隆里没有 origin/main，检查会直接报错。
@@ -86,7 +86,7 @@ jobs:
         working-directory: ${{ matrix.app }}
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # 格式 ratchet 以 origin/main 为基线算改动文件，同样需要完整历史
           fetch-depth: 0
