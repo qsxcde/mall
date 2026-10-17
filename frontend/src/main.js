@@ -1,25 +1,20 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import ElementPlus from 'element-plus'
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 
-import 'element-plus/dist/index.css'
+// Element Plus 组件与样式由 unplugin 按需注入（见 vite.config.js），
+// 这里只保留「全局 locale」这类必须显式配置的部分。
+import App from './App.vue'
+import router from './router'
 import '@/styles/base.css'
 import '@/styles/pages.css'
 
-import App from './App.vue'
-import router from './router'
-
 const app = createApp(App)
-
-// 注册全部 Element Plus 图标
-for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
-  app.component(key, component)
-}
 
 app.use(createPinia())
 app.use(router)
-app.use(ElementPlus, { locale: zhCn })
+
+// 按需引入后不再 app.use(ElementPlus)，但中文 locale（分页/日期选择器文案）仍需全局提供
+app.config.globalProperties.$ELEMENT = { locale: zhCn }
 
 app.mount('#app')

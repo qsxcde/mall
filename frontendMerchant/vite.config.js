@@ -1,10 +1,89 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import AutoImport from 'unplugin-auto-import/vite'
+import Components from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { fileURLToPath, URL } from 'node:url'
+
+/**
+ * 项目里实际用到的 Element Plus 图标（模板中以 PascalCase 直接书写的那些）。
+ *
+ * 新增图标时同步加到这里；漏加的表现是「图标位置空白」，不会报错，
+ * 因此 src/icons.test.js 里有一条用例会扫描模板，校验没有漏登记的图标名。
+ */
+const ICON_NAMES = new Set([
+  'ArrowDown',
+  'ArrowRight',
+  'Bell',
+  'Box',
+  'Calendar',
+  'ChatLineSquare',
+  'Clock',
+  'Close',
+  'Document',
+  'Download',
+  'FolderOpened',
+  'Grid',
+  'InfoFilled',
+  'Location',
+  'Lock',
+  'Menu',
+  'Picture',
+  'Plus',
+  'Printer',
+  'Refresh',
+  'RefreshLeft',
+  'Search',
+  'Select',
+  'Setting',
+  'Shop',
+  'Sort',
+  'Switch',
+  'SwitchButton',
+  'Ticket',
+  'Tickets',
+  'TrendCharts',
+  'Upload',
+  'User',
+  'Van',
+  'View',
+  'Wallet',
+  'WarningFilled'
+])
 
 // 极客商家中心 - Vite 配置
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    vue(),
+    /**
+     * 按需引入 Element Plus。
+     *
+     * 之前 `app.use(ElementPlus)` + 全量图标注册，主包约 1.1MB，其中大部分组件从未渲染。
+     * 改成按需后，未使用的组件不会进入产物；图标由下方 ICON_NAMES 白名单精确解析。
+     *
+     * 注意：`import { ElMessage } from 'element-plus'` 这类命令式调用必须由
+     * `importStyle: 'css'` + AutoImport 一起接管，否则样式会缺（弹窗/提示变裸样式）。
+     */
+    AutoImport({
+      imports: ['vue', 'vue-router', 'pinia'],
+      resolvers: [ElementPlusResolver({ importStyle: 'css' })],
+      dts: false,
+      eslintrc: { enabled: false }
+    }),
+    Components({
+      resolvers: [
+        ElementPlusResolver({ importStyle: 'css' }),
+        // 图标按需：只解析白名单内的名字，避免把 <RouterView /> 之类误当图标
+        (name) => {
+          if (ICON_NAMES.has(name)) {
+            return { name, from: '@element-plus/icons-vue' }
+          }
+          return undefined
+        }
+      ],
+      dts: false
+    })
+  ],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))
