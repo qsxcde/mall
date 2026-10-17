@@ -1,7 +1,12 @@
 spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT:3306}/${MYSQL_DB}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+    # 【安全】不再硬编码 useSSL=false：
+    #  · sslMode=REQUIRED 让驱动强制加密（推荐，MySQL 8 默认支持）
+    #  · 若数据库未配证书且只在内网，可设 MYSQL_SSL_MODE=PREFERRED 降级为「能加密就加密」
+    # allowPublicKeyRetrieval 只在「非 SSL + caching_sha2_password」时需要，默认关闭，
+    # 否则会给中间人留出获取明文口令的通道（详见 MySQL Connector/J 文档）。
+    url: jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT:3306}/${MYSQL_DB}?useUnicode=true&characterEncoding=utf8&sslMode=${MYSQL_SSL_MODE:REQUIRED}&allowPublicKeyRetrieval=${MYSQL_ALLOW_PUBLIC_KEY_RETRIEVAL:false}&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
     username: ${MYSQL_USER}
     password: ${MYSQL_PASSWORD}
     hikari:
@@ -21,7 +26,8 @@ spring:
     redis:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
+      # 【安全】生产不允许空口令：Redis 未设密码时宁可启动失败，也不要裸奔在网络上
+      password: ${REDIS_PASSWORD}
       database: 0
       timeout: 3s
       # P1-2：prod 之前漏配连接池，Lettuce 走单连接共享，高并发下大面积 3s 超时
@@ -38,7 +44,45 @@ spring:
     clean-disabled: true
 
 mall:
+  jwt:
+    # 【安全】生产环境不再提供兜底默认值。
+    # application.yml 里写着 ${MALL_JWT_SECRET:geek-mall-jwt-secret-key-...}，
+    # 那串默认值已经公开在源码中（谁都能拿去伪造令牌）。这里刻意声明为无默认值的占位符：
+    # 未设置 MALL_JWT_SECRET 时启动直接失败，而不是静默用公开密钥签发令牌。
+    secret: ${MALL_JWT_SECRET}
+    expire-minutes: ${MALL_JWT_EXPIRE_MINUTES:120}
+
+  # ---------------- 以下开关在 prod 必须显式关闭 ----------------
+  # 不写也能「碰巧不生效」（注解要求 havingValue=true，缺省即不注册），
+  # 但那是依赖隐含行为：一旦有人把默认值改成 true，生产就会种出演示账号。
   init-demo-user: false
+  init-demo-merchant: false
+  mock:
+    enabled: false
+  sms:
+    expose-code: false
+
+  # 限流在生产必须开启（dev/test 才关掉）
+  rate-limit:
+    enabled: true
+
+  cluster:
+    # 生产实例数必须按实际副本数声明，否则 LOCAL 限流额度会被放大 N 倍
+    instance-count: ${MALL_INSTANCE_COUNT:1}
+
+  storage:
+    type: ${STORAGE_TYPE:minio}
+
+# Actuator：生产只暴露健康与指标，不暴露 env/beans/loggers（它们能间接泄露配置与内部结构）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      # 生产不向匿名调用方展示依赖细节（数据库/Redis 地址、版本等）
+      show-details: never
 
 mybatis-plus:
   configuration:
