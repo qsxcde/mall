@@ -187,40 +187,29 @@ CSS 变量指向这些令牌，组件内部结构不动——升级 EP 版本不
 
 ### 7. 构建产物与进一步瘦身
 
-构建结果（`npm run build`）：
+构建结果（`npm run build`，**已按需引入**）：
 
 | chunk | 体积 | gzip |
 |---|---|---|
-| `element-plus` | 1.09 MB | 341 kB |
+| `index`（应用逻辑 + 实际用到的 EP 组件） | 301 kB | 105 kB |
 | `vue` | 112 kB | 44 kB |
-| `index`（应用逻辑） | 46 kB | 19 kB |
-| 各业务视图（懒加载，9 个） | 2 ~ 25 kB | 1 ~ 8 kB |
+| `el-date-picker` / `el-table-column` 等公共组件 | 30 ~ 103 kB | 10 ~ 29 kB |
+| 各业务视图（懒加载，11 个） | 2 ~ 28 kB | 1 ~ 10 kB |
 
-Element Plus 采用**全量引入**，是刻意接受的取舍：换来实现简单、组件样式零遗漏。
-若需要进一步压缩，可按需引入：
+### Element Plus 按需引入
 
-```bash
-npm i -D unplugin-vue-components unplugin-auto-import
-```
+`vite.config.js` 已接入 `unplugin-vue-components` + `unplugin-auto-import`：
 
-```js
-// vite.config.js
-import AutoImport from 'unplugin-auto-import/vite'
-import Components from 'unplugin-vue-components/vite'
-import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
+- 模板里的 `<el-*>` 组件按需解析，未使用的组件不进产物；
+- `import { ElMessage } from 'element-plus'` 这类**命令式调用**由
+  `ElementPlusResolver({ importStyle: 'css' })` + AutoImport 接管，
+  否则会出现「弹窗能弹出来但没有样式」；
+- 图标不再全量注册，而是由 `vite.config.js` 里的 `ICON_NAMES` 白名单精确解析。
 
-plugins: [
-  vue(),
-  AutoImport({ resolvers: [ElementPlusResolver()] }),
-  Components({ resolvers: [ElementPlusResolver()] })
-]
-```
+> ⚠️ **新增图标时必须在 `ICON_NAMES` 里登记**，否则页面上该图标位置会是空白且**不报错**。
+> `src/icons.test.js` 会扫描所有模板并校验这一点。
 
-同时移除 `main.js` 里的 `app.use(ElementPlus)` 与 `element-plus/dist/index.css` 引入，
-并把全局图标注册改为按需 import。预计可省下 50%~60% 的 EP 体积，
-但需要逐页回归确认组件样式未丢失。
-
----
+改造前后对比：主包（index）**1.09 MB → 301 kB**，gzip **341 kB → 105 kB**。
 
 ## 接入真实后端
 
