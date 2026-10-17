@@ -2,12 +2,11 @@ package com.geekmall.common.ratelimit;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
-
 import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
  * 进程内限流执行器：<b>滑动窗口计数</b> + <b>在途并发控制</b>，全程无网络往返。
@@ -87,11 +86,17 @@ public class LocalRateLimiter {
             return true;
         }
         AtomicInteger counter = inFlight.computeIfAbsent(key, k -> new AtomicInteger());
-        if (counter.incrementAndGet() > maxConcurrent) {
-            counter.decrementAndGet();
-            return false;
+        // CAS 循环而非「先加后判再减」：后者会让被拒绝的线程把计数瞬时顶到上限之上，
+        // 使并发读取到的在途数出现虚假尖峰；这里保证计数任何时刻都不超过上限。
+        while (true) {
+            int current = counter.get();
+            if (current >= maxConcurrent) {
+                return false;
+            }
+            if (counter.compareAndSet(current, current + 1)) {
+                return true;
+            }
         }
-        return true;
     }
 
     /**
