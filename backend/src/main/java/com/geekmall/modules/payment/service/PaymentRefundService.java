@@ -1,6 +1,7 @@
 package com.geekmall.modules.payment.service;
 
 import com.geekmall.modules.payment.entity.PaymentRecord;
+import java.math.BigDecimal;
 
 /**
  * 退款编排。
@@ -30,4 +31,26 @@ public interface PaymentRefundService {
      * @return 本次是否真的发起了退款
      */
     boolean refundIfPaid(String orderNo, String reason);
+
+    /**
+     * 按售后单退款（支持部分退款）。
+     *
+     * <p><b>售后退款不能复用「按订单全额退款」</b>，原因有三：</p>
+     * <ol>
+     *   <li>售后可能只退一部分（商家可调整退款金额），全额退款会把钱多退出去；</li>
+     *   <li>同一笔支付单可能先后用于「订单取消退款」与「售后退款」，用订单号做幂等键会互相顶掉；</li>
+     *   <li>售后可能发生在订单已完成之后，此时订单本身不可再取消。</li>
+     * </ol>
+     *
+     * <p>因此幂等键是<b>售后单维度</b>：{@code refund_no = "RFAS" + afterSaleNo}，
+     * 由 {@code pay_refund_record.uk_refund_no} 唯一索引兜底。
+     * 累计退款金额不得超过支付单金额，超出直接拒绝（防资损）。</p>
+     *
+     * @param orderNo     订单号
+     * @param afterSaleNo 售后单号（幂等键的一部分，须全局唯一）
+     * @param amount      本次退款金额
+     * @param reason      退款原因，落库便于对账
+     * @return 本次是否真的发起了退款（false = 未支付 / 金额非法 / 已退过 / 并发中被他人抢到）
+     */
+    boolean refundForAfterSale(String orderNo, String afterSaleNo, BigDecimal amount, String reason);
 }

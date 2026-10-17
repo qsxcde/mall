@@ -8,9 +8,13 @@ export const useAfterSaleStore = defineStore('aftersale', {
   }),
 
   getters: {
-    // status 是适配层转换后的语义 key
+    // status 是适配层转换后的语义 key：doing / waitReturn / waitReceive / done / canceled / rejected
     doing: (state) => state.records.filter((r) => r.status === 'doing'),
-    done: (state) => state.records.filter((r) => r.status === 'done')
+    // 「已完成」把待寄回/待收货也算进去：它们同样通过了商家审核，不是失败态
+    inProgress: (state) =>
+      state.records.filter((r) => ['waitReturn', 'waitReceive'].includes(r.status)),
+    done: (state) => state.records.filter((r) => r.status === 'done'),
+    rejected: (state) => state.records.filter((r) => r.status === 'rejected')
   },
 
   actions: {
