@@ -7,6 +7,7 @@ import com.geekmall.modules.aftersale.vo.AfterSaleVO;
 import com.geekmall.security.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -16,8 +17,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
 
 /**
  * 售后接口，对应前端 aftersale/ApplyView、aftersale/DetailView 与个人中心售后面板。
@@ -48,10 +47,17 @@ public class AfterSaleController {
         return Result.ok(afterSaleService.detail(SecurityUtils.getUserId(), id));
     }
 
-    @Operation(summary = "取消售后申请")
+    @Operation(summary = "取消售后申请", description = "处理中 / 待寄回可取消")
     @PostMapping("/{id}/cancel")
     public Result<Void> cancel(@PathVariable Long id) {
         afterSaleService.cancel(SecurityUtils.getUserId(), id);
+        return Result.ok();
+    }
+
+    @Operation(summary = "登记已寄回商品", description = "退货退款专用：待寄回 → 待商家收货")
+    @PostMapping("/{id}/returned")
+    public Result<Void> markReturned(@PathVariable Long id) {
+        afterSaleService.markReturned(SecurityUtils.getUserId(), id);
         return Result.ok();
     }
 }

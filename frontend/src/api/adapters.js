@@ -327,12 +327,28 @@ export function toReview(vo) {
 /**
  * 售后。
  *
- * status 统一成语义 key（doing / done / canceled），与订单列表保持一致的用法：
- * 模板侧只关心「是哪个状态」，数字码放在 statusCode 里备查。
+ * 状态语义 key（doing / waitReturn / waitReceive / done / canceled / rejected）
+ * 优先按后端 merchantStatus 解析，其次才退回数字码 ——
+ * 数字码只有三态，商家拒绝与买家撤销都会是 2，只看 code 会把「商家拒绝」
+ * 显示成「你已取消」，用户看到的是自己从没做过的操作。
+ *
+ * statusCode 保留原始数字码备查；canCancel 由后端给出，避免前端重复推导规则。
  */
+const AFTER_SALE_STATUS_BY_MERCHANT = {
+  pending: 'doing',
+  wait_return: 'waitReturn',
+  wait_receive: 'waitReceive',
+  done: 'done',
+  rejected: 'rejected'
+}
+
 export function toAfterSale(vo) {
   const code = num(vo.status)
-  const key = code === 0 ? 'doing' : code === 1 ? 'done' : 'canceled'
+  const merchantStatus = (vo.merchantStatus || '').toLowerCase()
+  // merchant_status 为空时（历史数据 / 买家撤销）退回数字码
+  const key =
+    AFTER_SALE_STATUS_BY_MERCHANT[merchantStatus] ||
+    (code === 0 ? 'doing' : code === 1 ? 'done' : 'canceled')
   const typeName = vo.typeName || ''
   const reason = vo.reason || ''
   return {
@@ -341,7 +357,11 @@ export function toAfterSale(vo) {
     name: vo.productTitle || '商品',
     status: key,
     statusCode: code,
+    merchantStatus,
     statusText: vo.statusText || '',
+    statusTip: vo.statusTip || '',
+    rejectReason: vo.rejectReason || '',
+    canCancel: vo.canCancel === true,
     c: placeholderClass(vo.orderNo),
     type: vo.type,
     typeName,

@@ -3,11 +3,10 @@ package com.geekmall.modules.aftersale.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.geekmall.modules.aftersale.entity.AfterSale;
 import com.geekmall.modules.merchant.support.MerchantAftersaleStatus;
+import java.math.BigDecimal;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Update;
-
-import java.math.BigDecimal;
 
 /**
  * 售后 Mapper。
@@ -39,11 +38,29 @@ public interface AfterSaleMapper extends BaseMapper<AfterSale> {
             + "update_time = NOW() "
             + "WHERE id = #{id} AND shop_id = #{shopId} AND deleted = 0 "
             + "AND " + MerchantAftersaleStatus.STATUS_SQL + " = #{expectedStatus}")
-    int transferStatus(@Param("id") Long id,
-                       @Param("shopId") Long shopId,
-                       @Param("expectedStatus") String expectedStatus,
-                       @Param("targetStatus") String targetStatus,
-                       @Param("buyerStatus") Integer buyerStatus,
-                       @Param("rejectReason") String rejectReason,
-                       @Param("refundAmount") BigDecimal refundAmount);
+    int transferStatus(
+            @Param("id") Long id,
+            @Param("shopId") Long shopId,
+            @Param("expectedStatus") String expectedStatus,
+            @Param("targetStatus") String targetStatus,
+            @Param("buyerStatus") Integer buyerStatus,
+            @Param("rejectReason") String rejectReason,
+            @Param("refundAmount") BigDecimal refundAmount);
+
+    /**
+     * 买家侧状态流转（CAS）：买家寄回商品后把 wait_return 推进到 wait_receive。
+     *
+     * <p>卖家侧 CAS 用的是 {@code shop_id}，这里必须用 {@code user_id} 做归属校验 ——
+     * 买家动作不能借商家接口的权限边界。</p>
+     *
+     * @return 影响行数，0 表示状态已变（例如被商家确认收货或买家已撤销）
+     */
+    @Update("UPDATE oms_aftersale SET merchant_status = #{targetStatus}, update_time = NOW() "
+            + "WHERE id = #{id} AND user_id = #{userId} AND deleted = 0 "
+            + "AND " + MerchantAftersaleStatus.STATUS_SQL + " = #{expectedStatus}")
+    int transferStatusByBuyer(
+            @Param("id") Long id,
+            @Param("userId") Long userId,
+            @Param("expectedStatus") String expectedStatus,
+            @Param("targetStatus") String targetStatus);
 }

@@ -95,16 +95,72 @@ public class PaymentRefundServiceImpl implements PaymentRefundService {
         return refundForClosedOrder(payment, reason);
     }
 
+    /**
+     * 售后按金额退款。
+     *
+     * <p>幂等键是<b>售后单</b>而不是支付单：同一笔支付可能先经历「订单取消退款」，
+     * 再进入售后退款；若沿用 {@code RF + tradeNo}，第二笔会被唯一索引直接顶掉，
+     * 结果是「售后显示已退款，钱却没出去」。</p>
+     *
+     * <p>不做支付单维度的 {@code refund_status} CAS —— 那是「整单一次性」的闸门，
+     * 这里改由累计金额校验 + refund_no 唯一索引双层保证不超退。</p>
+     */
+    @Override
+    public boolean refundForAfterSale(String orderNo, String afterSaleNo, BigDecimal amount, String reason) {
+        if (amount == null || amount.signum() <= 0) {
+            log.warn("售后单 {} 退款金额非法（{}），跳过", afterSaleNo, amount);
+            return false;
+        }
+        PaymentRecord payment = paymentRecordMapper.selectOne(new LambdaQueryWrapper<PaymentRecord>()
+                .eq(PaymentRecord::getOrderNo, orderNo)
+                .eq(PaymentRecord::getStatus, PAY_STATUS_SUCCESS)
+                .orderByDesc(PaymentRecord::getId)
+                .last("limit 1"));
+        if (payment == null) {
+            log.info("订单 {} 无支付成功的支付单，售后 {} 无需退款", orderNo, afterSaleNo);
+            return false;
+        }
+
+        // 防超退：本次 + 历史已退 不得超过支付金额
+        BigDecimal refunded = payment.getRefundAmount() == null ? BigDecimal.ZERO : payment.getRefundAmount();
+        if (refunded.add(amount).compareTo(payment.getAmount()) > 0) {
+            log.error("售后 {} 退款超限：已退 ¥{} + 本次 ¥{} > 支付 ¥{}，拒绝", afterSaleNo, refunded, amount, payment.getAmount());
+            return false;
+        }
+
+        String refundNo = "RFAS" + afterSaleNo;
+        PaymentRefundRecord record;
+        try {
+            record = insertRefundRecord(payment, refundNo, reason, amount);
+        } catch (DuplicateKeyException e) {
+            log.info("售后 {} 的退款单已存在（并发重复提交），本次不再发起", afterSaleNo);
+            return false;
+        }
+
+        // 渠道调用：无事务包裹，不持有数据库行锁
+        PaymentChannelClient.RefundResult result =
+                paymentChannel.refund(payment.getTradeNo(), refundNo, amount, reason);
+
+        finishRefund(record.getId(), payment, result, amount);
+        return true;
+    }
+
     /* ------------------------------ 私有方法 ------------------------------ */
 
     private PaymentRefundRecord insertRefundRecord(PaymentRecord payment, String refundNo, String reason) {
+        // 全额退款（订单关闭转退款）：金额恒等于支付金额
+        return insertRefundRecord(payment, refundNo, reason, payment.getAmount());
+    }
+
+    private PaymentRefundRecord insertRefundRecord(
+            PaymentRecord payment, String refundNo, String reason, BigDecimal amount) {
         PaymentRefundRecord record = new PaymentRefundRecord();
         record.setRefundNo(refundNo);
         record.setTradeNo(payment.getTradeNo());
         record.setOrderNo(payment.getOrderNo());
         record.setUserId(payment.getUserId());
         record.setChannel(payment.getChannel());
-        record.setAmount(payment.getAmount());
+        record.setAmount(amount);
         record.setStatus(REFUND_RECORD_IN_PROGRESS);
         record.setReason(reason);
         refundRecordMapper.insert(record);
@@ -112,6 +168,18 @@ public class PaymentRefundServiceImpl implements PaymentRefundService {
     }
 
     private void finishRefund(Long refundId, PaymentRecord payment, PaymentChannelClient.RefundResult result) {
+        finishRefund(refundId, payment, result, payment.getAmount());
+    }
+
+    /**
+     * 落定退款结果。
+     *
+     * @param amount 本次退款金额。支付单上的 {@code refund_amount} 语义是<b>累计</b>已退金额，
+     *               因此这里累加而不是覆盖 —— 订单全额退款之后再发生部分售后退款时，
+     *               覆盖写会把前一次的金额抹掉，对账时会出现「退款单合计 ≠ 支付单已退」。
+     */
+    private void finishRefund(
+            Long refundId, PaymentRecord payment, PaymentChannelClient.RefundResult result, BigDecimal amount) {
         LocalDateTime now = LocalDateTime.now();
 
         PaymentRefundRecord update = new PaymentRefundRecord();
@@ -125,11 +193,14 @@ public class PaymentRefundServiceImpl implements PaymentRefundService {
         PaymentRecord paymentUpdate = new PaymentRecord();
         paymentUpdate.setId(payment.getId());
         paymentUpdate.setRefundStatus(result.success() ? REFUND_DONE : REFUND_FAILED);
-        paymentUpdate.setRefundAmount(result.success() ? payment.getAmount() : BigDecimal.ZERO);
+        if (result.success()) {
+            BigDecimal already = payment.getRefundAmount() == null ? BigDecimal.ZERO : payment.getRefundAmount();
+            paymentUpdate.setRefundAmount(already.add(amount));
+        }
         paymentRecordMapper.updateById(paymentUpdate);
 
         if (result.success()) {
-            log.info("支付单 {} 退款成功，渠道退款单号 {}", payment.getTradeNo(), result.channelRefundNo());
+            log.info("支付单 {} 退款成功，本次 ¥{}，渠道退款单号 {}", payment.getTradeNo(), amount, result.channelRefundNo());
         } else {
             log.error("支付单 {} 退款失败：{}", payment.getTradeNo(), result.failReason());
         }

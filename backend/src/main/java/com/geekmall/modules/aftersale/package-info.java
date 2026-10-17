@@ -11,15 +11,19 @@
  *             <li>list：用 {@code OrderService.firstItemTitles} 一次性取回商品名，避免 N+1</li>
  *             <li>detail：按状态生成处理进度时间轴</li>
  *             <li>cancel：仅「处理中」可取消</li>
+ *             <li>refundAfterSale：商家审批通过后触发真实退款（幂等键为售后单号）</li>
  *         </ul>
  *     </li>
+ *     <li>{@code enums.BuyerAfterSaleStatus}：买家侧展示状态（含「已拒绝」，
+ *         与「买家已取消」区分）</li>
  *     <li>{@code controller.AfterSaleController} → /api/v1/aftersales/**</li>
  * </ul>
  *
  * <p>设计要点：订单归属与状态判断都交给交易域，售后域不重复实现订单状态机。</p>
  *
- * <p>待实现：真实退款调用、售后凭证图片（依赖 content 域上传接口）、
- * 售后退回商品后回滚库存。（商家审核/驳回已由商家域实现，见
+ * <p>待实现：售后凭证图片（依赖 content 域上传接口）、
+ * 售后退回商品后回滚库存（退货退款目前不回补库存）。
+ * （商家审核/驳回已由商家域实现，见
  * {@code com.geekmall.modules.merchant.service.impl.MerchantAftersaleServiceImpl}。）</p>
  *
  * <p>对应前端：aftersale/ApplyView、aftersale/DetailView、UserCenterView 售后面板。</p>

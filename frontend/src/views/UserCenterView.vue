@@ -24,9 +24,12 @@ const menus = [
 ]
 
 const activeTab = ref(menus.some((m) => m.key === route.query.tab) ? route.query.tab : 'profile')
-watch(() => route.query.tab, (v) => {
-  if (v && menus.some((m) => m.key === v)) activeTab.value = v
-})
+watch(
+  () => route.query.tab,
+  (v) => {
+    if (v && menus.some((m) => m.key === v)) activeTab.value = v
+  }
+)
 const switchTab = (key) => {
   activeTab.value = key
   router.replace({ name: 'user', query: { tab: key } })
@@ -82,7 +85,9 @@ const couponTabs = computed(() => [
   { key: 'expired', name: `已过期 (${countByStatus(2)})` }
 ])
 const countByStatus = (status) => coupons.value.filter((c) => c.status === status).length
-const shownCoupons = computed(() => coupons.value.filter((c) => c.status === COUPON_STATUS[couponTab.value]))
+const shownCoupons = computed(() =>
+  coupons.value.filter((c) => c.status === COUPON_STATUS[couponTab.value])
+)
 
 const loadCoupons = async () => {
   try {
@@ -160,7 +165,14 @@ const setDefault = async (id) => {
 const maskPhone = (phone) => (phone ? `${phone.slice(0, 3)}****${phone.slice(-4)}` : '')
 
 const securityRows = computed(() => [
-  { key: 'password', icon: '🔑', name: '登录密码', desc: '已设置 · 建议定期更换', ok: true, btn: '修改' },
+  {
+    key: 'password',
+    icon: '🔑',
+    name: '登录密码',
+    desc: '已设置 · 建议定期更换',
+    ok: true,
+    btn: '修改'
+  },
   {
     key: 'phone',
     icon: '📱',
@@ -197,12 +209,20 @@ const asTab = ref('all')
 const asTabs = [
   { key: 'all', name: '全部' },
   { key: 'doing', name: '处理中' },
-  { key: 'done', name: '已完成' }
+  { key: 'inProgress', name: '待寄回/待收货' },
+  { key: 'done', name: '已完成' },
+  { key: 'rejected', name: '商家拒绝' }
 ]
-// status 为适配层转换后的语义 key：doing / done / canceled
-const shownAfterSales = computed(() =>
-  asTab.value === 'all' ? afterStore.records : afterStore.records.filter((a) => a.status === asTab.value)
-)
+// status 为适配层转换后的语义 key：
+// doing / waitReturn / waitReceive / done / canceled / rejected
+const shownAfterSales = computed(() => {
+  const all = afterStore.records
+  if (asTab.value === 'all') return all
+  if (asTab.value === 'inProgress') {
+    return all.filter((a) => ['waitReturn', 'waitReceive'].includes(a.status))
+  }
+  return all.filter((a) => a.status === asTab.value)
+})
 
 const applyService = (type) => router.push({ name: 'aftersale-apply', query: { type } })
 const openAfterSale = (id) => router.push({ name: 'aftersale-detail', params: { id } })
@@ -247,7 +267,8 @@ watch(activeTab, (tab) => {
             :class="{ on: activeTab === m.key }"
             @click="switchTab(m.key)"
           >
-            <span class="ic">{{ m.icon }}</span>{{ m.name }}
+            <span class="ic">{{ m.icon }}</span
+            >{{ m.name }}
           </a>
         </nav>
         <div class="uc-extra">
@@ -283,14 +304,21 @@ watch(activeTab, (tab) => {
               </div>
             </el-upload>
             <div>
-              <div style="font-size:16px;font-weight:bold">{{ info.nickname }}</div>
+              <div style="font-size: 16px; font-weight: bold">{{ info.nickname }}</div>
               <div class="pf-tip">支持 jpg / png / webp，不超过 2MB</div>
             </div>
           </div>
-          <el-form label-position="top" style="max-width:680px">
+          <el-form label-position="top" style="max-width: 680px">
             <el-row :gutter="20">
-              <el-col :xs="24" :sm="12"><el-form-item label="昵称"><el-input v-model="profile.nickname" /></el-form-item></el-col>
-              <el-col :xs="24" :sm="12"><el-form-item label="真实姓名"><el-input v-model="profile.realName" placeholder="请输入真实姓名" /></el-form-item></el-col>
+              <el-col :xs="24" :sm="12"
+                ><el-form-item label="昵称"><el-input v-model="profile.nickname" /></el-form-item
+              ></el-col>
+              <el-col :xs="24" :sm="12"
+                ><el-form-item label="真实姓名"
+                  ><el-input
+                    v-model="profile.realName"
+                    placeholder="请输入真实姓名" /></el-form-item
+              ></el-col>
               <el-col :xs="24" :sm="12">
                 <el-form-item label="性别">
                   <el-radio-group v-model="profile.gender">
@@ -300,10 +328,28 @@ watch(activeTab, (tab) => {
                   </el-radio-group>
                 </el-form-item>
               </el-col>
-              <el-col :xs="24" :sm="12"><el-form-item label="生日"><el-date-picker v-model="profile.birthday" type="date" value-format="YYYY-MM-DD" style="width:100%" /></el-form-item></el-col>
-              <el-col :xs="24" :sm="12"><el-form-item label="手机号"><el-input v-model="profile.phone" disabled /><div class="pf-tip">登录账号，如需更换请联系客服</div></el-form-item></el-col>
-              <el-col :xs="24" :sm="12"><el-form-item label="邮箱"><el-input v-model="profile.email" placeholder="请输入邮箱" /></el-form-item></el-col>
-              <el-col :span="24"><el-form-item label="个人简介"><el-input v-model="profile.bio" type="textarea" :rows="3" /></el-form-item></el-col>
+              <el-col :xs="24" :sm="12"
+                ><el-form-item label="生日"
+                  ><el-date-picker
+                    v-model="profile.birthday"
+                    type="date"
+                    value-format="YYYY-MM-DD"
+                    style="width: 100%" /></el-form-item
+              ></el-col>
+              <el-col :xs="24" :sm="12"
+                ><el-form-item label="手机号"
+                  ><el-input v-model="profile.phone" disabled />
+                  <div class="pf-tip">登录账号，如需更换请联系客服</div></el-form-item
+                ></el-col
+              >
+              <el-col :xs="24" :sm="12"
+                ><el-form-item label="邮箱"
+                  ><el-input v-model="profile.email" placeholder="请输入邮箱" /></el-form-item
+              ></el-col>
+              <el-col :span="24"
+                ><el-form-item label="个人简介"
+                  ><el-input v-model="profile.bio" type="textarea" :rows="3" /></el-form-item
+              ></el-col>
             </el-row>
             <el-button type="primary" :loading="saving" @click="saveProfile">保存修改</el-button>
           </el-form>
@@ -313,18 +359,43 @@ watch(activeTab, (tab) => {
         <section v-show="activeTab === 'coupon'">
           <div class="panel-title">我的优惠券</div>
           <div class="cp-sub">
-            <a v-for="t in couponTabs" :key="t.key" :class="{ on: couponTab === t.key }" @click="couponTab = t.key">{{ t.name }}</a>
+            <a
+              v-for="t in couponTabs"
+              :key="t.key"
+              :class="{ on: couponTab === t.key }"
+              @click="couponTab = t.key"
+              >{{ t.name }}</a
+            >
           </div>
           <div class="cp-list">
-            <div v-for="c in shownCoupons" :key="c.id" class="cp-item" :class="{ used: couponTab !== 'usable' }">
+            <div
+              v-for="c in shownCoupons"
+              :key="c.id"
+              class="cp-item"
+              :class="{ used: couponTab !== 'usable' }"
+            >
               <div class="l">
-                <div class="a"><small v-if="c.unit === '¥'">¥</small>{{ c.amount }}<small v-if="c.unit !== '¥'">{{ c.unit }}</small></div>
+                <div class="a">
+                  <small v-if="c.unit === '¥'">¥</small>{{ c.amount
+                  }}<small v-if="c.unit !== '¥'">{{ c.unit }}</small>
+                </div>
                 <div class="c">{{ c.cond }}</div>
               </div>
               <div class="r">
-                <div><div class="n">{{ c.name }}</div><div class="s">{{ c.desc }}</div></div>
-                <el-button v-if="couponTab === 'usable'" type="primary" size="small" @click="router.push({ name: 'coupon' })">去使用</el-button>
-                <el-button v-else size="small" disabled>{{ couponTab === 'used' ? '已使用' : '已过期' }}</el-button>
+                <div>
+                  <div class="n">{{ c.name }}</div>
+                  <div class="s">{{ c.desc }}</div>
+                </div>
+                <el-button
+                  v-if="couponTab === 'usable'"
+                  type="primary"
+                  size="small"
+                  @click="router.push({ name: 'coupon' })"
+                  >去使用</el-button
+                >
+                <el-button v-else size="small" disabled>{{
+                  couponTab === 'used' ? '已使用' : '已过期'
+                }}</el-button>
               </div>
             </div>
           </div>
@@ -334,7 +405,12 @@ watch(activeTab, (tab) => {
         <section v-show="activeTab === 'address'">
           <div class="panel-title">地址管理</div>
           <div class="addr-grid">
-            <div v-for="a in addresses" :key="a.id" class="addr-card" :class="{ default: a.isDefault }">
+            <div
+              v-for="a in addresses"
+              :key="a.id"
+              class="addr-card"
+              :class="{ default: a.isDefault }"
+            >
               <div class="name">
                 {{ a.name }}
                 <span v-if="a.isDefault" class="tag">默认</span>
@@ -370,20 +446,45 @@ watch(activeTab, (tab) => {
         <section v-show="activeTab === 'aftersale'">
           <div class="panel-title">售后服务</div>
           <div class="as-services">
-            <div class="as-svc" @click="applyService('return')"><div class="ic">🔁</div><div class="nm">申请退换货</div><div class="ds">7 天无理由 · 质量问题退换</div></div>
-            <div class="as-svc" @click="applyService('repair')"><div class="ic">🔧</div><div class="nm">维修服务</div><div class="ds">保修期内 · 预约上门</div></div>
-            <div class="as-svc" @click="applyService('refund')"><div class="ic">💰</div><div class="nm">价格保护</div><div class="ds">降价补差 · 自动审核</div></div>
-            <div class="as-svc" @click="contactService"><div class="ic">💬</div><div class="nm">咨询客服</div><div class="ds">{{ SERVICE_HOTLINE }} · {{ SERVICE_HOURS }}</div></div>
+            <div class="as-svc" @click="applyService('return')">
+              <div class="ic">🔁</div>
+              <div class="nm">申请退换货</div>
+              <div class="ds">7 天无理由 · 质量问题退换</div>
+            </div>
+            <div class="as-svc" @click="applyService('repair')">
+              <div class="ic">🔧</div>
+              <div class="nm">维修服务</div>
+              <div class="ds">保修期内 · 预约上门</div>
+            </div>
+            <div class="as-svc" @click="applyService('refund')">
+              <div class="ic">💰</div>
+              <div class="nm">价格保护</div>
+              <div class="ds">降价补差 · 自动审核</div>
+            </div>
+            <div class="as-svc" @click="contactService">
+              <div class="ic">💬</div>
+              <div class="nm">咨询客服</div>
+              <div class="ds">{{ SERVICE_HOTLINE }} · {{ SERVICE_HOURS }}</div>
+            </div>
           </div>
 
-          <div class="panel-title" style="margin-top:26px">我的售后记录</div>
+          <div class="panel-title" style="margin-top: 26px">我的售后记录</div>
           <div class="as-sub">
-            <a v-for="t in asTabs" :key="t.key" :class="{ on: asTab === t.key }" @click="asTab = t.key">{{ t.name }}</a>
+            <a
+              v-for="t in asTabs"
+              :key="t.key"
+              :class="{ on: asTab === t.key }"
+              @click="asTab = t.key"
+              >{{ t.name }}</a
+            >
           </div>
           <div class="as-list">
             <div v-for="a in shownAfterSales" :key="a.id" class="as-item">
               <div class="as-img" :class="a.c">图</div>
-              <div class="as-info"><div class="as-name">{{ a.name }}</div><div class="as-desc">{{ a.desc }}</div></div>
+              <div class="as-info">
+                <div class="as-name">{{ a.name }}</div>
+                <div class="as-desc">{{ a.desc }}</div>
+              </div>
               <span class="as-status" :class="a.status">{{ a.statusText }}</span>
               <el-button size="small" @click="openAfterSale(a.id)">查看详情</el-button>
             </div>
@@ -393,17 +494,33 @@ watch(activeTab, (tab) => {
     </div>
 
     <!-- 新增地址弹窗 -->
-    <el-dialog v-model="addrDialog" :title="editingId ? '编辑收货地址' : '新增收货地址'" width="min(520px, 92vw)">
+    <el-dialog
+      v-model="addrDialog"
+      :title="editingId ? '编辑收货地址' : '新增收货地址'"
+      width="min(520px, 92vw)"
+    >
       <el-form label-width="80px">
-        <el-form-item label="收货人"><el-input v-model="addrForm.name" placeholder="请输入收货人姓名" /></el-form-item>
-        <el-form-item label="手机号"><el-input v-model="addrForm.phone" placeholder="请输入手机号" /></el-form-item>
-        <el-form-item label="地区"><el-input v-model="addrForm.region" placeholder="省 / 市 / 区" /></el-form-item>
-        <el-form-item label="详细地址"><el-input v-model="addrForm.detail" placeholder="街道 / 小区 / 门牌号" /></el-form-item>
-        <el-form-item><el-checkbox v-model="addrForm.isDefault">设为默认收货地址</el-checkbox></el-form-item>
+        <el-form-item label="收货人"
+          ><el-input v-model="addrForm.name" placeholder="请输入收货人姓名"
+        /></el-form-item>
+        <el-form-item label="手机号"
+          ><el-input v-model="addrForm.phone" placeholder="请输入手机号"
+        /></el-form-item>
+        <el-form-item label="地区"
+          ><el-input v-model="addrForm.region" placeholder="省 / 市 / 区"
+        /></el-form-item>
+        <el-form-item label="详细地址"
+          ><el-input v-model="addrForm.detail" placeholder="街道 / 小区 / 门牌号"
+        /></el-form-item>
+        <el-form-item
+          ><el-checkbox v-model="addrForm.isDefault">设为默认收货地址</el-checkbox></el-form-item
+        >
       </el-form>
       <template #footer>
         <el-button @click="addrDialog = false">取消</el-button>
-        <el-button type="primary" :loading="savingAddr" @click="saveAddr">{{ editingId ? '保存修改' : '保存' }}</el-button>
+        <el-button type="primary" :loading="savingAddr" @click="saveAddr">{{
+          editingId ? '保存修改' : '保存'
+        }}</el-button>
       </template>
     </el-dialog>
   </div>

@@ -641,6 +641,10 @@
 .as-status { font-size: 13px; font-weight: 600; white-space: nowrap; }
 .as-status.doing { color: var(--primary); }
 .as-status.done { color: #21a366; }
+/* 待寄回 / 待收货：流程中但需用户动作，用橙色区别于「已完成」的绿色 */
+.as-status.waitReturn, .as-status.waitReceive { color: #e6a23c; }
+/* 已取消 / 商家拒绝：失败态统一用红色，避免与「已完成」混淆 */
+.as-status.canceled, .as-status.rejected { color: #d9534f; }
 
 /* ============================ 登录 / 注册 ============================ */
 .auth { display: flex; width: 100%; min-height: 100vh; }
