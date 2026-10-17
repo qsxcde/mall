@@ -19,8 +19,8 @@
 
     <properties>
         <java.version>21</java.version>
-        <mybatis-plus.version>3.5.7</mybatis-plus.version>
-        <jjwt.version>0.12.6</jjwt.version>
+        <mybatis-plus.version>3.5.17</mybatis-plus.version>
+        <jjwt.version>0.13.0</jjwt.version>
         <springdoc.version>2.6.0</springdoc.version>
         <shedlock.version>5.16.0</shedlock.version>
         <!--
@@ -258,7 +258,7 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.12</version>
+                <version>0.8.15</version>
                 <!--
                     规则放在插件级而非 execution 级：execution 级配置只有绑定的 phase
                     才会加载，CI 里单独执行 `mvn jacoco:check` 时会失效（静默跳过校验）。
