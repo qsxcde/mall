@@ -70,6 +70,12 @@ updates:
       # pinia 2 → 4 跨两个 major，选项式 store 与 $reset 行为都有变更
       - dependency-name: "pinia"
         update-types: ["version-update:semver-major"]
+      # eslint 9 → 10 为 major：flat config 有 API 调整，且需针对新增的
+      # Vitest 步骤重新验证；@eslint/js 与主包版本强绑定，必须一起忽略
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@eslint/js"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-frontend-minor-patch:
         patterns:
@@ -100,6 +106,12 @@ updates:
         update-types: ["version-update:semver-major"]
       # pinia 2 → 4 跨两个 major
       - dependency-name: "pinia"
+        update-types: ["version-update:semver-major"]
+      # eslint 9 → 10 为 major：flat config 有 API 调整，且需针对新增的
+      # Vitest 步骤重新验证；@eslint/js 与主包版本强绑定，必须一起忽略
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@eslint/js"
         update-types: ["version-update:semver-major"]
     groups:
       npm-merchant-minor-patch:
