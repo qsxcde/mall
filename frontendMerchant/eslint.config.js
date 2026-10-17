@@ -21,6 +21,17 @@ export default [
   ...pluginVue.configs['flat/recommended'],
   prettier,
 
+  // 测试文件与 vitest setup：启用 vitest 全局（describe/it/expect/afterEach）
+  {
+    files: ['**/*.test.js', '**/*.spec.js', 'vitest.setup.js'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...globals.vitest,
+      },
+    },
+  },
+
   {
     files: ['**/*.{js,mjs,cjs,vue}'],
     languageOptions: {
