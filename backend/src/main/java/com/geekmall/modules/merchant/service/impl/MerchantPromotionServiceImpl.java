@@ -3,6 +3,7 @@ package com.geekmall.modules.merchant.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.geekmall.modules.marketing.service.CouponService;
 import com.geekmall.modules.merchant.converter.MerchantPromotionConverter;
 import com.geekmall.modules.merchant.dto.MerchantPromotionQueryDTO;
 import com.geekmall.modules.merchant.entity.Promotion;
@@ -12,17 +13,14 @@ import com.geekmall.modules.merchant.support.Numbers;
 import com.geekmall.modules.merchant.vo.MerchantCouponVO;
 import com.geekmall.modules.merchant.vo.MerchantPageVO;
 import com.geekmall.modules.merchant.vo.MerchantPromotionVO;
-import com.geekmall.modules.marketing.entity.CouponTemplate;
-import com.geekmall.modules.marketing.mapper.CouponTemplateMapper;
 import com.geekmall.security.MerchantSecurityUtils;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
-
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 /**
  * 商家端营销中心服务实现。
@@ -31,11 +29,10 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class MerchantPromotionServiceImpl implements MerchantPromotionService {
 
-    private static final List<String> TAB_KEYS =
-            List.of("all", "running", "pending", "paused", "ended");
+    private static final List<String> TAB_KEYS = List.of("all", "running", "pending", "paused", "ended");
 
     private final PromotionMapper promotionMapper;
-    private final CouponTemplateMapper couponTemplateMapper;
+    private final CouponService couponService;
 
     @Override
     public MerchantPageVO<MerchantPromotionVO> page(MerchantPromotionQueryDTO query) {
@@ -57,12 +54,13 @@ public class MerchantPromotionServiceImpl implements MerchantPromotionService {
         Page<Promotion> page = new Page<>(query.getPage(), query.getSize());
         IPage<Promotion> result = promotionMapper.selectPage(page, wrapper);
         List<MerchantPromotionVO> list = result.getRecords().stream()
-                .map(MerchantPromotionConverter::toVO).toList();
+                .map(MerchantPromotionConverter::toVO)
+                .toList();
 
-        MerchantPageVO<MerchantPromotionVO> vo = new MerchantPageVO<>(
-                list, result.getTotal(), result.getCurrent(), result.getSize());
-        List<Promotion> all = promotionMapper.selectList(new LambdaQueryWrapper<Promotion>()
-                .eq(Promotion::getShopId, shopId));
+        MerchantPageVO<MerchantPromotionVO> vo =
+                new MerchantPageVO<>(list, result.getTotal(), result.getCurrent(), result.getSize());
+        List<Promotion> all =
+                promotionMapper.selectList(new LambdaQueryWrapper<Promotion>().eq(Promotion::getShopId, shopId));
         vo.put("tabs", buildTabs(all));
         vo.put("stats", buildStats(all));
         return vo;
@@ -76,9 +74,9 @@ public class MerchantPromotionServiceImpl implements MerchantPromotionService {
 
     @Override
     public List<MerchantCouponVO> coupons() {
-        return couponTemplateMapper.selectList(new LambdaQueryWrapper<CouponTemplate>()
-                        .orderByDesc(CouponTemplate::getId)).stream()
-                .map(MerchantPromotionConverter::toCoupon).toList();
+        return couponService.allTemplates().stream()
+                .map(MerchantPromotionConverter::toCoupon)
+                .toList();
     }
 
     /* ------------------------------ 私有方法 ------------------------------ */
@@ -106,9 +104,11 @@ public class MerchantPromotionServiceImpl implements MerchantPromotionService {
     }
 
     private Map<String, Object> buildStats(List<Promotion> all) {
-        BigDecimal totalCost = all.stream().map(p -> MerchantPromotionConverter.safe(p.getCost()))
+        BigDecimal totalCost = all.stream()
+                .map(p -> MerchantPromotionConverter.safe(p.getCost()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalGmv = all.stream().map(p -> MerchantPromotionConverter.safe(p.getGmv()))
+        BigDecimal totalGmv = all.stream()
+                .map(p -> MerchantPromotionConverter.safe(p.getGmv()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal runningGmv = all.stream()
                 .filter(p -> "running".equals(p.getStatus()))
@@ -120,7 +120,9 @@ public class MerchantPromotionServiceImpl implements MerchantPromotionService {
         long used = coupons.stream().mapToLong(MerchantCouponVO::getUsed).sum();
 
         Map<String, Object> stats = new LinkedHashMap<>();
-        stats.put("running", all.stream().filter(p -> "running".equals(p.getStatus())).count());
+        stats.put(
+                "running",
+                all.stream().filter(p -> "running".equals(p.getStatus())).count());
         stats.put("runningGmv", runningGmv);
         stats.put("totalCost", totalCost);
         stats.put("totalGmv", totalGmv);

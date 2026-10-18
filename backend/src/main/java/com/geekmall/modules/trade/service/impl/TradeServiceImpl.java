@@ -15,7 +15,7 @@ import com.geekmall.modules.marketing.service.CouponService;
 import com.geekmall.modules.marketing.vo.UserCouponVO;
 import com.geekmall.modules.payment.service.PaymentRefundService;
 import com.geekmall.modules.product.entity.Product;
-import com.geekmall.modules.product.mapper.ProductMapper;
+import com.geekmall.modules.product.service.ProductStockService;
 import com.geekmall.modules.trade.converter.OrderConverter;
 import com.geekmall.modules.trade.dto.PreOrderDTO;
 import com.geekmall.modules.trade.dto.SubmitOrderDTO;
@@ -46,7 +46,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -130,7 +129,7 @@ public class TradeServiceImpl implements TradeService {
     private final CartService cartService;
     private final UserService userService;
     private final CouponService couponService;
-    private final ProductMapper productMapper;
+    private final ProductStockService productStockService;
     /**
      * 库存分桶服务（P2-5）。
      *
@@ -337,8 +336,7 @@ public class TradeServiceImpl implements TradeService {
         // 以商品当前价格为准重新计价；一次批量查回，消除逐条 selectById 的 N+1
         List<Long> productIds =
                 items.stream().map(CartItemVO::getProductId).distinct().toList();
-        Map<Long, Product> productMap = productMapper.selectBatchIds(productIds).stream()
-                .collect(Collectors.toMap(Product::getId, Function.identity(), (a, b) -> a));
+        Map<Long, Product> productMap = productStockService.findByIds(productIds);
 
         List<OrderItemDraft> drafts = new ArrayList<>();
         BigDecimal goodsAmount = BigDecimal.ZERO;
@@ -552,7 +550,7 @@ public class TradeServiceImpl implements TradeService {
             throw new BizException(ResultCode.PARAM_ERROR, "订单参数不合法");
         }
         AddressVO address = userService.getAddress(userId, addressId);
-        Product product = productMapper.selectById(productId);
+        Product product = productStockService.findById(productId);
         if (product == null || product.getStatus() == null || product.getStatus() != 1) {
             throw new BizException(ResultCode.NOT_FOUND, "商品不存在或已下架");
         }
@@ -817,7 +815,7 @@ public class TradeServiceImpl implements TradeService {
                 log.warn("库存回退已执行过，跳过幂等回退：orderNo={}, productId={}", orderNo, item.getProductId());
                 continue;
             }
-            productMapper.restoreStock(item.getProductId(), qty);
+            productStockService.restoreStock(item.getProductId(), qty);
         }
     }
 
@@ -844,8 +842,7 @@ public class TradeServiceImpl implements TradeService {
             }
             return;
         }
-        int rows = productMapper.deductStock(productId, qty);
-        if (rows == 0) {
+        if (!productStockService.deductStock(productId, qty)) {
             throw new BizException(ResultCode.OUT_OF_STOCK, "商品「" + title + "」库存不足");
         }
     }

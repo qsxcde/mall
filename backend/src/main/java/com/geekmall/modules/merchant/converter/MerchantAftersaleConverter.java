@@ -1,22 +1,21 @@
 package com.geekmall.modules.merchant.converter;
 
+import com.geekmall.common.enums.MerchantAftersaleStatus;
 import com.geekmall.common.exception.BizException;
 import com.geekmall.common.result.ResultCode;
 import com.geekmall.modules.aftersale.entity.AfterSale;
-import com.geekmall.modules.merchant.support.MerchantAftersaleStatus;
 import com.geekmall.modules.merchant.vo.BuyerVO;
 import com.geekmall.modules.merchant.vo.MerchantAftersaleVO;
 import com.geekmall.modules.merchant.vo.OrderProductVO;
 import com.geekmall.modules.trade.entity.Order;
 import com.geekmall.modules.trade.entity.OrderItem;
 import com.geekmall.modules.user.entity.SysUser;
-import org.springframework.util.StringUtils;
-
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.util.StringUtils;
 
 /**
  * 商家端售后工单转换（含进度时间轴构建）。
@@ -25,6 +24,7 @@ public final class MerchantAftersaleConverter {
 
     /** 处理时限：待处理 48 小时、待买家寄回 168 小时。 */
     private static final int PENDING_LIMIT_HOURS = 48;
+
     private static final int RETURN_LIMIT_HOURS = 168;
 
     /**
@@ -32,11 +32,11 @@ public final class MerchantAftersaleConverter {
      * 编解码集中在这里，避免 Service 与 Converter 各存一份常量而漂移。
      */
     public static final String ID_PREFIX = "AS";
+
     private static final long ID_BASE = 2026100500L;
     private static final long ID_STEP = 3L;
 
-    private MerchantAftersaleConverter() {
-    }
+    private MerchantAftersaleConverter() {}
 
     /** 主键 → 对外的工单号。 */
     public static String toId(Long pk) {
@@ -104,7 +104,7 @@ public final class MerchantAftersaleConverter {
 
     /** 状态解析统一走 {@link MerchantAftersaleStatus#resolve}，保证与 SQL 口径、CAS 条件一致。 */
     private static String resolveStatus(AfterSale item) {
-        return MerchantAftersaleStatus.resolve(item);
+        return MerchantAftersaleStatus.resolve(item.getStatus(), item.getMerchantStatus());
     }
 
     private static Integer countImages(String images) {
@@ -123,8 +123,8 @@ public final class MerchantAftersaleConverter {
         }
         return switch (status) {
             case MerchantAftersaleStatus.PENDING -> applyAt.plusHours(PENDING_LIMIT_HOURS);
-            case MerchantAftersaleStatus.WAIT_RETURN, MerchantAftersaleStatus.WAIT_RECEIVE ->
-                    applyAt.plusHours(RETURN_LIMIT_HOURS);
+            case MerchantAftersaleStatus.WAIT_RETURN, MerchantAftersaleStatus.WAIT_RECEIVE -> applyAt.plusHours(
+                    RETURN_LIMIT_HOURS);
             default -> null;
         };
     }

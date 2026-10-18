@@ -22,17 +22,8 @@ import com.geekmall.modules.merchant.vo.OrderProductVO;
 import com.geekmall.modules.merchant.vo.SettlementOrderVO;
 import com.geekmall.modules.trade.entity.Order;
 import com.geekmall.modules.trade.entity.OrderItem;
-import com.geekmall.modules.trade.mapper.OrderItemMapper;
-import com.geekmall.modules.trade.mapper.OrderMapper;
+import com.geekmall.modules.trade.service.MerchantOrderQueryService;
 import com.geekmall.security.MerchantSecurityUtils;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
-
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -44,6 +35,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 /**
  * 商家端财务结算服务实现。
@@ -59,8 +57,7 @@ public class MerchantFinanceServiceImpl implements MerchantFinanceService {
     private final SettlementMapper settlementMapper;
     private final FundFlowMapper fundFlowMapper;
     private final ShopMapper shopMapper;
-    private final OrderMapper orderMapper;
-    private final OrderItemMapper orderItemMapper;
+    private final MerchantOrderQueryService orderQuery;
 
     @Value("${mall.merchant.commission-rate:0.05}")
     private BigDecimal commissionRate;
@@ -94,7 +91,8 @@ public class MerchantFinanceServiceImpl implements MerchantFinanceService {
         // 冻结金额依赖风控 / 保证金体系，暂以 0 占位
         summary.put("frozen", BigDecimal.ZERO);
         summary.put("settledTotal", settledTotal);
-        summary.put("current", settlements.isEmpty() ? null : MerchantFinanceConverter.toSettlement(settlements.get(0)));
+        summary.put(
+                "current", settlements.isEmpty() ? null : MerchantFinanceConverter.toSettlement(settlements.get(0)));
         summary.put("feeRate", feeRate());
         return summary;
     }
@@ -112,16 +110,28 @@ public class MerchantFinanceServiceImpl implements MerchantFinanceService {
         Page<Settlement> page = new Page<>(query.getPage(), query.getSize());
         IPage<Settlement> result = settlementMapper.selectPage(page, wrapper);
         List<MerchantSettlementVO> list = result.getRecords().stream()
-                .map(MerchantFinanceConverter::toSettlement).toList();
+                .map(MerchantFinanceConverter::toSettlement)
+                .toList();
 
-        MerchantPageVO<MerchantSettlementVO> vo = new MerchantPageVO<>(
-                list, result.getTotal(), result.getCurrent(), result.getSize());
+        MerchantPageVO<MerchantSettlementVO> vo =
+                new MerchantPageVO<>(list, result.getTotal(), result.getCurrent(), result.getSize());
         List<Settlement> all = settlementsDesc(shopId);
-        vo.put("tabs", Map.of(
-                "all", (long) all.size(),
-                "settled", all.stream().filter(s -> "settled".equals(s.getStatus())).count(),
-                "settling", all.stream().filter(s -> "settling".equals(s.getStatus())).count(),
-                "pending", all.stream().filter(s -> "pending".equals(s.getStatus())).count()));
+        vo.put(
+                "tabs",
+                Map.of(
+                        "all", (long) all.size(),
+                        "settled",
+                                all.stream()
+                                        .filter(s -> "settled".equals(s.getStatus()))
+                                        .count(),
+                        "settling",
+                                all.stream()
+                                        .filter(s -> "settling".equals(s.getStatus()))
+                                        .count(),
+                        "pending",
+                                all.stream()
+                                        .filter(s -> "pending".equals(s.getStatus()))
+                                        .count()));
         vo.put("trend", buildTrend(all));
         vo.put("composition", all.isEmpty() ? List.of() : buildComposition(all.get(0)));
         vo.put("feeRate", feeRate());
@@ -141,7 +151,8 @@ public class MerchantFinanceServiceImpl implements MerchantFinanceService {
         Page<FundFlow> page = new Page<>(query.getPage(), query.getSize());
         IPage<FundFlow> result = fundFlowMapper.selectPage(page, wrapper);
         List<MerchantFundFlowVO> list = result.getRecords().stream()
-                .map(MerchantFinanceConverter::toFlow).toList();
+                .map(MerchantFinanceConverter::toFlow)
+                .toList();
         return new MerchantPageVO<>(list, result.getTotal(), result.getCurrent(), result.getSize());
     }
 
@@ -160,7 +171,7 @@ public class MerchantFinanceServiceImpl implements MerchantFinanceService {
 
         MerchantSettlementVO settlementVO = MerchantFinanceConverter.toSettlement(settlement);
         // 账期订单笔数：明细抽屉要显示「抽样 6 / 共 N 笔」，因此按账期实际统计
-        settlementVO.setOrderCount(orderMapper.selectCount(periodWrapper(shopId, settlement.getRangeLabel())));
+        settlementVO.setOrderCount(orderQuery.countByShop(shopId, periodWrapper(shopId, settlement.getRangeLabel())));
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("settlement", settlementVO);
@@ -249,13 +260,16 @@ public class MerchantFinanceServiceImpl implements MerchantFinanceService {
     private List<Map<String, Object>> buildTrend(List<Settlement> desc) {
         List<Settlement> asc = new ArrayList<>(desc);
         java.util.Collections.reverse(asc);
-        return asc.stream().map(s -> {
-            String label = s.getRangeLabel() == null ? "" : s.getRangeLabel().split(" ~ ")[0];
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("label", label);
-            item.put("value", s.getSettle());
-            return item;
-        }).collect(Collectors.toList());
+        return asc.stream()
+                .map(s -> {
+                    String label =
+                            s.getRangeLabel() == null ? "" : s.getRangeLabel().split(" ~ ")[0];
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("label", label);
+                    item.put("value", s.getSettle());
+                    return item;
+                })
+                .collect(Collectors.toList());
     }
 
     private List<Map<String, Object>> buildComposition(Settlement current) {
@@ -287,53 +301,51 @@ public class MerchantFinanceServiceImpl implements MerchantFinanceService {
             return List.of();
         }
         List<String> orderNos = orders.stream().map(Order::getOrderNo).toList();
-        Map<String, OrderItem> itemMap = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
-                        .in(OrderItem::getOrderNo, orderNos)).stream()
-                .collect(Collectors.toMap(OrderItem::getOrderNo, Function.identity(), (a, b) -> a));
+        Map<String, OrderItem> itemMap = orderQuery.itemsByOrderNos(orderNos).entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get(0), (a, b) -> a));
 
-        return orders.stream().map(order -> {
-            OrderItem item = itemMap.get(order.getOrderNo());
-            BigDecimal goods = order.getPayAmount() == null ? BigDecimal.ZERO : order.getPayAmount();
-            SettlementOrderVO vo = new SettlementOrderVO();
-            vo.setId(order.getOrderNo());
-            vo.setQty(item == null ? 0 : item.getQty());
-            vo.setGoods(goods);
-            vo.setCommission(goods.multiply(commissionRate).setScale(2, RoundingMode.HALF_UP));
-            vo.setService(goods.multiply(serviceRate).setScale(2, RoundingMode.HALF_UP));
-            vo.setSettle(goods.subtract(vo.getCommission()).subtract(vo.getService()));
-            vo.setPaidAt(order.getPayTime());
-            if (item != null) {
-                OrderProductVO product = new OrderProductVO();
-                product.setId(item.getProductId());
-                product.setName(item.getTitle());
-                product.setCover(item.getCover());
-                product.setSpec(item.getSpec());
-                product.setPrice(item.getPrice());
-                vo.setProduct(product);
-            }
-            return vo;
-        }).collect(Collectors.toList());
+        return orders.stream()
+                .map(order -> {
+                    OrderItem item = itemMap.get(order.getOrderNo());
+                    BigDecimal goods = order.getPayAmount() == null ? BigDecimal.ZERO : order.getPayAmount();
+                    SettlementOrderVO vo = new SettlementOrderVO();
+                    vo.setId(order.getOrderNo());
+                    vo.setQty(item == null ? 0 : item.getQty());
+                    vo.setGoods(goods);
+                    vo.setCommission(goods.multiply(commissionRate).setScale(2, RoundingMode.HALF_UP));
+                    vo.setService(goods.multiply(serviceRate).setScale(2, RoundingMode.HALF_UP));
+                    vo.setSettle(goods.subtract(vo.getCommission()).subtract(vo.getService()));
+                    vo.setPaidAt(order.getPayTime());
+                    if (item != null) {
+                        OrderProductVO product = new OrderProductVO();
+                        product.setId(item.getProductId());
+                        product.setName(item.getTitle());
+                        product.setCover(item.getCover());
+                        product.setSpec(item.getSpec());
+                        product.setPrice(item.getPrice());
+                        vo.setProduct(product);
+                    }
+                    return vo;
+                })
+                .collect(Collectors.toList());
     }
 
     /** 账期条件：起止时间从 rangeLabel「MM-DD ~ MM-DD」解析，解析失败则退化为全部有效订单。 */
     private LambdaQueryWrapper<Order> periodWrapper(Long shopId, String rangeLabel) {
-        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
-                .eq(Order::getShopId, shopId)
-                .ne(Order::getStatus, 5);
+        LambdaQueryWrapper<Order> wrapper =
+                new LambdaQueryWrapper<Order>().eq(Order::getShopId, shopId).ne(Order::getStatus, 5);
         LocalDate[] period = parsePeriod(rangeLabel);
         if (period != null) {
-            wrapper.ge(Order::getPayTime, period[0].atStartOfDay())
-                    .le(Order::getPayTime, period[1].atTime(23, 59, 59));
+            wrapper.ge(Order::getPayTime, period[0].atStartOfDay()).le(Order::getPayTime, period[1].atTime(23, 59, 59));
         }
         return wrapper;
     }
 
     /** 取账期内的部分订单（明细抽屉抽样展示）。 */
     private List<Order> ordersInPeriod(Long shopId, String rangeLabel, int limit) {
-        LambdaQueryWrapper<Order> wrapper = periodWrapper(shopId, rangeLabel)
-                .orderByDesc(Order::getPayTime)
-                .last("limit " + Math.max(1, limit));
-        return orderMapper.selectList(wrapper);
+        LambdaQueryWrapper<Order> wrapper =
+                periodWrapper(shopId, rangeLabel).orderByDesc(Order::getPayTime).last("limit " + Math.max(1, limit));
+        return orderQuery.listByShop(shopId, wrapper);
     }
 
     private LocalDate[] parsePeriod(String rangeLabel) {
@@ -348,7 +360,7 @@ public class MerchantFinanceServiceImpl implements MerchantFinanceService {
             int year = LocalDate.now().getYear();
             LocalDate start = parseMonthDay(parts[0].trim(), year);
             LocalDate end = parseMonthDay(parts[1].trim(), year);
-            return new LocalDate[]{start, end};
+            return new LocalDate[] {start, end};
         } catch (Exception e) {
             return null;
         }
@@ -359,10 +371,14 @@ public class MerchantFinanceServiceImpl implements MerchantFinanceService {
         return LocalDate.of(year, Integer.parseInt(md[0].trim()), Integer.parseInt(md[1].trim()));
     }
 
-    private BigDecimal sum(List<Settlement> list, java.util.function.Predicate<Settlement> filter,
-                           Function<Settlement, BigDecimal> getter) {
-        return list.stream().filter(filter)
-                .map(getter).filter(Objects::nonNull)
+    private BigDecimal sum(
+            List<Settlement> list,
+            java.util.function.Predicate<Settlement> filter,
+            Function<Settlement, BigDecimal> getter) {
+        return list.stream()
+                .filter(filter)
+                .map(getter)
+                .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 }

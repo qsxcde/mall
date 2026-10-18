@@ -1,6 +1,7 @@
 package com.geekmall.modules.aftersale.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.geekmall.common.enums.MerchantAftersaleStatus;
 import com.geekmall.common.exception.BizException;
 import com.geekmall.common.result.ResultCode;
 import com.geekmall.modules.aftersale.dto.ApplyAfterSaleDTO;
@@ -10,7 +11,6 @@ import com.geekmall.modules.aftersale.mapper.AfterSaleMapper;
 import com.geekmall.modules.aftersale.service.AfterSaleService;
 import com.geekmall.modules.aftersale.vo.AfterSaleStepVO;
 import com.geekmall.modules.aftersale.vo.AfterSaleVO;
-import com.geekmall.modules.merchant.support.MerchantAftersaleStatus;
 import com.geekmall.modules.payment.service.PaymentRefundService;
 import com.geekmall.modules.trade.service.OrderService;
 import com.geekmall.modules.trade.vo.OrderVO;

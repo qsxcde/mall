@@ -24,7 +24,7 @@ import com.geekmall.modules.inventory.service.InventoryBucketService;
 import com.geekmall.modules.marketing.service.CouponService;
 import com.geekmall.modules.marketing.vo.UserCouponVO;
 import com.geekmall.modules.payment.service.PaymentRefundService;
-import com.geekmall.modules.product.mapper.ProductMapper;
+import com.geekmall.modules.product.service.ProductStockService;
 import com.geekmall.modules.trade.dto.PreOrderDTO;
 import com.geekmall.modules.trade.dto.SubmitOrderDTO;
 import com.geekmall.modules.trade.entity.Order;
@@ -76,7 +76,7 @@ class TradeServiceImplTest {
     private CouponService couponService;
 
     @Mock
-    private ProductMapper productMapper;
+    private ProductStockService productStockService;
     /** 分桶服务：默认 isBucketed=false / hasOutbound=false，即走原有的单行扣减路径。 */
     @Mock
     private InventoryBucketService inventoryBucketService;
@@ -122,7 +122,7 @@ class TradeServiceImplTest {
                 cartService,
                 userService,
                 couponService,
-                productMapper,
+                productStockService,
                 inventoryBucketService,
                 orderMapper,
                 orderItemMapper,
@@ -449,8 +449,8 @@ class TradeServiceImplTest {
                             eq(OrderStatus.CANCELED),
                             eq(OrderStateMachine.OPERATOR_USER),
                             eq("不想要了"));
-            verify(productMapper).restoreStock(11L, 2);
-            verify(productMapper).restoreStock(12L, 1);
+            verify(productStockService).restoreStock(11L, 2);
+            verify(productStockService).restoreStock(12L, 1);
             verify(couponService).releaseByOrderNo("GM202610010001");
         }
 
@@ -479,7 +479,7 @@ class TradeServiceImplTest {
 
             tradeService.cancel(USER_ID, "GM1", null);
 
-            verify(productMapper, never()).restoreStock(anyLong(), anyInt());
+            verify(productStockService, never()).restoreStock(anyLong(), anyInt());
             verify(couponService).releaseByOrderNo("GM1");
         }
 
@@ -492,7 +492,7 @@ class TradeServiceImplTest {
                     .isInstanceOf(BizException.class);
 
             verify(orderStateMachine, never()).transfer(any(), any(), anyString(), anyString());
-            verify(productMapper, never()).restoreStock(anyLong(), anyInt());
+            verify(productStockService, never()).restoreStock(anyLong(), anyInt());
         }
     }
 

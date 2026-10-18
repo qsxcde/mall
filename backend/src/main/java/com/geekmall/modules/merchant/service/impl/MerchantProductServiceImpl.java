@@ -17,20 +17,19 @@ import com.geekmall.modules.merchant.support.Numbers;
 import com.geekmall.modules.merchant.vo.MerchantPageVO;
 import com.geekmall.modules.merchant.vo.MerchantProductVO;
 import com.geekmall.modules.product.entity.Product;
-import com.geekmall.modules.product.mapper.ProductMapper;
+import com.geekmall.modules.product.service.ProductStockService;
 import com.geekmall.security.MerchantSecurityUtils;
-import lombok.RequiredArgsConstructor;
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
-
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 /**
  * 商家端商品管理服务实现。
@@ -45,7 +44,7 @@ public class MerchantProductServiceImpl implements MerchantProductService {
     /** 「在售」状态码：只有该状态才对买家侧可见（pms_product.status = 1）。 */
     private static final String ON_SHELF_STATUS = "on";
 
-    private final ProductMapper productMapper;
+    private final ProductStockService productStockService;
     private final MerchantStatsMapper statsMapper;
     /** 商品上架后必须同步进布隆过滤器，否则新品详情会被防穿透机制误判为「不存在」。 */
     private final RedisBloomFilter productBloomFilter;
@@ -68,17 +67,20 @@ public class MerchantProductServiceImpl implements MerchantProductService {
         if (StringUtils.hasText(query.getKeyword())) {
             String keyword = query.getKeyword().trim();
             wrapper.and(w -> w.like(Product::getTitle, keyword)
-                    .or().like(Product::getBrandName, keyword)
-                    .or().like(Product::getCategoryName, keyword));
+                    .or()
+                    .like(Product::getBrandName, keyword)
+                    .or()
+                    .like(Product::getCategoryName, keyword));
         }
         applySort(wrapper, query.getSort());
 
         Page<Product> page = new Page<>(query.getPage(), query.getSize());
-        IPage<Product> result = productMapper.selectPage(page, wrapper);
-        List<MerchantProductVO> list = result.getRecords().stream().map(MerchantProductConverter::toVO).toList();
+        IPage<Product> result = productStockService.pageByShop(shopId, wrapper, page.getCurrent(), page.getSize());
+        List<MerchantProductVO> list =
+                result.getRecords().stream().map(MerchantProductConverter::toVO).toList();
 
-        MerchantPageVO<MerchantProductVO> vo = new MerchantPageVO<>(
-                list, result.getTotal(), result.getCurrent(), result.getSize());
+        MerchantPageVO<MerchantProductVO> vo =
+                new MerchantPageVO<>(list, result.getTotal(), result.getCurrent(), result.getSize());
         vo.put("tabs", buildTabs(shopId));
         vo.put("stats", buildStats(shopId));
         return vo;
@@ -96,8 +98,14 @@ public class MerchantProductServiceImpl implements MerchantProductService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     // 商品变更后清空买家侧缓存，避免详情/首页读到旧数据
-    @CacheEvict(cacheNames = {CacheNames.HOME_FLOORS, CacheNames.CATEGORY_TREE,
-            CacheNames.PRODUCT_DETAIL, CacheNames.PRODUCT_RECOMMEND}, allEntries = true)
+    @CacheEvict(
+            cacheNames = {
+                CacheNames.HOME_FLOORS,
+                CacheNames.CATEGORY_TREE,
+                CacheNames.PRODUCT_DETAIL,
+                CacheNames.PRODUCT_RECOMMEND
+            },
+            allEntries = true)
     public Long save(ProductSaveDTO dto) {
         Long shopId = MerchantSecurityUtils.getShopId();
         Product product = new Product();
@@ -127,16 +135,16 @@ public class MerchantProductServiceImpl implements MerchantProductService {
             product.setViews(0);
             product.setIsHot(0);
             product.setIsNew(1);
-            productMapper.insert(product);
+            productStockService.insertProduct(product);
         } else {
-            Product exist = productMapper.selectById(dto.getId());
+            Product exist = productStockService.findByShopAndId(shopId, dto.getId());
             if (exist == null || !shopId.equals(exist.getShopId())) {
                 throw BizException.of(ResultCode.NOT_FOUND);
             }
             product.setId(dto.getId());
             // 乐观锁：回传提交时读到的版本号；为空时插件不追加版本条件（兼容老客户端）
             product.setVersion(dto.getVersion());
-            if (productMapper.updateById(product) == 0) {
+            if (!productStockService.updateWithVersion(product)) {
                 throw new BizException(ResultCode.BIZ_ERROR, "商品信息已被其他运营修改，请刷新后重新编辑");
             }
         }
@@ -149,8 +157,14 @@ public class MerchantProductServiceImpl implements MerchantProductService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @CacheEvict(cacheNames = {CacheNames.HOME_FLOORS, CacheNames.CATEGORY_TREE,
-            CacheNames.PRODUCT_DETAIL, CacheNames.PRODUCT_RECOMMEND}, allEntries = true)
+    @CacheEvict(
+            cacheNames = {
+                CacheNames.HOME_FLOORS,
+                CacheNames.CATEGORY_TREE,
+                CacheNames.PRODUCT_DETAIL,
+                CacheNames.PRODUCT_RECOMMEND
+            },
+            allEntries = true)
     public int updateStatus(ProductBatchDTO dto) {
         Long shopId = MerchantSecurityUtils.getShopId();
         String status = normalizeStatus(dto.getStatus());
@@ -162,7 +176,7 @@ public class MerchantProductServiceImpl implements MerchantProductService {
             update.setId(product.getId());
             update.setMerchantStatus(status);
             update.setStatus(onShelf ? 1 : 0);
-            affected += productMapper.updateById(update);
+            affected += productStockService.updateProduct(update);
             if (onShelf) {
                 // 上架即纳入布隆过滤器：布隆只能加不能删，下架商品无需移除，
                 // 后续详情请求会命中空值缓存（下架即视为不存在）
@@ -174,8 +188,14 @@ public class MerchantProductServiceImpl implements MerchantProductService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @CacheEvict(cacheNames = {CacheNames.HOME_FLOORS, CacheNames.CATEGORY_TREE,
-            CacheNames.PRODUCT_DETAIL, CacheNames.PRODUCT_RECOMMEND}, allEntries = true)
+    @CacheEvict(
+            cacheNames = {
+                CacheNames.HOME_FLOORS,
+                CacheNames.CATEGORY_TREE,
+                CacheNames.PRODUCT_DETAIL,
+                CacheNames.PRODUCT_RECOMMEND
+            },
+            allEntries = true)
     public int batchUpdatePrice(ProductBatchDTO dto) {
         Long shopId = MerchantSecurityUtils.getShopId();
         if (dto.getValue() == null) {
@@ -190,8 +210,8 @@ public class MerchantProductServiceImpl implements MerchantProductService {
                 next = price.add(dto.getValue());
             } else {
                 // 默认按百分比调整：value 为 -10 表示降价 10%
-                BigDecimal factor = BigDecimal.ONE.add(
-                        dto.getValue().divide(new BigDecimal("100"), 6, RoundingMode.HALF_UP));
+                BigDecimal factor =
+                        BigDecimal.ONE.add(dto.getValue().divide(new BigDecimal("100"), 6, RoundingMode.HALF_UP));
                 next = price.multiply(factor);
             }
             next = next.max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
@@ -201,7 +221,7 @@ public class MerchantProductServiceImpl implements MerchantProductService {
             // 改价是「读原价 → 按比例算新价 → 写回」，必须带版本号：
             // 否则两次并发改价会各自基于旧价计算，后写者把前者的结果覆盖掉
             update.setVersion(product.getVersion());
-            affected += productMapper.updateById(update);
+            affected += productStockService.updateProduct(update);
         }
         return affected;
     }
@@ -212,9 +232,9 @@ public class MerchantProductServiceImpl implements MerchantProductService {
         if (ids == null || ids.isEmpty()) {
             return List.of();
         }
-        return productMapper.selectList(new LambdaQueryWrapper<Product>()
-                .eq(Product::getShopId, shopId)
-                .in(Product::getId, ids));
+        return productStockService.listByShop(
+                shopId,
+                new LambdaQueryWrapper<Product>().eq(Product::getShopId, shopId).in(Product::getId, ids));
     }
 
     private void applyStockFilter(LambdaQueryWrapper<Product> wrapper, String stock) {
