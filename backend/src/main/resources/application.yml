@@ -201,6 +201,22 @@ mall:
   mock:
     # 是否注册联调用的模拟接口（如模拟发货），生产必须为 false
     enabled: false
+  # ---------------- 商品搜索引擎（可切换，便于 A/B 与降级） ----------------
+  # 三种实现语义等价（同一关键词命中数一致），差异只在性能：
+  #   mysql-like      三列 LIKE '%kw%' 全表扫描。数据量小时零额外成本，默认值。
+  #   mysql-fulltext  MySQL 全文索引 + ngram 分词（需执行 V14 迁移建索引）。
+  #   elasticsearch   外部 ES 集群（需 mall.search.es.* 配置与数据同步）。
+  # 实测 100 万行对比见 docs/benchmark/商品搜索三方案对比.md
+  search:
+    engine: ${SEARCH_ENGINE:mysql-like}
+    es:
+      # 多个节点用英文逗号分隔
+      uris: ${ES_URIS:http://localhost:9200}
+      index: ${ES_INDEX:product}
+      connect-timeout-ms: 2000
+      socket-timeout-ms: 5000
+      # ES 故障时是否自动回落到 mysql-like（搜索变慢但不中断）
+      degrade-to-mysql: true
   storage:
     # minio：对象存储（生产推荐）；local：本地磁盘（不想起 MinIO 时的开发选项）
     type: ${STORAGE_TYPE:minio}
