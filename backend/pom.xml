@@ -25,6 +25,7 @@
         <shedlock.version>7.10.1</shedlock.version>
         <!-- Elasticsearch Java 客户端：8.15.x 与 ES 8.x 服务端兼容 -->
         <elasticsearch-java.version>8.15.3</elasticsearch-java.version>
+        <archunit.version>1.4.0</archunit.version>
         <!--
           结构化日志（JSON）。8.0 对应 logback 1.5.x，与 Spring Boot 3.3.5 自带的
           logback 版本对齐；用 7.x 会在 logback 1.5 上引入兼容性风险。
@@ -175,6 +176,15 @@
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- ArchUnit：把「分层纪律」从口头约定变成可执行断言。
+             选它而不是自研扫描脚本，因为规则可读、失败信息精确到「哪一行 import 违反了哪条」，
+             且与 JUnit5 原生集成（失败即测试红）。 -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <version>${archunit.version}</version>
             <scope>test</scope>
         </dependency>
         <!-- 集成测试：真实 MySQL / Redis 容器（Testcontainers） -->
