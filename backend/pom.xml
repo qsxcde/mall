@@ -23,6 +23,8 @@
         <jjwt.version>0.12.6</jjwt.version>
         <springdoc.version>2.6.0</springdoc.version>
         <shedlock.version>7.10.1</shedlock.version>
+        <!-- Elasticsearch Java 客户端：8.15.x 与 ES 8.x 服务端兼容 -->
+        <elasticsearch-java.version>8.15.3</elasticsearch-java.version>
         <!--
           结构化日志（JSON）。8.0 对应 logback 1.5.x，与 Spring Boot 3.3.5 自带的
           logback 版本对齐；用 7.x 会在 logback 1.5 上引入兼容性风险。
@@ -190,6 +192,18 @@
             <groupId>org.testcontainers</groupId>
             <artifactId>mysql</artifactId>
             <scope>test</scope>
+        </dependency>
+        <!-- 商品搜索：Elasticsearch Java 客户端。
+             刻意不用 Spring Data Elasticsearch —— 它对 Boot 版本与 ES 版本有严格的三方匹配约束，
+             且封装层会挡住 DSL 细节；直接使用官方 low-level 客户端更透明。 -->
+        <dependency>
+            <groupId>co.elastic.clients</groupId>
+            <artifactId>elasticsearch-java</artifactId>
+            <version>${elasticsearch-java.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
         </dependency>
     </dependencies>
 
