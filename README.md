@@ -19,7 +19,7 @@
 | 后端 | `backend/` | Spring Boot 3.3.5 + JDK 21，133 个 REST 接口，统一前缀 `/api/v1` |
 | 基础设施 | `infra/` | Docker Compose 编排 MySQL / Redis / MinIO，可选开可观测性栈 |
 | 压测 | `loadtest/` | k6 为主、JMeter 为辅，含数据准备与结果校验脚本 |
-| 文档 | `docs/` | 21 份分析报告（现状、治理清单、限流策略、压测对比、多实例验证等） |
+| 文档 | `docs/` | 23 份分析报告（现状、治理清单、限流策略、压测对比、多实例验证等） |
 
 ### 1.2 技术栈
 
@@ -30,13 +30,14 @@
 | 运行时 | JDK 21 |
 | 框架 | Spring Boot 3.3.5 |
 | 安全 | Spring Security 6 + JWT 无状态（Redis 保存会话，支持登出踢下线） |
-| 持久层 | MyBatis-Plus + MySQL 8 + Flyway（13 个版本化迁移，代码与库结构同源） |
+| 持久层 | MyBatis-Plus + MySQL 8 + Flyway（14 个版本化迁移，代码与库结构同源） |
 | 缓存 | Redis 7（分级 TTL + 本地 Caffeine L1） |
 | 分布式 | Redis Stream（秒杀削峰队列）、ShedLock（定时任务互斥） |
 | 可观测性 | Actuator + Micrometer/Prometheus + 结构化 JSON 日志 + TraceId 全链路（跨线程 / 跨队列） |
 | 接口文档 | springdoc-openapi（Swagger UI） |
 | 存储 | MinIO 对象存储，可切本地磁盘 |
-| 测试 | JUnit 5 + Testcontainers（真实 MySQL 8 / Redis 7 容器） |
+| 搜索 | 可切换三实现：MySQL `LIKE` / MySQL `FULLTEXT`(ngram) / Elasticsearch 8.15 |
+| 测试 | JUnit 5 + Testcontainers（真实 MySQL 8 / Redis 7 容器）+ ArchUnit（分层约束） |
 
 **前端**
 
@@ -78,13 +79,13 @@
 
 ### 1.5 质量与验证
 
-- **53 个测试类**（+1 基类，共 **629 个用例**），`mvn test` 一键运行全绿；集成测试用 Testcontainers 起**真实 MySQL 8 + Redis 7**，跑真实 Flyway 迁移与真实过滤器链
+- **57 个测试类**（+2 基类，共 **668 个用例**），`mvn test` 一键运行全绿；集成测试用 Testcontainers 起**真实 MySQL 8 + Redis 7**，跑真实 Flyway 迁移与真实过滤器链；JaCoCo 行覆盖率 **71.17%**（门禁 ≥60%）
 - **代码风格有工具约束且已接入 CI**：后端 Spotless + palantir-java-format，前端 ESLint 9（flat config）+ Prettier 3。
   两边都用 **ratchet**（只约束「相对基线有改动的文件」）——因为全库重排会产生覆盖数百文件的 diff，
   而 ratchet 既能让 CI 立刻变绿，又能让此后每次改动自动收敛到统一风格
 - 并发正确性从「压测时观察」升级为「自动化断言」——改坏了会立刻红灯
 - k6 压测体系可复现：数据准备脚本 + 结果校验脚本 + 指标渲染
-- 已做过一轮死代码清理（基于全库引用扫描 + 逐项人工复核），并在引入 ESLint 时又清掉一批 + 删除了前端 mock 死代码
+- 已做过两轮死代码清理（全库引用扫描 + 逐项人工复核）；**分层纪律由 ArchUnit 固化**（7 条规则：controller 不碰 mapper、common 不反向依赖业务域、跨域 mapper 直连为 0 等）
 
 ### 1.6 目录结构
 

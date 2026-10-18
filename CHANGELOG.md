@@ -12,7 +12,41 @@
 
 ## [未发布]
 
-（暂无）
+### 新增
+
+- **商品搜索抽象为三种可切换实现**（`mall.search.engine`）：`mysql-like`（默认）、
+  `mysql-fulltext`（MySQL FULLTEXT + ngram）、`elasticsearch`（ES 8.15，只召回 id、内容回表，
+  故障自动降级回 LIKE）。三实现语义一致性由 `ProductSearchContractIntegrationTest` 锁定
+- 商品搜索三方案实测报告（100 万行）：`docs/benchmark/商品搜索三方案对比.md`、
+  `docs/benchmark/商品搜索容量边界实测.md`
+- **ArchUnit 架构约束**（`LayeredArchitectureTest`，7 条规则）：把分层纪律从口头约定变成可执行断言，
+  含「业务域不得直连他域 mapper」与「域间循环依赖数 ≤ 4」
+- 跨域耦合治理：新增 `MerchantOrderQueryService` / `MerchantReviewQueryService` /
+  `MerchantAfterSaleQueryService` / `ProductStockService`，所有查询强制店铺隔离；
+  `UserService` 补齐认证域所需的账户读写方法
+- 造数与压测脚本：`gen_mock_products.py`（1 万~100 万条，自动刷新布隆过滤器）、
+  `es_sync_products.py`（全量同步到 ES）、`bench_search.py`（三方案统一口径基准）
+
+### 变更
+
+- `MerchantAftersaleStatus` 从 `merchant/support` 下沉到 `common/enums`
+  （买卖双方共享口径，消除 `aftersale → merchant` 反向依赖），`resolve` 改为接收原始字段
+- `MerchantDashboardServiceImpl`（397 行）按页面拆分：概览保留原类，
+  数据看板独立为 `MerchantAnalyticsAssembler`，共用日序列计算抽为 `MerchantDailySeries`
+- `V14__product_search_fulltext.sql`：新增商品搜索全文索引（幂等迁移）
+
+### 修复
+
+- 布隆过滤器预热在 80 万在售商品时 OOM 导致启动失败：`addAllRaw` 改为分批写入（每批 5000）
+- ES 客户端未读取配置的连接/读取超时（默认 30s 会挂住 Tomcat 线程）：已生效为 2s/5s
+- ES 搜索的排序语义：有关键词时 `_score` 曾抢占主排序键，导致 `sort=price_asc` 实际不按价格排
+- 商家售后按 `orderNo` 查订单时漏加 `shop_id` 条件（越权可达）：已收敛到 `MerchantOrderQueryService`
+
+### 文档
+
+- `docs/` 新增 2 份搜索实测报告（累计 23 份），并更新分类索引
+- `code-wiki` 同步结构变更：搜索引擎抽象、跨域查询服务、看板拆分、ArchUnit 规则，
+  并修正测试数（629 → 668）、迁移数（13 → 14）、文档数（21 → 23）
 
 ## [1.0.0] - 2026-10-17
 
