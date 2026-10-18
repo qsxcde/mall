@@ -264,9 +264,28 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
 
 **③ 商品域进阶**
 
-多规格 SKU（当前是单商品模式）、Elasticsearch 搜索与联想（当前是数据库 LIKE）、服务筛选。这是业务完整度上最明显的空白。
+多规格 SKU（当前是单商品模式）、服务筛选。这是业务完整度上最明显的空白。
 
-**④ 可观测性从「有配置」走到「有看板」** —— ✅ 已完成
+**④ 搜索三方案实测：LIKE / FULLTEXT / Elasticsearch** —— ✅ 已完成
+
+商品搜索已抽象为可切换的 `ProductSearchService`（`mall.search.engine` 选 `mysql-like` / `mysql-fulltext` / `elasticsearch`），
+并在同一套 100 万行数据、同一测量脚本下做了三方案对比：
+
+| 场景 | LIKE | FULLTEXT | Elasticsearch |
+| --- | ---: | ---: | ---: |
+| 低频词（2 条命中） | 5,240 ms | **5.8 ms** | 9.9 ms |
+| 高频词（13.8 万命中） | 1,041 ms | 6,888 ms | **23.6 ms** |
+| 无匹配 | 1,041 ms | **2.8 ms** | 5.9 ms |
+| 并发 6 | 10,325 ms | 23 ms | **16 ms** |
+
+结论：**LIKE 的唯一优势是零组件成本；FULLTEXT 是"优化了结果少的场景、牺牲了结果多的场景"；
+ES 是唯一延迟与命中数弱相关、且能横向扩展的方案。** 详见
+[`docs/benchmark/商品搜索三方案对比.md`](docs/benchmark/商品搜索三方案对比.md)。
+
+实测同时暴露并修复了一个真实缺陷：布隆过滤器预热在 80 万在售商品时一次性灌入 ~560 万条
+SETBIT 命令，**直接 OOM 导致应用启动失败**（`RedisBloomFilter.addAllRaw` 已改为分批写入）。
+
+**⑤ 可观测性从「有配置」走到「有看板」** —— ✅ 已完成
 
 `infra/` 里编排了 Prometheus + Grafana + Loki + Promtail，现已接上**看板与告警**：
 
