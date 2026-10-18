@@ -1,17 +1,17 @@
 package com.geekmall.common.cache;
 
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.connection.RedisStringCommands;
-import org.springframework.data.redis.core.RedisCallback;
-import org.springframework.data.redis.core.StringRedisTemplate;
-
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.stream.IntStream;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.connection.RedisStringCommands;
+import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 /**
  * 基于 Redis Bitmap 的布隆过滤器（穿透防护的第一道闸门）。
@@ -38,6 +38,9 @@ public class RedisBloomFilter {
 
     private static final String HASH_ALGORITHM = "MD5";
 
+    /** 位图批量写入的单批元素数：防止大集合一次性灌入 Pipeline 撑爆堆内存。 */
+    private static final int BATCH_SIZE = 5000;
+
     private final StringRedisTemplate redisTemplate;
     private final String key;
     private final String readyKey;
@@ -51,8 +54,8 @@ public class RedisBloomFilter {
      * @param expectedInsertions 预期元素个数，决定位图大小
      * @param fpp              期望误判率（如 0.01 表示 1%）
      */
-    public RedisBloomFilter(StringRedisTemplate redisTemplate, String key, String readyKey,
-                            long expectedInsertions, double fpp) {
+    public RedisBloomFilter(
+            StringRedisTemplate redisTemplate, String key, String readyKey, long expectedInsertions, double fpp) {
         this.redisTemplate = redisTemplate;
         this.key = key;
         this.readyKey = readyKey;
@@ -86,13 +89,12 @@ public class RedisBloomFilter {
             return true;
         }
         try {
-            List<Object> bits = redisTemplate.executePipelined(
-                    (RedisCallback<Object>) connection -> {
-                        for (long offset : offsets(value)) {
-                            connection.stringCommands().getBit(rawKey(), offset);
-                        }
-                        return null;
-                    });
+            List<Object> bits = redisTemplate.executePipelined((RedisCallback<Object>) connection -> {
+                for (long offset : offsets(value)) {
+                    connection.stringCommands().getBit(rawKey(), offset);
+                }
+                return null;
+            });
             return bits.stream().allMatch(bit -> Boolean.TRUE.equals(bit));
         } catch (Exception ex) {
             // 过滤器故障不应阻断业务：退化为「放行」，由空值缓存继续兜底
@@ -134,20 +136,55 @@ public class RedisBloomFilter {
             } else {
                 redisTemplate.opsForValue().set(readyKey, "1");
             }
-            log.info("布隆过滤器重建完成：key={}, 元素数={}, 位图={}bit, 哈希次数={}",
-                    key, values == null ? 0 : values.size(), bitSize, hashCount);
+            log.info(
+                    "布隆过滤器重建完成：key={}, 元素数={}, 位图={}bit, 哈希次数={}",
+                    key,
+                    values == null ? 0 : values.size(),
+                    bitSize,
+                    hashCount);
         } catch (Exception ex) {
             log.error("布隆过滤器重建失败，将继续以「跳过校验」模式运行：{}", ex.getMessage());
         }
     }
 
+    /**
+     * 分批写入位图。
+     *
+     * <p><b>为什么必须分批</b>：{@code executePipelined} 会把整个回调期间产生的命令
+     * 全部缓存在 Pipeline 的应答队列里，直到回调结束才一次性发送。若一次投入 80 万个元素
+     * （每个元素 k≈7 次 SETBIT），就是约 560 万条命令同时驻留内存 ——
+     * 实测在 80 万在售商品时直接 {@code OutOfMemoryError: Java heap space}，
+     * 表现为<b>应用启动失败</b>（预热是 ApplicationRunner，异常会向上抛）。</p>
+     *
+     * <p>分批后每批只有 {@code BATCH_SIZE × k} 条命令，内存占用恒定；
+     * 总往返次数从 1 次变成 {@code N/BATCH_SIZE} 次，但每批仍是流水线，总耗时几乎不变。</p>
+     */
     private void addAllRaw(Collection<String> values) {
+        if (values == null || values.isEmpty()) {
+            return;
+        }
+        List<String> batch = new ArrayList<>(BATCH_SIZE);
+        for (String value : values) {
+            if (value == null) {
+                continue;
+            }
+            batch.add(value);
+            if (batch.size() >= BATCH_SIZE) {
+                flushBatch(batch);
+                batch.clear();
+            }
+        }
+        if (!batch.isEmpty()) {
+            flushBatch(batch);
+        }
+    }
+
+    /** 单批写入：BATCH_SIZE=5000 时约 3.5 万条 SETBIT，内存占用在几十 MB 量级。 */
+    private void flushBatch(List<String> batch) {
+        List<String> snapshot = new ArrayList<>(batch);
         redisTemplate.executePipelined((RedisCallback<Object>) connection -> {
             RedisStringCommands commands = connection.stringCommands();
-            for (String value : values) {
-                if (value == null) {
-                    continue;
-                }
+            for (String value : snapshot) {
                 for (long offset : offsets(value)) {
                     commands.setBit(rawKey(), offset, true);
                 }
@@ -175,8 +212,7 @@ public class RedisBloomFilter {
 
     private byte[] digest(String value) {
         try {
-            return MessageDigest.getInstance(HASH_ALGORITHM)
-                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return MessageDigest.getInstance(HASH_ALGORITHM).digest(value.getBytes(StandardCharsets.UTF_8));
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("当前 JVM 不支持 " + HASH_ALGORITHM, ex);
         }
