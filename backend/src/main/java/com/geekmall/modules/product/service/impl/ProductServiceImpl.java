@@ -14,17 +14,12 @@ import com.geekmall.modules.product.entity.Category;
 import com.geekmall.modules.product.entity.Product;
 import com.geekmall.modules.product.mapper.CategoryMapper;
 import com.geekmall.modules.product.mapper.ProductMapper;
+import com.geekmall.modules.product.search.ProductSearchService;
 import com.geekmall.modules.product.service.ProductService;
 import com.geekmall.modules.product.vo.CategoryVO;
 import com.geekmall.modules.product.vo.HomeFloorVO;
 import com.geekmall.modules.product.vo.ProductCardVO;
 import com.geekmall.modules.product.vo.ProductDetailVO;
-import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.cache.annotation.Cacheable;
-import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -34,6 +29,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 /**
  * 商品查询服务实现（纯读多写少的场景，可在此叠加 Redis 缓存）。
@@ -48,6 +48,13 @@ public class ProductServiceImpl implements ProductService {
     private final CategoryMapper categoryMapper;
     /** 商品 ID 布隆过滤器：挡掉「一定不存在」的详情请求，防缓存穿透。 */
     private final RedisBloomFilter productBloomFilter;
+    /**
+     * 搜索实现（mysql-like / mysql-fulltext / elasticsearch 由配置决定）。
+     *
+     * <p>用 {@code ObjectProvider} 而不是直接注入：搜索实现在「未启用」时
+     * 不会注册成 Bean（{@code @ConditionalOnProperty}），直接注入会启动失败。</p>
+     */
+    private final ObjectProvider<ProductSearchService> searchServiceProvider;
     /** 自引用代理：detail 需要走带缓存的内部方法，自调用不会经过 Spring 缓存切面。 */
     private final ObjectProvider<ProductServiceImpl> selfProvider;
 
@@ -62,9 +69,8 @@ public class ProductServiceImpl implements ProductService {
     @Override
     @Cacheable(cacheNames = CacheNames.CATEGORY_TREE, sync = true)
     public List<CategoryVO> categoryTree() {
-        List<Category> all = categoryMapper.selectList(new LambdaQueryWrapper<Category>()
-                .orderByAsc(Category::getSort)
-                .orderByAsc(Category::getId));
+        List<Category> all = categoryMapper.selectList(
+                new LambdaQueryWrapper<Category>().orderByAsc(Category::getSort).orderByAsc(Category::getId));
         Map<Long, CategoryVO> voMap = new HashMap<>();
         List<CategoryVO> roots = new ArrayList<>();
         for (Category category : all) {
@@ -89,6 +95,12 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public PageResult<ProductCardVO> page(ProductQueryDTO query) {
+        // 走搜索抽象：具体用 LIKE / FULLTEXT / ES 由 mall.search.engine 决定。
+        // 保留原实现作为「未装配搜索 Bean」时的兜底，行为与改造前完全一致。
+        ProductSearchService search = searchServiceProvider.getIfAvailable();
+        if (search != null) {
+            return search.search(query);
+        }
         LambdaQueryWrapper<Product> wrapper = buildQueryWrapper(query);
         applySort(wrapper, query.getSort());
         Page<Product> page = new Page<>(query.getPage(), query.getPageSize());
@@ -202,24 +214,29 @@ public class ProductServiceImpl implements ProductService {
         HomeFloorVO vo = new HomeFloorVO();
         // 必须经代理调用，否则 @Cacheable(CATEGORY_TREE) 不生效（同类自调用绕过缓存切面）
         vo.setCategories(selfProvider.getObject().categoryTree());
-        vo.setHotProducts(productMapper.selectList(new LambdaQueryWrapper<Product>()
+        vo.setHotProducts(productMapper
+                .selectList(new LambdaQueryWrapper<Product>()
                         .eq(Product::getStatus, ON_SHELF)
                         .orderByDesc(Product::getSales)
                         .last("limit 8"))
-                .stream().map(ProductConverter::toCard).toList());
-        vo.setNewProducts(productMapper.selectList(new LambdaQueryWrapper<Product>()
+                .stream()
+                .map(ProductConverter::toCard)
+                .toList());
+        vo.setNewProducts(productMapper
+                .selectList(new LambdaQueryWrapper<Product>()
                         .eq(Product::getStatus, ON_SHELF)
                         .eq(Product::getIsNew, 1)
                         .orderByDesc(Product::getId)
                         .last("limit 8"))
-                .stream().map(ProductConverter::toCard).toList());
+                .stream()
+                .map(ProductConverter::toCard)
+                .toList());
         return vo;
     }
 
     @Override
     public long countOnShelf() {
-        Long count = productMapper.selectCount(new LambdaQueryWrapper<Product>()
-                .eq(Product::getStatus, ON_SHELF));
+        Long count = productMapper.selectCount(new LambdaQueryWrapper<Product>().eq(Product::getStatus, ON_SHELF));
         return count == null ? 0L : count;
     }
 
@@ -259,8 +276,10 @@ public class ProductServiceImpl implements ProductService {
         if (StringUtils.hasText(query.getKeyword())) {
             String keyword = query.getKeyword().trim();
             wrapper.and(w -> w.like(Product::getTitle, keyword)
-                    .or().like(Product::getBrandName, keyword)
-                    .or().like(Product::getCategoryName, keyword));
+                    .or()
+                    .like(Product::getBrandName, keyword)
+                    .or()
+                    .like(Product::getCategoryName, keyword));
         }
 
         if (StringUtils.hasText(query.getBrand())) {
