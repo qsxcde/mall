@@ -1,0 +1,89 @@
+{
+  "label": "ES",
+  "timestamp": "2026-10-18 00:12:02",
+  "serial": [
+    {
+      "keyword": "华为",
+      "hits": 138384,
+      "status": 200,
+      "mean_ms": 23.6,
+      "p50_ms": 23.5,
+      "p99_ms": 25.1,
+      "min_ms": 22.1,
+      "max_ms": 25.1,
+      "samples": 5,
+      "kind": "high"
+    },
+    {
+      "keyword": "Redmi",
+      "hits": 31735,
+      "status": 200,
+      "mean_ms": 12.6,
+      "p50_ms": 12.1,
+      "p99_ms": 15.1,
+      "min_ms": 11.3,
+      "max_ms": 15.1,
+      "samples": 5,
+      "kind": "high"
+    },
+    {
+      "keyword": "iPhone",
+      "hits": 2,
+      "status": 200,
+      "mean_ms": 9.9,
+      "p50_ms": 9.0,
+      "p99_ms": 14.0,
+      "min_ms": 8.2,
+      "max_ms": 14.0,
+      "samples": 5,
+      "kind": "low"
+    },
+    {
+      "keyword": "ThinkPad",
+      "hits": 20059,
+      "status": 200,
+      "mean_ms": 14.2,
+      "p50_ms": 13.3,
+      "p99_ms": 19.0,
+      "min_ms": 10.0,
+      "max_ms": 19.0,
+      "samples": 5,
+      "kind": "low"
+    },
+    {
+      "keyword": "zzz不存在zzz",
+      "hits": 0,
+      "status": 200,
+      "mean_ms": 5.9,
+      "p50_ms": 5.5,
+      "p99_ms": 7.0,
+      "min_ms": 4.9,
+      "max_ms": 7.0,
+      "samples": 5,
+      "kind": "none"
+    }
+  ],
+  "concurrent": [
+    {
+      "keyword": "iPhone",
+      "concurrency": 1,
+      "wall_ms": 9.5,
+      "mean_ms": 9.3,
+      "max_ms": 9.3
+    },
+    {
+      "keyword": "iPhone",
+      "concurrency": 3,
+      "wall_ms": 16.0,
+      "mean_ms": 15.2,
+      "max_ms": 15.7
+    },
+    {
+      "keyword": "iPhone",
+      "concurrency": 6,
+      "wall_ms": 16.2,
+      "mean_ms": 14.6,
+      "max_ms": 16.0
+    }
+  ]
+}
