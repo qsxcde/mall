@@ -1,11 +1,10 @@
-package com.geekmall.modules.merchant.support;
+package com.geekmall.common.enums;
 
-import com.geekmall.modules.aftersale.entity.AfterSale;
+import static org.assertj.core.api.Assertions.assertThat;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 售后商家侧状态解析单元测试。
@@ -16,13 +15,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class MerchantAftersaleStatusTest {
 
-    private static AfterSale aftersale(Integer buyerStatus, String merchantStatus) {
-        AfterSale item = new AfterSale();
-        item.setStatus(buyerStatus);
-        item.setMerchantStatus(merchantStatus);
-        return item;
-    }
-
     @Nested
     @DisplayName("解析优先级")
     class Resolve {
@@ -30,41 +22,38 @@ class MerchantAftersaleStatusTest {
         @Test
         @DisplayName("入参为 null 时按「待处理」兜底")
         void nullItemIsPending() {
-            assertThat(MerchantAftersaleStatus.resolve(null)).isEqualTo(MerchantAftersaleStatus.PENDING);
+            assertThat(MerchantAftersaleStatus.resolve(null, null)).isEqualTo(MerchantAftersaleStatus.PENDING);
         }
 
         @Test
         @DisplayName("已拒绝优先级最高：即使买家侧仍是处理中，也保持 rejected")
         void rejectedWins() {
-            assertThat(MerchantAftersaleStatus.resolve(aftersale(0, MerchantAftersaleStatus.REJECTED)))
+            assertThat(MerchantAftersaleStatus.resolve(0, MerchantAftersaleStatus.REJECTED))
                     .isEqualTo(MerchantAftersaleStatus.REJECTED);
         }
 
         @Test
         @DisplayName("买家已撤销优先于商家侧落库状态，避免商家空等退货")
         void buyerCanceledOverridesMerchantStatus() {
-            assertThat(MerchantAftersaleStatus.resolve(aftersale(2, MerchantAftersaleStatus.WAIT_RETURN)))
+            assertThat(MerchantAftersaleStatus.resolve(2, MerchantAftersaleStatus.WAIT_RETURN))
                     .isEqualTo(MerchantAftersaleStatus.CANCELED);
-            assertThat(MerchantAftersaleStatus.resolve(aftersale(2, MerchantAftersaleStatus.WAIT_RECEIVE)))
+            assertThat(MerchantAftersaleStatus.resolve(2, MerchantAftersaleStatus.WAIT_RECEIVE))
                     .isEqualTo(MerchantAftersaleStatus.CANCELED);
         }
 
         @Test
         @DisplayName("商家侧已落库状态优先于由买家状态推导")
         void merchantStatusWinsOverDerived() {
-            assertThat(MerchantAftersaleStatus.resolve(aftersale(0, MerchantAftersaleStatus.WAIT_RECEIVE)))
+            assertThat(MerchantAftersaleStatus.resolve(0, MerchantAftersaleStatus.WAIT_RECEIVE))
                     .isEqualTo(MerchantAftersaleStatus.WAIT_RECEIVE);
         }
 
         @Test
         @DisplayName("商家侧为空时由买家状态推导")
         void deriveFromBuyerStatus() {
-            assertThat(MerchantAftersaleStatus.resolve(aftersale(1, null)))
-                    .isEqualTo(MerchantAftersaleStatus.DONE);
-            assertThat(MerchantAftersaleStatus.resolve(aftersale(0, null)))
-                    .isEqualTo(MerchantAftersaleStatus.PENDING);
-            assertThat(MerchantAftersaleStatus.resolve(aftersale(null, null)))
-                    .isEqualTo(MerchantAftersaleStatus.PENDING);
+            assertThat(MerchantAftersaleStatus.resolve(1, null)).isEqualTo(MerchantAftersaleStatus.DONE);
+            assertThat(MerchantAftersaleStatus.resolve(0, null)).isEqualTo(MerchantAftersaleStatus.PENDING);
+            assertThat(MerchantAftersaleStatus.resolve(null, null)).isEqualTo(MerchantAftersaleStatus.PENDING);
         }
     }
 
@@ -91,7 +80,8 @@ class MerchantAftersaleStatusTest {
         @DisplayName("未终结集合仅含三种状态，且能在 SQL IN 字面量中找到")
         void nonFinalInMatchesCollection() {
             assertThat(MerchantAftersaleStatus.NON_FINAL)
-                    .containsExactly(MerchantAftersaleStatus.PENDING,
+                    .containsExactly(
+                            MerchantAftersaleStatus.PENDING,
                             MerchantAftersaleStatus.WAIT_RETURN,
                             MerchantAftersaleStatus.WAIT_RECEIVE);
             for (String status : MerchantAftersaleStatus.NON_FINAL) {
@@ -103,7 +93,8 @@ class MerchantAftersaleStatusTest {
         @DisplayName("已终结状态不得出现在「未终结」集合中")
         void finalStatusesAreExcluded() {
             assertThat(MerchantAftersaleStatus.NON_FINAL)
-                    .doesNotContain(MerchantAftersaleStatus.DONE,
+                    .doesNotContain(
+                            MerchantAftersaleStatus.DONE,
                             MerchantAftersaleStatus.REJECTED,
                             MerchantAftersaleStatus.CANCELED);
         }

@@ -2,7 +2,6 @@ package com.geekmall.modules.merchant.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.geekmall.common.enums.OrderStatus;
 import com.geekmall.common.exception.BizException;
@@ -17,18 +16,11 @@ import com.geekmall.modules.merchant.vo.MerchantShipmentVO;
 import com.geekmall.modules.merchant.vo.OrderProductVO;
 import com.geekmall.modules.trade.entity.Order;
 import com.geekmall.modules.trade.entity.OrderItem;
-import com.geekmall.modules.trade.mapper.OrderItemMapper;
-import com.geekmall.modules.trade.mapper.OrderMapper;
+import com.geekmall.modules.trade.service.MerchantOrderQueryService;
 import com.geekmall.modules.trade.service.OrderStateMachine;
 import com.geekmall.modules.user.entity.SysUser;
-import com.geekmall.modules.user.mapper.SysUserMapper;
+import com.geekmall.modules.user.service.UserService;
 import com.geekmall.security.MerchantSecurityUtils;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
-
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -36,8 +28,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 /**
  * 商家端发货中心服务实现。
@@ -55,8 +51,7 @@ public class MerchantShipmentServiceImpl implements MerchantShipmentService {
     /** 临期阈值：距时限 ≤ 6 小时视为紧急。 */
     private static final int LATE_HOURS = 6;
 
-    private static final List<String> EXPRESS_LIST =
-            List.of("顺丰速运", "京东物流", "中通快递", "圆通速递", "德邦快递");
+    private static final List<String> EXPRESS_LIST = List.of("顺丰速运", "京东物流", "中通快递", "圆通速递", "德邦快递");
     private static final List<String> WAREHOUSE_LIST = List.of("深圳总仓", "杭州仓", "北京仓");
 
     /** 平台默认承运商：商家未指定时用于打单 */
@@ -66,9 +61,8 @@ public class MerchantShipmentServiceImpl implements MerchantShipmentService {
     private static final String STATUS_PRINTED = "printed";
     private static final String STATUS_SHIPPED = "shipped";
 
-    private final OrderMapper orderMapper;
-    private final OrderItemMapper orderItemMapper;
-    private final SysUserMapper sysUserMapper;
+    private final MerchantOrderQueryService orderQuery;
+    private final UserService userService;
     private final OrderStateMachine orderStateMachine;
     private final ObjectMapper objectMapper;
 
@@ -86,19 +80,23 @@ public class MerchantShipmentServiceImpl implements MerchantShipmentService {
         if (StringUtils.hasText(query.getKeyword())) {
             String kw = query.getKeyword().trim();
             wrapper.and(w -> w.like(Order::getOrderNo, kw)
-                    .or().like(Order::getWaybillNo, kw)
-                    .or().apply("user_id IN (SELECT id FROM sys_user WHERE nickname LIKE CONCAT('%', {0}, '%'))", kw)
-                    .or().apply("order_no IN (SELECT order_no FROM oms_order_item WHERE title LIKE CONCAT('%', {0}, '%'))", kw));
+                    .or()
+                    .like(Order::getWaybillNo, kw)
+                    .or()
+                    .apply("user_id IN (SELECT id FROM sys_user WHERE nickname LIKE CONCAT('%', {0}, '%'))", kw)
+                    .or()
+                    .apply(
+                            "order_no IN (SELECT order_no FROM oms_order_item WHERE title LIKE CONCAT('%', {0}, '%'))",
+                            kw));
         }
         applySort(wrapper, query.getSort());
 
-        Page<Order> page = new Page<>(query.getPage(), query.getSize());
-        IPage<Order> result = orderMapper.selectPage(page, wrapper);
+        IPage<Order> result = orderQuery.pageByShop(shopId, wrapper, query.getPage(), query.getSize());
         List<MerchantShipmentVO> list = assemble(result.getRecords());
 
-        MerchantPageVO<MerchantShipmentVO> vo = new MerchantPageVO<>(
-                list, result.getTotal(), result.getCurrent(), result.getSize());
-        List<Order> all = orderMapper.selectList(baseWrapper(shopId));
+        MerchantPageVO<MerchantShipmentVO> vo =
+                new MerchantPageVO<>(list, result.getTotal(), result.getCurrent(), result.getSize());
+        List<Order> all = orderQuery.listByShop(shopId, baseWrapper(shopId));
         vo.put("tabs", buildTabs(all));
         vo.put("stats", buildStats(all));
         return vo;
@@ -131,7 +129,7 @@ public class MerchantShipmentServiceImpl implements MerchantShipmentService {
             if (!StringUtils.hasText(order.getExpressCompany())) {
                 update.setExpressCompany(DEFAULT_EXPRESS);
             }
-            affected += orderMapper.updateById(update);
+            affected += orderQuery.updateNonStatusFields(update);
         }
         return affected;
     }
@@ -150,10 +148,10 @@ public class MerchantShipmentServiceImpl implements MerchantShipmentService {
                 Order withWaybill = new Order();
                 withWaybill.setId(order.getId());
                 withWaybill.setWaybillNo("SF" + (1000000000L + order.getId() * 99991));
-                orderMapper.updateById(withWaybill);
+                orderQuery.updateNonStatusFields(withWaybill);
             }
-            orderStateMachine.transfer(order, OrderStatus.PENDING_RECEIVE,
-                    OrderStateMachine.OPERATOR_MERCHANT, "商家确认发货");
+            orderStateMachine.transfer(
+                    order, OrderStatus.PENDING_RECEIVE, OrderStateMachine.OPERATOR_MERCHANT, "商家确认发货");
             affected += 1;
         }
         return affected;
@@ -165,8 +163,10 @@ public class MerchantShipmentServiceImpl implements MerchantShipmentService {
     private LambdaQueryWrapper<Order> baseWrapper(Long shopId) {
         return new LambdaQueryWrapper<Order>()
                 .eq(Order::getShopId, shopId)
-                .in(Order::getStatus,
-                        List.of(OrderStatus.PENDING_SHIP.getCode(), OrderStatus.PENDING_RECEIVE.getCode(),
+                .in(
+                        Order::getStatus,
+                        List.of(
+                                OrderStatus.PENDING_SHIP.getCode(), OrderStatus.PENDING_RECEIVE.getCode(),
                                 OrderStatus.PENDING_COMMENT.getCode(), OrderStatus.FINISHED.getCode()));
     }
 
@@ -178,9 +178,13 @@ public class MerchantShipmentServiceImpl implements MerchantShipmentService {
             case "late" -> wrapper.eq(Order::getStatus, OrderStatus.PENDING_SHIP.getCode())
                     .le(Order::getPayTime, LocalDateTime.now().minusHours(SHIP_LIMIT_HOURS - LATE_HOURS));
             case "printed" -> wrapper.eq(Order::getStatus, OrderStatus.PENDING_SHIP.getCode())
-                    .isNotNull(Order::getWaybillNo).ne(Order::getWaybillNo, "");
-            case "shipped" -> wrapper.in(Order::getStatus,
-                    List.of(OrderStatus.PENDING_RECEIVE.getCode(), OrderStatus.PENDING_COMMENT.getCode(),
+                    .isNotNull(Order::getWaybillNo)
+                    .ne(Order::getWaybillNo, "");
+            case "shipped" -> wrapper.in(
+                    Order::getStatus,
+                    List.of(
+                            OrderStatus.PENDING_RECEIVE.getCode(),
+                            OrderStatus.PENDING_COMMENT.getCode(),
                             OrderStatus.FINISHED.getCode()));
             case "exc" -> wrapper.eq(Order::getId, -1L);
             default -> {
@@ -203,15 +207,15 @@ public class MerchantShipmentServiceImpl implements MerchantShipmentService {
             return List.of();
         }
         List<String> orderNos = orders.stream().map(Order::getOrderNo).toList();
-        Map<String, OrderItem> itemMap = orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>()
-                        .in(OrderItem::getOrderNo, orderNos)).stream()
-                .collect(Collectors.toMap(OrderItem::getOrderNo, Function.identity(), (a, b) -> a));
-        Set<Long> userIds = orders.stream().map(Order::getUserId).filter(Objects::nonNull).collect(Collectors.toSet());
-        Map<Long, SysUser> userMap = userIds.isEmpty() ? Map.of()
-                : sysUserMapper.selectBatchIds(userIds).stream()
-                .collect(Collectors.toMap(SysUser::getId, Function.identity(), (a, b) -> a));
+        Map<String, OrderItem> itemMap = orderQuery.itemsByOrderNos(orderNos).entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get(0), (a, b) -> a));
+        Set<Long> userIds =
+                orders.stream().map(Order::getUserId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<Long, SysUser> userMap = userService.usersByIds(userIds);
 
-        return orders.stream().map(order -> toVO(order, itemMap.get(order.getOrderNo()), userMap.get(order.getUserId()))).toList();
+        return orders.stream()
+                .map(order -> toVO(order, itemMap.get(order.getOrderNo()), userMap.get(order.getUserId())))
+                .toList();
     }
 
     private MerchantShipmentVO toVO(Order order, OrderItem item, SysUser buyer) {
@@ -227,12 +231,14 @@ public class MerchantShipmentServiceImpl implements MerchantShipmentService {
         vo.setPrintedAt(StringUtils.hasText(order.getWaybillNo()) ? order.getUpdateTime() : null);
         vo.setShippedAt(order.getDeliverTime());
 
-        LocalDateTime deadline = order.getPayTime() == null ? null
-                : order.getPayTime().plusHours(SHIP_LIMIT_HOURS);
+        LocalDateTime deadline =
+                order.getPayTime() == null ? null : order.getPayTime().plusHours(SHIP_LIMIT_HOURS);
         vo.setDeadline(deadline);
-        vo.setHoursLeft(STATUS_WAIT.equals(vo.getStatus()) && deadline != null
-                ? Numbers.round(Duration.between(LocalDateTime.now(), deadline).toMinutes() / 60.0, 2)
-                : null);
+        vo.setHoursLeft(
+                STATUS_WAIT.equals(vo.getStatus()) && deadline != null
+                        ? Numbers.round(
+                                Duration.between(LocalDateTime.now(), deadline).toMinutes() / 60.0, 2)
+                        : null);
 
         if (item != null) {
             OrderProductVO product = new OrderProductVO();
@@ -280,9 +286,14 @@ public class MerchantShipmentServiceImpl implements MerchantShipmentService {
     }
 
     private Map<String, Object> buildTabs(List<Order> all) {
-        long wait = all.stream().filter(o -> STATUS_WAIT.equals(shipmentStatus(o))).count();
-        long printed = all.stream().filter(o -> STATUS_PRINTED.equals(shipmentStatus(o))).count();
-        long shipped = all.stream().filter(o -> STATUS_SHIPPED.equals(shipmentStatus(o))).count();
+        long wait =
+                all.stream().filter(o -> STATUS_WAIT.equals(shipmentStatus(o))).count();
+        long printed = all.stream()
+                .filter(o -> STATUS_PRINTED.equals(shipmentStatus(o)))
+                .count();
+        long shipped = all.stream()
+                .filter(o -> STATUS_SHIPPED.equals(shipmentStatus(o)))
+                .count();
         long late = all.stream().filter(this::isLate).count();
         Map<String, Object> tabs = new LinkedHashMap<>();
         tabs.put("all", (long) all.size());
@@ -294,9 +305,14 @@ public class MerchantShipmentServiceImpl implements MerchantShipmentService {
     }
 
     private Map<String, Object> buildStats(List<Order> all) {
-        long wait = all.stream().filter(o -> STATUS_WAIT.equals(shipmentStatus(o))).count();
-        long printed = all.stream().filter(o -> STATUS_PRINTED.equals(shipmentStatus(o))).count();
-        long shipped = all.stream().filter(o -> STATUS_SHIPPED.equals(shipmentStatus(o))).count();
+        long wait =
+                all.stream().filter(o -> STATUS_WAIT.equals(shipmentStatus(o))).count();
+        long printed = all.stream()
+                .filter(o -> STATUS_PRINTED.equals(shipmentStatus(o)))
+                .count();
+        long shipped = all.stream()
+                .filter(o -> STATUS_SHIPPED.equals(shipmentStatus(o)))
+                .count();
         long late = all.stream().filter(this::isLate).count();
 
         LocalDateTime from7d = LocalDateTime.now().minusDays(7);
@@ -304,14 +320,15 @@ public class MerchantShipmentServiceImpl implements MerchantShipmentService {
                 .filter(o -> o.getDeliverTime() != null && o.getDeliverTime().isAfter(from7d))
                 .toList();
         long late7d = shipped7d.stream()
-                .filter(o -> o.getPayTime() != null && o.getDeliverTime().isAfter(o.getPayTime().plusHours(SHIP_LIMIT_HOURS)))
+                .filter(o -> o.getPayTime() != null
+                        && o.getDeliverTime().isAfter(o.getPayTime().plusHours(SHIP_LIMIT_HOURS)))
                 .count();
-        double onTimeRate = shipped7d.isEmpty() ? 1d
-                : Numbers.divide(shipped7d.size() - late7d, shipped7d.size());
+        double onTimeRate = shipped7d.isEmpty() ? 1d : Numbers.divide(shipped7d.size() - late7d, shipped7d.size());
 
         LocalDateTime todayStart = LocalDateTime.now().toLocalDate().atStartOfDay();
         long printedToday = all.stream()
-                .filter(o -> StringUtils.hasText(o.getWaybillNo()) && o.getUpdateTime() != null
+                .filter(o -> StringUtils.hasText(o.getWaybillNo())
+                        && o.getUpdateTime() != null
                         && o.getUpdateTime().isAfter(todayStart))
                 .count();
 
@@ -341,8 +358,6 @@ public class MerchantShipmentServiceImpl implements MerchantShipmentService {
         if (ids == null || ids.isEmpty()) {
             return List.of();
         }
-        return orderMapper.selectList(new LambdaQueryWrapper<Order>()
-                .eq(Order::getShopId, shopId)
-                .in(Order::getOrderNo, ids));
+        return orderQuery.listByShopAndOrderNos(shopId, ids);
     }
 }

@@ -2,20 +2,18 @@ package com.geekmall.modules.merchant.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.geekmall.common.enums.OrderStatus;
 import com.geekmall.common.exception.BizException;
 import com.geekmall.common.result.ResultCode;
 import com.geekmall.modules.aftersale.entity.AfterSale;
-import com.geekmall.modules.aftersale.mapper.AfterSaleMapper;
+import com.geekmall.modules.aftersale.service.MerchantAfterSaleQueryService;
 import com.geekmall.modules.merchant.converter.MerchantOrderConverter;
 import com.geekmall.modules.merchant.dto.MerchantOrderQueryDTO;
 import com.geekmall.modules.merchant.dto.OrderBatchDTO;
 import com.geekmall.modules.merchant.dto.OrderNoteDTO;
 import com.geekmall.modules.merchant.mapper.MerchantStatsMapper;
 import com.geekmall.modules.merchant.service.MerchantOrderService;
-import com.geekmall.modules.merchant.support.MerchantAftersaleStatus;
 import com.geekmall.modules.merchant.support.MerchantOrderStatus;
 import com.geekmall.modules.merchant.support.Numbers;
 import com.geekmall.modules.merchant.vo.MerchantOrderVO;
@@ -23,11 +21,10 @@ import com.geekmall.modules.merchant.vo.MerchantPageVO;
 import com.geekmall.modules.payment.service.PaymentRefundService;
 import com.geekmall.modules.trade.entity.Order;
 import com.geekmall.modules.trade.entity.OrderItem;
-import com.geekmall.modules.trade.mapper.OrderItemMapper;
-import com.geekmall.modules.trade.mapper.OrderMapper;
+import com.geekmall.modules.trade.service.MerchantOrderQueryService;
 import com.geekmall.modules.trade.service.OrderStateMachine;
 import com.geekmall.modules.user.entity.SysUser;
-import com.geekmall.modules.user.mapper.SysUserMapper;
+import com.geekmall.modules.user.service.UserService;
 import com.geekmall.security.MerchantSecurityUtils;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -37,7 +34,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -66,10 +62,9 @@ public class MerchantOrderServiceImpl implements MerchantOrderService {
             "10000-999999",
                     new java.math.BigDecimal[] {new java.math.BigDecimal("10000"), new java.math.BigDecimal("999999")});
 
-    private final OrderMapper orderMapper;
-    private final OrderItemMapper orderItemMapper;
-    private final SysUserMapper sysUserMapper;
-    private final AfterSaleMapper afterSaleMapper;
+    private final MerchantOrderQueryService orderQuery;
+    private final UserService userService;
+    private final MerchantAfterSaleQueryService afterSaleQuery;
     private final MerchantStatsMapper statsMapper;
     private final OrderStateMachine orderStateMachine;
     private final ObjectMapper objectMapper;
@@ -85,8 +80,7 @@ public class MerchantOrderServiceImpl implements MerchantOrderService {
         wrapper.eq(Order::getShopId, shopId);
         applyFilters(wrapper, query);
 
-        Page<Order> page = new Page<>(query.getPage(), query.getSize());
-        IPage<Order> result = orderMapper.selectPage(page, wrapper);
+        IPage<Order> result = orderQuery.pageByShop(shopId, wrapper, query.getPage(), query.getSize());
         List<MerchantOrderVO> list = assemble(shopId, result.getRecords());
 
         MerchantPageVO<MerchantOrderVO> vo =
@@ -99,10 +93,7 @@ public class MerchantOrderServiceImpl implements MerchantOrderService {
     @Override
     public MerchantOrderVO detail(String orderNo) {
         Long shopId = MerchantSecurityUtils.getShopId();
-        Order order = orderMapper.selectOne(new LambdaQueryWrapper<Order>()
-                .eq(Order::getShopId, shopId)
-                .eq(Order::getOrderNo, orderNo)
-                .last("limit 1"));
+        Order order = orderQuery.findByShopAndOrderNo(shopId, orderNo);
         if (order == null) {
             throw BizException.of(ResultCode.NOT_FOUND);
         }
@@ -128,7 +119,7 @@ public class MerchantOrderServiceImpl implements MerchantOrderService {
                 update.setId(order.getId());
                 update.setExpressCompany(dto.getExpress());
                 update.setWaybillNo(dto.getWaybill());
-                orderMapper.updateById(update);
+                orderQuery.updateNonStatusFields(update);
             }
             affected += 1;
         }
@@ -165,17 +156,14 @@ public class MerchantOrderServiceImpl implements MerchantOrderService {
     @Transactional(rollbackFor = Exception.class)
     public void saveNote(OrderNoteDTO dto) {
         Long shopId = MerchantSecurityUtils.getShopId();
-        Order order = orderMapper.selectOne(new LambdaQueryWrapper<Order>()
-                .eq(Order::getShopId, shopId)
-                .eq(Order::getOrderNo, dto.getId())
-                .last("limit 1"));
+        Order order = orderQuery.findByShopAndOrderNo(shopId, dto.getId());
         if (order == null) {
             throw BizException.of(ResultCode.NOT_FOUND);
         }
         Order update = new Order();
         update.setId(order.getId());
         update.setMerchantNote(dto.getNote());
-        orderMapper.updateById(update);
+        orderQuery.updateNonStatusFields(update);
     }
 
     /* ------------------------------ 私有方法 ------------------------------ */
@@ -239,20 +227,14 @@ public class MerchantOrderServiceImpl implements MerchantOrderService {
         }
         List<String> orderNos = orders.stream().map(Order::getOrderNo).toList();
 
-        Map<String, OrderItem> itemMap =
-                orderItemMapper
-                        .selectList(new LambdaQueryWrapper<OrderItem>().in(OrderItem::getOrderNo, orderNos))
-                        .stream()
-                        .collect(Collectors.toMap(OrderItem::getOrderNo, Function.identity(), (a, b) -> a));
+        Map<String, OrderItem> itemMap = orderQuery.itemsByOrderNos(orderNos).entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get(0), (a, b) -> a));
 
         Set<Long> userIds = orders.stream()
                 .map(Order::getUserId)
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toSet());
-        Map<Long, SysUser> userMap = userIds.isEmpty()
-                ? Map.of()
-                : sysUserMapper.selectBatchIds(userIds).stream()
-                        .collect(Collectors.toMap(SysUser::getId, Function.identity(), (a, b) -> a));
+        Map<Long, SysUser> userMap = userService.usersByIds(userIds);
 
         Set<String> afterOrderNos = afterOrderNos(shopId, orderNos);
 
@@ -271,10 +253,7 @@ public class MerchantOrderServiceImpl implements MerchantOrderService {
             return Set.of();
         }
         // 用商家侧状态的统一口径判断「售后中」：只看 merchant_status 会把买家已撤销的工单误判为仍在处理中
-        List<AfterSale> list = afterSaleMapper.selectList(new LambdaQueryWrapper<AfterSale>()
-                .eq(AfterSale::getShopId, shopId)
-                .in(AfterSale::getOrderNo, orderNos)
-                .apply(MerchantAftersaleStatus.STATUS_SQL + " IN " + MerchantAftersaleStatus.NON_FINAL_IN));
+        List<AfterSale> list = afterSaleQuery.listDoingByOrderNos(shopId, orderNos);
         return new HashSet<>(list.stream().map(AfterSale::getOrderNo).toList());
     }
 
@@ -295,8 +274,7 @@ public class MerchantOrderServiceImpl implements MerchantOrderService {
         if (orderNos == null || orderNos.isEmpty()) {
             return List.of();
         }
-        return orderMapper.selectList(
-                new LambdaQueryWrapper<Order>().eq(Order::getShopId, shopId).in(Order::getOrderNo, orderNos));
+        return orderQuery.listByShopAndOrderNos(shopId, orderNos);
     }
 
     private Map<String, Object> buildTabs(Long shopId) {

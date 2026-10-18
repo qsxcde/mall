@@ -18,17 +18,16 @@ import com.geekmall.modules.user.service.UserService;
 import com.geekmall.modules.user.vo.AddressVO;
 import com.geekmall.modules.user.vo.SignVO;
 import com.geekmall.modules.user.vo.UserProfileVO;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
-
 import java.time.LocalDate;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 /**
  * 用户中心服务实现。
@@ -87,8 +86,8 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long addAddress(Long userId, AddressDTO dto) {
-        long total = addressMapper.selectCount(new LambdaQueryWrapper<UserAddress>()
-                .eq(UserAddress::getUserId, userId));
+        long total =
+                addressMapper.selectCount(new LambdaQueryWrapper<UserAddress>().eq(UserAddress::getUserId, userId));
         // 第一条地址自动成为默认地址
         boolean asDefault = Boolean.TRUE.equals(dto.getIsDefault()) || total == 0;
         if (asDefault) {
@@ -213,9 +212,17 @@ public class UserServiceImpl implements UserService {
             return Map.of();
         }
         return userMapper.selectBatchIds(userIds.stream().distinct().toList()).stream()
-                .collect(Collectors.toMap(SysUser::getId,
-                        user -> user.getNickname() == null ? "" : user.getNickname(),
-                        (a, b) -> a));
+                .collect(Collectors.toMap(
+                        SysUser::getId, user -> user.getNickname() == null ? "" : user.getNickname(), (a, b) -> a));
+    }
+
+    @Override
+    public Map<Long, SysUser> usersByIds(Collection<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Map.of();
+        }
+        return userMapper.selectBatchIds(userIds.stream().distinct().toList()).stream()
+                .collect(Collectors.toMap(SysUser::getId, user -> user, (a, b) -> a));
     }
 
     @Override
@@ -232,15 +239,18 @@ public class UserServiceImpl implements UserService {
         Long todayCount = signMapper.selectCount(new LambdaQueryWrapper<UserSign>()
                 .eq(UserSign::getUserId, userId)
                 .eq(UserSign::getSignDate, LocalDate.now()));
-        return new SignVO(signedNow, todayCount != null && todayCount > 0, gained,
-                nvl(user.getPoints()), days == null ? 0 : days.intValue());
+        return new SignVO(
+                signedNow,
+                todayCount != null && todayCount > 0,
+                gained,
+                nvl(user.getPoints()),
+                days == null ? 0 : days.intValue());
     }
 
     private void clearDefault(Long userId) {
         UserAddress update = new UserAddress();
         update.setIsDefault(0);
-        addressMapper.update(update, new LambdaUpdateWrapper<UserAddress>()
-                .eq(UserAddress::getUserId, userId));
+        addressMapper.update(update, new LambdaUpdateWrapper<UserAddress>().eq(UserAddress::getUserId, userId));
     }
 
     private UserAddress requireOwnAddress(Long userId, Long addressId) {
@@ -261,5 +271,44 @@ public class UserServiceImpl implements UserService {
 
     private int nvl(Integer value) {
         return value == null ? 0 : value;
+    }
+
+    // ------------------------------------------------------------------
+    // 认证域所需
+    // ------------------------------------------------------------------
+
+    @Override
+    public SysUser findByAccount(String account) {
+        return userMapper.selectOne(new LambdaQueryWrapper<SysUser>()
+                .and(w -> w.eq(SysUser::getUsername, account).or().eq(SysUser::getPhone, account))
+                .last("limit 1"));
+    }
+
+    @Override
+    public void createAccount(SysUser user) {
+        userMapper.insert(user);
+    }
+
+    @Override
+    public void updateNickname(Long userId, String nickname) {
+        SysUser update = new SysUser();
+        update.setId(userId);
+        update.setNickname(nickname);
+        userMapper.updateById(update);
+    }
+
+    @Override
+    public void updatePassword(Long userId, String encodedPassword) {
+        SysUser update = new SysUser();
+        update.setId(userId);
+        update.setPassword(encodedPassword);
+        userMapper.updateById(update);
+    }
+
+    @Override
+    public boolean tryDeductPoints(Long userId, int points) {
+        SysUser update = new SysUser();
+        update.setId(userId);
+        return userMapper.deductPoints(userId, points) > 0;
     }
 }

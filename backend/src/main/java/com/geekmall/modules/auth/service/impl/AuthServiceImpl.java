@@ -1,6 +1,5 @@
 package com.geekmall.modules.auth.service.impl;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.geekmall.common.constant.RedisKeys;
 import com.geekmall.common.exception.BizException;
 import com.geekmall.common.result.ResultCode;
@@ -15,9 +14,11 @@ import com.geekmall.modules.auth.vo.LoginVO;
 import com.geekmall.modules.auth.vo.SmsCodeVO;
 import com.geekmall.modules.user.converter.UserConverter;
 import com.geekmall.modules.user.entity.SysUser;
-import com.geekmall.modules.user.mapper.SysUserMapper;
+import com.geekmall.modules.user.service.UserService;
 import com.geekmall.security.LoginSessionBroadcaster;
 import com.geekmall.security.SecurityUtils;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,9 +27,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-
-import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 
 /**
  * 认证服务实现。
@@ -40,10 +38,11 @@ public class AuthServiceImpl implements AuthService {
 
     /** 验证码场景，与前端调用一致 */
     public static final String SCENE_LOGIN = "login";
+
     public static final String SCENE_REGISTER = "register";
     public static final String SCENE_RESET = "reset";
 
-    private final SysUserMapper userMapper;
+    private final UserService userService;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final StringRedisTemplate redisTemplate;
@@ -86,10 +85,7 @@ public class AuthServiceImpl implements AuthService {
         }
         SysUser user = createUser(dto.getPhone(), dto.getPassword());
         if (StringUtils.hasText(dto.getNickname())) {
-            SysUser update = new SysUser();
-            update.setId(user.getId());
-            update.setNickname(dto.getNickname());
-            userMapper.updateById(update);
+            userService.updateNickname(user.getId(), dto.getNickname());
         }
     }
 
@@ -108,10 +104,7 @@ public class AuthServiceImpl implements AuthService {
         if (user == null) {
             throw BizException.of(ResultCode.USER_NOT_FOUND);
         }
-        SysUser update = new SysUser();
-        update.setId(user.getId());
-        update.setPassword(passwordEncoder.encode(dto.getNewPassword()));
-        userMapper.updateById(update);
+        userService.updatePassword(user.getId(), passwordEncoder.encode(dto.getNewPassword()));
         // 密码已变更，强制旧令牌失效
         redisTemplate.delete(RedisKeys.loginToken(user.getId()));
         // P1-6：再广播一次，让各实例立即丢弃本地缓存的旧令牌（否则最长 30s 内仍被放行）
@@ -138,17 +131,16 @@ public class AuthServiceImpl implements AuthService {
         }
         String token = jwtUtil.createToken(user.getId(), user.getUsername());
         // 服务端留存会话，支持登出与单点登录踢下线
-        redisTemplate.opsForValue().set(RedisKeys.loginToken(user.getId()), token,
-                jwtUtil.getExpireSeconds(), TimeUnit.SECONDS);
+        redisTemplate
+                .opsForValue()
+                .set(RedisKeys.loginToken(user.getId()), token, jwtUtil.getExpireSeconds(), TimeUnit.SECONDS);
         // P1-6：新会话已覆盖旧会话（单点登录语义），广播让各实例立即丢弃旧令牌的本地缓存
         sessionBroadcaster.invalidate(user.getId());
         return new LoginVO(token, "Bearer", jwtUtil.getExpireSeconds(), UserConverter.toProfile(user));
     }
 
     private SysUser findUserByAccount(String account) {
-        return userMapper.selectOne(new LambdaQueryWrapper<SysUser>()
-                .and(w -> w.eq(SysUser::getUsername, account).or().eq(SysUser::getPhone, account))
-                .last("limit 1"));
+        return userService.findByAccount(account);
     }
 
     private SysUser createUser(String phone, String rawPassword) {
@@ -156,13 +148,15 @@ public class AuthServiceImpl implements AuthService {
         user.setUsername(phone);
         user.setPhone(phone);
         user.setPassword(passwordEncoder.encode(
-                StringUtils.hasText(rawPassword) ? rawPassword : UUID.randomUUID().toString().replace("-", "")));
+                StringUtils.hasText(rawPassword)
+                        ? rawPassword
+                        : UUID.randomUUID().toString().replace("-", "")));
         user.setNickname("极客用户" + phone.substring(phone.length() - 4));
         user.setStatus(1);
         user.setLevelId(1L);
         user.setPoints(0);
         user.setGrowth(0);
-        userMapper.insert(user);
+        userService.createAccount(user);
         return user;
     }
 }

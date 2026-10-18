@@ -20,19 +20,11 @@ import com.geekmall.modules.marketing.service.SeckillService;
 import com.geekmall.modules.marketing.vo.SeckillItemVO;
 import com.geekmall.modules.marketing.vo.SeckillSessionVO;
 import com.geekmall.modules.product.entity.Product;
-import com.geekmall.modules.product.mapper.ProductMapper;
+import com.geekmall.modules.product.service.ProductStockService;
 import com.geekmall.modules.trade.service.TradeService;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import io.micrometer.core.instrument.MeterRegistry;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.RedisScript;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -40,8 +32,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.function.Function;
-import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 秒杀服务实现。
@@ -78,7 +75,8 @@ public class SeckillServiceImpl implements SeckillService {
      * <p>三步必须在同一个 Lua 脚本内完成；P2-6 在 {@code SADD} 之后<b>立即</b> {@code EXPIRE}，
      * 避免「先成功再设 TTL」的写法在异常分支漏设导致 bought 集合永久泄漏。</p>
      */
-    private static final RedisScript<Long> GRAB_SCRIPT = RedisScript.of("""
+    private static final RedisScript<Long> GRAB_SCRIPT = RedisScript.of(
+            """
             local stock = redis.call('GET', KEYS[1])
             if not stock then
                 return -1
@@ -93,7 +91,8 @@ public class SeckillServiceImpl implements SeckillService {
             redis.call('SADD', KEYS[2], ARGV[1])
             redis.call('EXPIRE', KEYS[2], ARGV[2])
             return 1
-            """, Long.class);
+            """,
+            Long.class);
 
     /**
      * 分桶原子预扣脚本：判一人一单 → 随机起点顺序探测「有余量的桶」→ 扣减 → 返回选中桶号。
@@ -118,7 +117,8 @@ public class SeckillServiceImpl implements SeckillService {
      * 顺序上把它放前面，重复请求直接短路，省掉一次全桶扫描。</p>
      */
     @SuppressWarnings("rawtypes")
-    private static final RedisScript<List> GRAB_BUCKET_SCRIPT = RedisScript.of("""
+    private static final RedisScript<List> GRAB_BUCKET_SCRIPT = RedisScript.of(
+            """
             local n = #KEYS - 1
             for i = 1, n do
                 if redis.call('EXISTS', KEYS[i]) == 0 then
@@ -141,7 +141,8 @@ public class SeckillServiceImpl implements SeckillService {
                 end
             end
             return {-2, 0}
-            """, List.class);
+            """,
+            List.class);
 
     /** 一人一单标记的保留时长，按「每日一场」的运营节奏设置 */
     private static final Duration BOUGHT_TTL = Duration.ofHours(24);
@@ -155,7 +156,8 @@ public class SeckillServiceImpl implements SeckillService {
     private final SeckillBucketMapper seckillBucketMapper;
     /** 桶的建桶 / 预热 / 汇总。 */
     private final SeckillBucketManager bucketManager;
-    private final ProductMapper productMapper;
+
+    private final ProductStockService productStockService;
     private final TradeService tradeService;
     private final StringRedisTemplate redisTemplate;
     /** 自引用代理：让 grabInTx 真正开启独立事务，Redis 预扣才不会被包进事务 */
@@ -183,10 +185,13 @@ public class SeckillServiceImpl implements SeckillService {
 
     @Override
     public List<SeckillSessionVO> sessions() {
-        return seckillSessionMapper.selectList(new LambdaQueryWrapper<SeckillSession>()
+        return seckillSessionMapper
+                .selectList(new LambdaQueryWrapper<SeckillSession>()
                         .orderByAsc(SeckillSession::getSort)
                         .orderByAsc(SeckillSession::getId))
-                .stream().map(this::toSessionVO).toList();
+                .stream()
+                .map(this::toSessionVO)
+                .toList();
     }
 
     @Override
@@ -197,12 +202,13 @@ public class SeckillServiceImpl implements SeckillService {
         if (items.isEmpty()) {
             return List.of();
         }
-        Map<Long, Product> productMap = productMapper.selectBatchIds(
-                        items.stream().map(SeckillItem::getProductId).distinct().toList())
-                .stream().collect(Collectors.toMap(Product::getId, Function.identity(), (a, b) -> a));
+        Map<Long, Product> productMap = productStockService.findByIds(
+                items.stream().map(SeckillItem::getProductId).distinct().toList());
         // 分桶商品的权威余量是 SUM(桶)：mkt_seckill_item.stock 自启用分桶起不再逐单更新
-        Map<Long, SeckillBucketManager.BucketAggregate> bucketMap = bucketManager.aggregate(
-                items.stream().filter(bucketManager::isBucketed).map(SeckillItem::getId).toList());
+        Map<Long, SeckillBucketManager.BucketAggregate> bucketMap = bucketManager.aggregate(items.stream()
+                .filter(bucketManager::isBucketed)
+                .map(SeckillItem::getId)
+                .toList());
         return items.stream()
                 .map(item -> toItemVO(item, productMap.get(item.getProductId()), bucketMap.get(item.getId())))
                 .toList();
@@ -254,8 +260,8 @@ public class SeckillServiceImpl implements SeckillService {
                 // 顺带把当前请求的链路 ID 写入消息体：MDC 跨不过队列，消费端只能靠它还原上下文
                 // bucketNo 也<b>必须</b>进消息体：选桶是「随机起点 + 顺序探测」，不可复现，
                 // 消费端拿不到它就只能瞎猜该扣哪一桶
-                seckillOrderQueue.enqueue(new SeckillOrderMessage(requestId, userId, itemId, addressId,
-                        TraceContext.currentTraceId(), bucketNo));
+                seckillOrderQueue.enqueue(new SeckillOrderMessage(
+                        requestId, userId, itemId, addressId, TraceContext.currentTraceId(), bucketNo));
                 return requestId;
             });
         } catch (RuntimeException ex) {
@@ -271,7 +277,8 @@ public class SeckillServiceImpl implements SeckillService {
 
     @Override
     public SeckillGrabResult grabResult(Long userId, String requestId) {
-        return seckillResultStore.find(requestId)
+        return seckillResultStore
+                .find(requestId)
                 // 校验归属：越权查询一律按「不存在」返回，不泄露该 requestId 是否存在
                 .filter(result -> Objects.equals(result.userId(), userId))
                 .orElseThrow(() -> new BizException(ResultCode.NOT_FOUND, "抢购记录不存在或已过期"));
@@ -292,9 +299,7 @@ public class SeckillServiceImpl implements SeckillService {
         if (item.getNotStart() != null && item.getNotStart() == 1) {
             throw new BizException(ResultCode.BIZ_ERROR, "本场秒杀尚未开始，请先预约提醒");
         }
-        return bucketManager.isBucketed(item)
-                ? reserveFromBuckets(item, userId)
-                : reserveFromSingleRow(item, userId);
+        return bucketManager.isBucketed(item) ? reserveFromBuckets(item, userId) : reserveFromSingleRow(item, userId);
     }
 
     /**
@@ -305,8 +310,11 @@ public class SeckillServiceImpl implements SeckillService {
 
         String stockKey = RedisKeys.SECKILL_STOCK + item.getId();
         String boughtKey = RedisKeys.SECKILL_BOUGHT + item.getId();
-        Long code = redisTemplate.execute(GRAB_SCRIPT, List.of(stockKey, boughtKey),
-                String.valueOf(userId), String.valueOf(BOUGHT_TTL.toSeconds()));
+        Long code = redisTemplate.execute(
+                GRAB_SCRIPT,
+                List.of(stockKey, boughtKey),
+                String.valueOf(userId),
+                String.valueOf(BOUGHT_TTL.toSeconds()));
         int result = code == null ? -1 : code.intValue();
         switch (result) {
             case 1 -> {
@@ -336,8 +344,11 @@ public class SeckillServiceImpl implements SeckillService {
         }
         keys.add(RedisKeys.SECKILL_BOUGHT + item.getId());
 
-        String[] args = {String.valueOf(userId), String.valueOf(BOUGHT_TTL.toSeconds()),
-                String.valueOf(ThreadLocalRandom.current().nextInt(count))};
+        String[] args = {
+            String.valueOf(userId),
+            String.valueOf(BOUGHT_TTL.toSeconds()),
+            String.valueOf(ThreadLocalRandom.current().nextInt(count))
+        };
         BucketPick pick = pickBucket(redisTemplate.execute(GRAB_BUCKET_SCRIPT, keys, (Object[]) args));
         if (pick.code == -1) {
             bucketManager.warmUp(item);
@@ -363,8 +374,7 @@ public class SeckillServiceImpl implements SeckillService {
     }
 
     /** 分桶脚本的返回：{@code code} 见 {@link #GRAB_BUCKET_SCRIPT}，{@code bucketNo} 为 0 基桶号。 */
-    private record BucketPick(int code, int bucketNo) {
-    }
+    private record BucketPick(int code, int bucketNo) {}
 
     /**
      * 秒杀落库事务：DB 层再扣一次活动库存 + 建单。
@@ -395,8 +405,8 @@ public class SeckillServiceImpl implements SeckillService {
         if (deductStock(itemId, bucketNo) == 0) {
             throw new BizException(ResultCode.OUT_OF_STOCK, "手慢了，本场已抢光");
         }
-        return tradeService.createOrderWithFixedPrice(userId, addressId, item.getProductId(),
-                item.getSeckillPrice(), 1, "限时秒杀成交", requestId);
+        return tradeService.createOrderWithFixedPrice(
+                userId, addressId, item.getProductId(), item.getSeckillPrice(), 1, "限时秒杀成交", requestId);
     }
 
     /**
@@ -413,8 +423,7 @@ public class SeckillServiceImpl implements SeckillService {
         int affected = seckillBucketMapper.deductStock(itemId, bucketNo);
         if (affected == 0) {
             meterRegistry.counter("mall_seckill_bucket_mismatch_total").increment();
-            log.error("[秒杀分桶] Redis 预扣成功但桶已空，判定为预扣/记账不一致（不换桶，仅回补）：itemId={}, bucketNo={}",
-                    itemId, bucketNo);
+            log.error("[秒杀分桶] Redis 预扣成功但桶已空，判定为预扣/记账不一致（不换桶，仅回补）：itemId={}, bucketNo={}", itemId, bucketNo);
         }
         return affected;
     }
@@ -432,7 +441,8 @@ public class SeckillServiceImpl implements SeckillService {
      */
     private void ensureStockLoaded(SeckillItem item) {
         String stockKey = RedisKeys.SECKILL_STOCK + item.getId();
-        Boolean absent = redisTemplate.opsForValue()
+        Boolean absent = redisTemplate
+                .opsForValue()
                 .setIfAbsent(stockKey, String.valueOf(item.getStock() == null ? 0 : item.getStock()));
         if (Boolean.TRUE.equals(absent)) {
             log.info("懒加载秒杀库存：itemId={}, stock={}", item.getId(), item.getStock());
@@ -450,8 +460,7 @@ public class SeckillServiceImpl implements SeckillService {
             redisTemplate.opsForValue().increment(stockKey);
             log.warn("秒杀预扣已回补：itemId={}, userId={}, 桶={}", itemId, userId, bucketNo);
         } catch (Exception ex) {
-            log.error("秒杀预扣补偿失败，需人工核对 Redis 库存：itemId={}, userId={}, 桶={}",
-                    itemId, userId, bucketNo, ex);
+            log.error("秒杀预扣补偿失败，需人工核对 Redis 库存：itemId={}, userId={}, 桶={}", itemId, userId, bucketNo, ex);
         }
     }
 
@@ -470,17 +479,10 @@ public class SeckillServiceImpl implements SeckillService {
      * <p>分桶商品传入 {@code aggregate}（{@code SUM(桶)}）：{@code mkt_seckill_item.stock}
      * 自启用分桶起不再逐单更新，只有桶口径才是真实余量与销量。</p>
      */
-    private SeckillItemVO toItemVO(SeckillItem item, Product product,
-                                   SeckillBucketManager.BucketAggregate aggregate) {
-        int stock = aggregate != null
-                ? (int) aggregate.stock()
-                : (item.getStock() == null ? 0 : item.getStock());
-        int total = aggregate != null
-                ? (int) aggregate.total()
-                : (item.getTotal() == null ? 0 : item.getTotal());
-        int sold = aggregate != null
-                ? (int) aggregate.sold()
-                : (item.getSold() == null ? 0 : item.getSold());
+    private SeckillItemVO toItemVO(SeckillItem item, Product product, SeckillBucketManager.BucketAggregate aggregate) {
+        int stock = aggregate != null ? (int) aggregate.stock() : (item.getStock() == null ? 0 : item.getStock());
+        int total = aggregate != null ? (int) aggregate.total() : (item.getTotal() == null ? 0 : item.getTotal());
+        int sold = aggregate != null ? (int) aggregate.sold() : (item.getSold() == null ? 0 : item.getSold());
 
         SeckillItemVO vo = new SeckillItemVO();
         vo.setId(item.getId());

@@ -8,7 +8,7 @@ import com.geekmall.common.exception.BizException;
 import com.geekmall.common.result.PageResult;
 import com.geekmall.common.result.ResultCode;
 import com.geekmall.modules.product.entity.Product;
-import com.geekmall.modules.product.mapper.ProductMapper;
+import com.geekmall.modules.product.service.ProductStockService;
 import com.geekmall.modules.review.dto.SubmitReviewDTO;
 import com.geekmall.modules.review.entity.Review;
 import com.geekmall.modules.review.mapper.ReviewMapper;
@@ -20,18 +20,15 @@ import com.geekmall.modules.trade.vo.OrderDetailVO;
 import com.geekmall.modules.trade.vo.OrderItemVO;
 import com.geekmall.modules.trade.vo.OrderVO;
 import com.geekmall.modules.user.service.UserService;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 /**
  * 评价服务实现。
@@ -47,7 +44,7 @@ public class ReviewServiceImpl implements ReviewService {
     private final ReviewMapper reviewMapper;
     private final OrderService orderService;
     private final TradeService tradeService;
-    private final ProductMapper productMapper;
+    private final ProductStockService productStockService;
     private final UserService userService;
 
     @Override
@@ -57,11 +54,10 @@ public class ReviewServiceImpl implements ReviewService {
         OrderDetailVO detail = orderService.detail(userId, dto.getOrderNo());
         OrderVO order = detail.getOrder();
         if (order.getStatus() == null || order.getStatus() != OrderStatus.PENDING_COMMENT.getCode()) {
-            throw new BizException(ResultCode.BIZ_ERROR,
-                    "当前订单为「" + order.getStatusText() + "」，不可评价");
+            throw new BizException(ResultCode.BIZ_ERROR, "当前订单为「" + order.getStatusText() + "」，不可评价");
         }
-        Long reviewed = reviewMapper.selectCount(new LambdaQueryWrapper<Review>()
-                .eq(Review::getOrderNo, dto.getOrderNo()));
+        Long reviewed =
+                reviewMapper.selectCount(new LambdaQueryWrapper<Review>().eq(Review::getOrderNo, dto.getOrderNo()));
         if (reviewed != null && reviewed > 0) {
             throw new BizException(ResultCode.BIZ_ERROR, "该订单已经评价过啦");
         }
@@ -70,8 +66,8 @@ public class ReviewServiceImpl implements ReviewService {
         if (items == null || items.isEmpty()) {
             throw new BizException(ResultCode.BIZ_ERROR, "订单没有可评价的商品");
         }
-        String images = (dto.getImages() == null || dto.getImages().isEmpty())
-                ? null : String.join(",", dto.getImages());
+        String images =
+                (dto.getImages() == null || dto.getImages().isEmpty()) ? null : String.join(",", dto.getImages());
 
         try {
             for (OrderItemVO item : items) {
@@ -100,9 +96,8 @@ public class ReviewServiceImpl implements ReviewService {
 
     @Override
     public List<ReviewVO> myReviews(Long userId) {
-        List<Review> reviews = reviewMapper.selectList(new LambdaQueryWrapper<Review>()
-                .eq(Review::getUserId, userId)
-                .orderByDesc(Review::getId));
+        List<Review> reviews = reviewMapper.selectList(
+                new LambdaQueryWrapper<Review>().eq(Review::getUserId, userId).orderByDesc(Review::getId));
         return toVOList(reviews);
     }
 
@@ -119,11 +114,13 @@ public class ReviewServiceImpl implements ReviewService {
     @Override
     public PageResult<ReviewVO> productReviews(Long productId, int page, int pageSize) {
         Page<Review> pageParam = new Page<>(page, pageSize);
-        IPage<Review> result = reviewMapper.selectPage(pageParam, new LambdaQueryWrapper<Review>()
-                .eq(Review::getProductId, productId)
-                .orderByDesc(Review::getId));
-        return new PageResult<>(toVOList(result.getRecords()),
-                result.getTotal(), result.getCurrent(), result.getSize());
+        IPage<Review> result = reviewMapper.selectPage(
+                pageParam,
+                new LambdaQueryWrapper<Review>()
+                        .eq(Review::getProductId, productId)
+                        .orderByDesc(Review::getId));
+        return new PageResult<>(
+                toVOList(result.getRecords()), result.getTotal(), result.getCurrent(), result.getSize());
     }
 
     /* ------------------------------ 私有方法 ------------------------------ */
@@ -132,9 +129,8 @@ public class ReviewServiceImpl implements ReviewService {
         if (reviews == null || reviews.isEmpty()) {
             return List.of();
         }
-        Map<Long, Product> productMap = productMapper.selectBatchIds(
-                        reviews.stream().map(Review::getProductId).distinct().toList())
-                .stream().collect(Collectors.toMap(Product::getId, Function.identity(), (a, b) -> a));
+        Map<Long, Product> productMap = productStockService.findByIds(
+                reviews.stream().map(Review::getProductId).distinct().toList());
         // 匿名评价不查询昵称，避免泄露
         Map<Long, String> nicknameMap = userService.nicknames(reviews.stream()
                 .filter(review -> review.getAnonymous() == null || review.getAnonymous() == 0)
@@ -180,6 +176,9 @@ public class ReviewServiceImpl implements ReviewService {
         if (!StringUtils.hasText(images)) {
             return List.of();
         }
-        return Arrays.stream(images.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+        return Arrays.stream(images.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
     }
 }

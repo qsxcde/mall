@@ -34,13 +34,8 @@ import com.geekmall.modules.inventory.vo.BucketReportVO;
 import com.geekmall.modules.inventory.vo.BucketRuleVO;
 import com.geekmall.modules.inventory.vo.BucketVO;
 import com.geekmall.modules.product.entity.Product;
-import com.geekmall.modules.product.mapper.ProductMapper;
+import com.geekmall.modules.product.service.ProductStockService;
 import com.geekmall.security.MerchantSecurityUtils;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
-
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -49,6 +44,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 /**
  * 库存分桶服务实现。
@@ -80,7 +79,7 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
     private final InvBucketMapper bucketMapper;
     private final InvBucketOperationMapper operationMapper;
     private final InvBucketLogMapper logMapper;
-    private final ProductMapper productMapper;
+    private final ProductStockService productStockService;
 
     /* ============================== 分桶规则 ============================== */
 
@@ -122,17 +121,19 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
     @Override
     public List<BucketRuleVO> listRules(BucketRuleQueryDTO query) {
         Long shopId = MerchantSecurityUtils.getShopId();
-        LambdaQueryWrapper<InvBucketRule> wrapper = new LambdaQueryWrapper<InvBucketRule>()
-                .eq(InvBucketRule::getShopId, shopId);
+        LambdaQueryWrapper<InvBucketRule> wrapper =
+                new LambdaQueryWrapper<InvBucketRule>().eq(InvBucketRule::getShopId, shopId);
         if (StringUtils.hasText(query.getDimension())) {
-            wrapper.eq(InvBucketRule::getDimension, parseDimension(query.getDimension()).name());
+            wrapper.eq(
+                    InvBucketRule::getDimension,
+                    parseDimension(query.getDimension()).name());
         }
         if (query.getEnabled() != null) {
             wrapper.eq(InvBucketRule::getEnabled, query.getEnabled());
         }
         if (query.getProductId() != null) {
-            wrapper.and(w -> w.eq(InvBucketRule::getProductId, query.getProductId())
-                    .or().isNull(InvBucketRule::getProductId));
+            wrapper.and(w ->
+                    w.eq(InvBucketRule::getProductId, query.getProductId()).or().isNull(InvBucketRule::getProductId));
         }
         wrapper.orderByDesc(InvBucketRule::getId);
         return ruleMapper.selectList(wrapper).stream().map(this::toRuleVO).toList();
@@ -158,16 +159,16 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
         Long shopId = MerchantSecurityUtils.getShopId();
         Product product = requireProduct(dto.getProductId(), shopId);
         InvBucketRule rule = dto.getRuleId() == null ? null : requireRule(dto.getRuleId(), shopId);
-        BucketDimension dimension = rule != null
-                ? BucketDimension.of(rule.getDimension())
-                : parseDimension(dto.getDimension());
+        BucketDimension dimension =
+                rule != null ? BucketDimension.of(rule.getDimension()) : parseDimension(dto.getDimension());
 
         int productStock = product.getStock() == null ? 0 : product.getStock();
         Map<String, BucketAllocateDTO.Item> merged = mergeItems(dto.getItems());
-        int placed = merged.values().stream().mapToInt(i -> i.getQty() == null ? 0 : i.getQty()).sum();
+        int placed = merged.values().stream()
+                .mapToInt(i -> i.getQty() == null ? 0 : i.getQty())
+                .sum();
         if (placed > productStock) {
-            throw new BizException(ResultCode.PARAM_ERROR,
-                    "分配总量 " + placed + " 超过商品库存 " + productStock);
+            throw new BizException(ResultCode.PARAM_ERROR, "分配总量 " + placed + " 超过商品库存 " + productStock);
         }
 
         // 1) 重新布局：先把该商品已有桶的余量清零（留痕为 ADJUST），再把明细逐桶写入。
@@ -175,8 +176,19 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
             int before = exist.getStock() == null ? 0 : exist.getStock();
             if (before > 0) {
                 writeStock(exist, 0);
-                log(exist.getId(), product.getId(), shopId, BucketBizType.ADJUST, -before,
-                        before, 0, null, null, exist.getDimensionValue(), dto.getOperator(), "重新分配前清零");
+                log(
+                        exist.getId(),
+                        product.getId(),
+                        shopId,
+                        BucketBizType.ADJUST,
+                        -before,
+                        before,
+                        0,
+                        null,
+                        null,
+                        exist.getDimensionValue(),
+                        dto.getOperator(),
+                        "重新分配前清零");
             }
         }
 
@@ -229,12 +241,14 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
 
     @Override
     public BucketBalanceVO balance(Long productId) {
-        Product product = productMapper.selectById(productId);
+        Product product = productStockService.findById(productId);
         if (product == null) {
             throw new BizException(ResultCode.NOT_FOUND, "商品不存在");
         }
         List<InvBucket> buckets = listBuckets(productId);
-        int bucketTotal = buckets.stream().mapToInt(b -> b.getStock() == null ? 0 : b.getStock()).sum();
+        int bucketTotal = buckets.stream()
+                .mapToInt(b -> b.getStock() == null ? 0 : b.getStock())
+                .sum();
         int productStock = product.getStock() == null ? 0 : product.getStock();
 
         BucketBalanceVO vo = new BucketBalanceVO();
@@ -259,7 +273,9 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
             wrapper.eq(InvBucket::getProductId, query.getProductId());
         }
         if (StringUtils.hasText(query.getDimension()) && !"all".equalsIgnoreCase(query.getDimension())) {
-            wrapper.eq(InvBucket::getDimension, parseDimension(query.getDimension()).name());
+            wrapper.eq(
+                    InvBucket::getDimension,
+                    parseDimension(query.getDimension()).name());
         }
         if (StringUtils.hasText(query.getKeyword())) {
             wrapper.like(InvBucket::getDimensionValue, query.getKeyword());
@@ -294,14 +310,44 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
 
         String opNo = newOpNo("TRF");
         int fromAfter = stockOf(from.getId());
-        log(from.getId(), from.getProductId(), shopId, BucketBizType.TRANSFER_OUT, -qty,
-                fromAfter + qty, fromAfter, opNo, opNo, from.getDimensionValue(), dto.getOperator(), dto.getRemark());
+        log(
+                from.getId(),
+                from.getProductId(),
+                shopId,
+                BucketBizType.TRANSFER_OUT,
+                -qty,
+                fromAfter + qty,
+                fromAfter,
+                opNo,
+                opNo,
+                from.getDimensionValue(),
+                dto.getOperator(),
+                dto.getRemark());
         int toAfter = stockOf(to.getId());
-        log(to.getId(), to.getProductId(), shopId, BucketBizType.TRANSFER_IN, qty,
-                toAfter - qty, toAfter, opNo, opNo, to.getDimensionValue(), dto.getOperator(), dto.getRemark());
+        log(
+                to.getId(),
+                to.getProductId(),
+                shopId,
+                BucketBizType.TRANSFER_IN,
+                qty,
+                toAfter - qty,
+                toAfter,
+                opNo,
+                opNo,
+                to.getDimensionValue(),
+                dto.getOperator(),
+                dto.getRemark());
 
-        saveOperation(BucketOpType.TRANSFER, from.getProductId(), shopId,
-                from.getId(), to.getId(), qty, dto.getOperator(), dto.getRemark(), opNo);
+        saveOperation(
+                BucketOpType.TRANSFER,
+                from.getProductId(),
+                shopId,
+                from.getId(),
+                to.getId(),
+                qty,
+                dto.getOperator(),
+                dto.getRemark(),
+                opNo);
         return opNo;
     }
 
@@ -321,7 +367,8 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
         InvBucket first = sources.get(0);
         String dimension = first.getDimension();
         String targetValue = StringUtils.hasText(dto.getTargetDimensionValue())
-                ? dto.getTargetDimensionValue() : first.getDimensionValue();
+                ? dto.getTargetDimensionValue()
+                : first.getDimensionValue();
 
         InvBucket target = dto.getTargetBucketId() != null
                 ? requireBucket(dto.getTargetBucketId(), shopId)
@@ -339,14 +386,44 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
             }
             bucketMapper.addStockAndTotal(target.getId(), amount);
             moved += amount;
-            log(source.getId(), product.getId(), shopId, BucketBizType.MERGE_OUT, -amount,
-                    amount, 0, opNo, opNo, source.getDimensionValue(), dto.getOperator(), dto.getRemark());
+            log(
+                    source.getId(),
+                    product.getId(),
+                    shopId,
+                    BucketBizType.MERGE_OUT,
+                    -amount,
+                    amount,
+                    0,
+                    opNo,
+                    opNo,
+                    source.getDimensionValue(),
+                    dto.getOperator(),
+                    dto.getRemark());
             int after = stockOf(target.getId());
-            log(target.getId(), product.getId(), shopId, BucketBizType.MERGE_IN, amount,
-                    after - amount, after, opNo, opNo, target.getDimensionValue(), dto.getOperator(), dto.getRemark());
+            log(
+                    target.getId(),
+                    product.getId(),
+                    shopId,
+                    BucketBizType.MERGE_IN,
+                    amount,
+                    after - amount,
+                    after,
+                    opNo,
+                    opNo,
+                    target.getDimensionValue(),
+                    dto.getOperator(),
+                    dto.getRemark());
         }
-        saveOperation(BucketOpType.MERGE, product.getId(), shopId,
-                null, target.getId(), moved, dto.getOperator(), dto.getRemark(), opNo);
+        saveOperation(
+                BucketOpType.MERGE,
+                product.getId(),
+                shopId,
+                null,
+                target.getId(),
+                moved,
+                dto.getOperator(),
+                dto.getRemark(),
+                opNo);
         return opNo;
     }
 
@@ -362,17 +439,18 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
         int qty = dto.getQty();
 
         // 幂等：同一单号 + 同一商品重复调用，直接返回既有结果，不重复扣减
-        if (StringUtils.hasText(dto.getOrderNo()) && logMapper.countByOrderProduct(
-                BucketBizType.OUTBOUND.name(), dto.getOrderNo(), dto.getProductId()) > 0) {
+        if (StringUtils.hasText(dto.getOrderNo())
+                && logMapper.countByOrderProduct(BucketBizType.OUTBOUND.name(), dto.getOrderNo(), dto.getProductId())
+                        > 0) {
             return resultFromLogs(dto.getOrderNo(), dto.getProductId());
         }
 
-        long bucketCount = bucketMapper.selectCount(new LambdaQueryWrapper<InvBucket>()
-                .eq(InvBucket::getProductId, dto.getProductId()));
+        long bucketCount = bucketMapper.selectCount(
+                new LambdaQueryWrapper<InvBucket>().eq(InvBucket::getProductId, dto.getProductId()));
 
         // 交互边界：商品从未分桶时退化为「仅商品级扣减」，保持与旧链路兼容
         if (bucketCount == 0) {
-            if (productMapper.deductStock(dto.getProductId(), qty) == 0) {
+            if (!productStockService.deductStock(dto.getProductId(), qty)) {
                 throw new BizException(ResultCode.OUT_OF_STOCK);
             }
             BucketDeductResultVO result = new BucketDeductResultVO();
@@ -420,16 +498,26 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
         }
 
         // 商品总库存同步扣减（保持 SUM(桶) == 商品总库存）
-        if (productMapper.deductStock(dto.getProductId(), qty) == 0) {
+        if (!productStockService.deductStock(dto.getProductId(), qty)) {
             throw new BizException(ResultCode.OUT_OF_STOCK);
         }
 
         // 写审计流水（幂等键 = 单号 + 商品）
         for (BucketDeductResultVO.Detail detail : hit.values()) {
             int after = detail.getStockAfter();
-            log(detail.getBucketId(), dto.getProductId(), effectiveShopId, BucketBizType.OUTBOUND, -detail.getQty(),
-                    after + detail.getQty(), after, dto.getOrderNo(), dto.getOrderNo(), detail.getDimensionValue(),
-                    dto.getOperator(), dto.getRemark());
+            log(
+                    detail.getBucketId(),
+                    dto.getProductId(),
+                    effectiveShopId,
+                    BucketBizType.OUTBOUND,
+                    -detail.getQty(),
+                    after + detail.getQty(),
+                    after,
+                    dto.getOrderNo(),
+                    dto.getOrderNo(),
+                    detail.getDimensionValue(),
+                    dto.getOperator(),
+                    dto.getRemark());
         }
 
         BucketDeductResultVO result = new BucketDeductResultVO();
@@ -460,7 +548,8 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
         for (Long productId : products.keySet()) {
             details.addAll(doRollbackProduct(orderNo, productId));
         }
-        int total = details.stream().mapToInt(BucketDeductResultVO.Detail::getQty).sum();
+        int total =
+                details.stream().mapToInt(BucketDeductResultVO.Detail::getQty).sum();
 
         BucketDeductResultVO result = new BucketDeductResultVO();
         result.setOrderNo(orderNo);
@@ -487,8 +576,7 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
         if (productId == null) {
             return false;
         }
-        return bucketMapper.selectCount(new LambdaQueryWrapper<InvBucket>()
-                .eq(InvBucket::getProductId, productId)) > 0;
+        return bucketMapper.selectCount(new LambdaQueryWrapper<InvBucket>().eq(InvBucket::getProductId, productId)) > 0;
     }
 
     @Override
@@ -507,8 +595,8 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
      */
     private List<BucketDeductResultVO.Detail> doRollbackProduct(String orderNo, Long productId) {
         List<InvBucketLog> outbound = logMapper.selectOutboundByOrderProduct(orderNo, productId);
-        if (outbound.isEmpty() || logMapper.countByOrderProduct(
-                BucketBizType.ROLLBACK.name(), orderNo, productId) > 0) {
+        if (outbound.isEmpty()
+                || logMapper.countByOrderProduct(BucketBizType.ROLLBACK.name(), orderNo, productId) > 0) {
             return List.of();
         }
         Long shopId = outbound.get(0).getShopId();
@@ -519,8 +607,19 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
             bucketMapper.addStock(item.getBucketId(), qty);
             total += qty;
             int after = stockOf(item.getBucketId());
-            log(item.getBucketId(), productId, shopId, BucketBizType.ROLLBACK, qty,
-                    after - qty, after, orderNo, orderNo, item.getBucketKey(), "system", "出库回滚");
+            log(
+                    item.getBucketId(),
+                    productId,
+                    shopId,
+                    BucketBizType.ROLLBACK,
+                    qty,
+                    after - qty,
+                    after,
+                    orderNo,
+                    orderNo,
+                    item.getBucketKey(),
+                    "system",
+                    "出库回滚");
             BucketDeductResultVO.Detail detail = new BucketDeductResultVO.Detail();
             detail.setBucketId(item.getBucketId());
             detail.setDimensionValue(item.getBucketKey());
@@ -529,7 +628,7 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
             details.add(detail);
         }
         if (total > 0) {
-            productMapper.restoreStock(productId, total);
+            productStockService.restoreStock(productId, total);
         }
         return details;
     }
@@ -538,7 +637,7 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
 
     @Override
     public BucketReportVO report(Long productId) {
-        Product product = productMapper.selectById(productId);
+        Product product = productStockService.findById(productId);
         if (product == null) {
             throw new BizException(ResultCode.NOT_FOUND, "商品不存在");
         }
@@ -562,7 +661,9 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
             stats.add(stat);
         }
         vo.setDimensionStats(stats);
-        vo.setBucketCount(stats.stream().mapToInt(BucketReportVO.DimensionStat::getBucketCount).sum());
+        vo.setBucketCount(stats.stream()
+                .mapToInt(BucketReportVO.DimensionStat::getBucketCount)
+                .sum());
         return vo;
     }
 
@@ -601,8 +702,8 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
             wrapper.eq(InvBucketOperation::getProductId, query.getProductId());
         }
         wrapper.orderByDesc(InvBucketOperation::getCreateTime, InvBucketOperation::getId);
-        Page<InvBucketOperation> page = operationMapper.selectPage(
-                new Page<>(query.getPage(), query.getSize()), wrapper);
+        Page<InvBucketOperation> page =
+                operationMapper.selectPage(new Page<>(query.getPage(), query.getSize()), wrapper);
         return PageResult.of(page, this::toOperationVO);
     }
 
@@ -632,8 +733,14 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
     }
 
     /** 写入 / 更新一个桶到指定数量（分配语义：stock 与 total 都置为 qty）。 */
-    private void upsertBucket(Long productId, Long shopId, Long ruleId, BucketDimension dimension,
-                              BucketAllocateDTO.Item item, int qty, String operator) {
+    private void upsertBucket(
+            Long productId,
+            Long shopId,
+            Long ruleId,
+            BucketDimension dimension,
+            BucketAllocateDTO.Item item,
+            int qty,
+            String operator) {
         InvBucket exist = findBucket(productId, dimension.name(), item.getDimensionValue());
         if (exist == null) {
             InvBucket bucket = new InvBucket();
@@ -652,8 +759,19 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
             bucket.setStatus(1);
             bucket.setLastSyncTime(LocalDateTime.now());
             bucketMapper.insert(bucket);
-            log(bucket.getId(), productId, shopId, BucketBizType.ALLOCATE, qty, 0, qty,
-                    null, null, item.getDimensionValue(), operator, "分配入桶");
+            log(
+                    bucket.getId(),
+                    productId,
+                    shopId,
+                    BucketBizType.ALLOCATE,
+                    qty,
+                    0,
+                    qty,
+                    null,
+                    null,
+                    item.getDimensionValue(),
+                    operator,
+                    "分配入桶");
             return;
         }
         int before = exist.getStock() == null ? 0 : exist.getStock();
@@ -670,8 +788,19 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
         update.setLastSyncTime(LocalDateTime.now());
         bucketMapper.updateById(update);
         if (qty != before) {
-            log(exist.getId(), productId, shopId, BucketBizType.ALLOCATE, qty - before, before, qty,
-                    null, null, item.getDimensionValue(), operator, "分配调整");
+            log(
+                    exist.getId(),
+                    productId,
+                    shopId,
+                    BucketBizType.ALLOCATE,
+                    qty - before,
+                    before,
+                    qty,
+                    null,
+                    null,
+                    item.getDimensionValue(),
+                    operator,
+                    "分配调整");
         }
     }
 
@@ -698,7 +827,8 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
         return 0;
     }
 
-    private InvBucket findOrCreateBucket(Long productId, Long shopId, String dimension, String value, InvBucket template) {
+    private InvBucket findOrCreateBucket(
+            Long productId, Long shopId, String dimension, String value, InvBucket template) {
         InvBucket exist = findBucket(productId, dimension, value);
         if (exist != null) {
             return exist;
@@ -741,18 +871,19 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
     }
 
     private void sortCandidates(List<InvBucket> candidates, DeductPolicy policy) {
-        Comparator<InvBucket> comparator = switch (policy) {
-            case EXPIRY_FIRST -> Comparator
-                    .comparing((InvBucket b) -> b.getExpireDate(), Comparator.nullsLast(Comparator.naturalOrder()))
-                    .thenComparing(InvBucket::getCreateTime, Comparator.nullsLast(Comparator.naturalOrder()))
-                    .thenComparing(InvBucket::getId);
-            case MANUAL -> Comparator
-                    .comparingInt((InvBucket b) -> b.getPriority() == null ? 0 : b.getPriority())
-                    .thenComparing(InvBucket::getId);
-            case FIFO -> Comparator
-                    .comparing(InvBucket::getCreateTime, Comparator.nullsLast(Comparator.naturalOrder()))
-                    .thenComparing(InvBucket::getId);
-        };
+        Comparator<InvBucket> comparator =
+                switch (policy) {
+                    case EXPIRY_FIRST -> Comparator.comparing(
+                                    (InvBucket b) -> b.getExpireDate(), Comparator.nullsLast(Comparator.naturalOrder()))
+                            .thenComparing(InvBucket::getCreateTime, Comparator.nullsLast(Comparator.naturalOrder()))
+                            .thenComparing(InvBucket::getId);
+                    case MANUAL -> Comparator.comparingInt(
+                                    (InvBucket b) -> b.getPriority() == null ? 0 : b.getPriority())
+                            .thenComparing(InvBucket::getId);
+                    case FIFO -> Comparator.comparing(
+                                    InvBucket::getCreateTime, Comparator.nullsLast(Comparator.naturalOrder()))
+                            .thenComparing(InvBucket::getId);
+                };
         candidates.sort(comparator);
     }
 
@@ -818,8 +949,16 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
         return result;
     }
 
-    private void saveOperation(BucketOpType type, Long productId, Long shopId, Long fromId,
-                               Long toId, int qty, String operator, String remark, String opNo) {
+    private void saveOperation(
+            BucketOpType type,
+            Long productId,
+            Long shopId,
+            Long fromId,
+            Long toId,
+            int qty,
+            String operator,
+            String remark,
+            String opNo) {
         InvBucketOperation operation = new InvBucketOperation();
         operation.setOpNo(opNo);
         operation.setOpType(type.name());
@@ -834,9 +973,19 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
         operationMapper.insert(operation);
     }
 
-    private void log(Long bucketId, Long productId, Long shopId, BucketBizType type, int changeQty,
-                     int beforeStock, int afterStock, String orderNo, String bizId, String bucketKey,
-                     String operator, String remark) {
+    private void log(
+            Long bucketId,
+            Long productId,
+            Long shopId,
+            BucketBizType type,
+            int changeQty,
+            int beforeStock,
+            int afterStock,
+            String orderNo,
+            String bizId,
+            String bucketKey,
+            String operator,
+            String remark) {
         InvBucketLog entity = new InvBucketLog();
         entity.setBucketId(bucketId);
         entity.setProductId(productId);
@@ -854,7 +1003,7 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
     }
 
     private Product requireProduct(Long productId, Long shopId) {
-        Product product = productMapper.selectById(productId);
+        Product product = productStockService.findById(productId);
         if (product == null) {
             throw new BizException(ResultCode.NOT_FOUND, "商品不存在");
         }

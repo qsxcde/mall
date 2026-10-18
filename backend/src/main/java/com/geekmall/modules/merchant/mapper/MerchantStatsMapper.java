@@ -1,12 +1,11 @@
 package com.geekmall.modules.merchant.mapper;
 
-import com.geekmall.modules.merchant.support.MerchantAftersaleStatus;
+import com.geekmall.common.enums.MerchantAftersaleStatus;
+import java.util.List;
+import java.util.Map;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
-
-import java.util.List;
-import java.util.Map;
 
 /**
  * 商家域聚合查询 Mapper。
@@ -77,13 +76,13 @@ public interface MerchantStatsMapper {
     long waitShipCount(@Param("shopId") Long shopId);
 
     /** 售后待处理数（商家侧）。 */
-    @Select("SELECT COUNT(*) FROM oms_aftersale WHERE shop_id = #{shopId} AND deleted = 0 "
-            + "AND " + MerchantAftersaleStatus.STATUS_SQL + " = '" + MerchantAftersaleStatus.PENDING + "'")
+    @Select("SELECT COUNT(*) FROM oms_aftersale WHERE shop_id = #{shopId} AND deleted = 0 " + "AND "
+            + MerchantAftersaleStatus.STATUS_SQL + " = '" + MerchantAftersaleStatus.PENDING + "'")
     long aftersalePendingCount(@Param("shopId") Long shopId);
 
     /** 「售后中」订单数：存在未终结售后工单的订单。 */
-    @Select("SELECT COUNT(DISTINCT order_no) FROM oms_aftersale WHERE shop_id = #{shopId} AND deleted = 0 "
-            + "AND " + MerchantAftersaleStatus.STATUS_SQL + " IN " + MerchantAftersaleStatus.NON_FINAL_IN)
+    @Select("SELECT COUNT(DISTINCT order_no) FROM oms_aftersale WHERE shop_id = #{shopId} AND deleted = 0 " + "AND "
+            + MerchantAftersaleStatus.STATUS_SQL + " IN " + MerchantAftersaleStatus.NON_FINAL_IN)
     long afterOrderCount(@Param("shopId") Long shopId);
 
     /** 待回复评价数（未回复且未被忽略）。 */

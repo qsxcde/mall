@@ -11,15 +11,14 @@ import com.geekmall.modules.cart.service.CartService;
 import com.geekmall.modules.cart.vo.CartItemVO;
 import com.geekmall.modules.cart.vo.CartSummaryVO;
 import com.geekmall.modules.product.entity.Product;
-import com.geekmall.modules.product.mapper.ProductMapper;
+import com.geekmall.modules.product.service.ProductStockService;
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-
-import java.math.BigDecimal;
-import java.util.List;
-import java.util.Map;
 
 /**
  * 购物车服务实现。
@@ -32,7 +31,7 @@ public class CartServiceImpl implements CartService {
     private static final int ON_SHELF = 1;
 
     private final CartItemMapper cartItemMapper;
-    private final ProductMapper productMapper;
+    private final ProductStockService productStockService;
 
     @Override
     public List<CartItemVO> list(Long userId) {
@@ -42,7 +41,7 @@ public class CartServiceImpl implements CartService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long add(Long userId, AddCartDTO dto) {
-        Product product = productMapper.selectById(dto.getProductId());
+        Product product = productStockService.findById(dto.getProductId());
         if (product == null || (product.getStatus() != null && product.getStatus() != ON_SHELF)) {
             throw BizException.of(ResultCode.NOT_FOUND);
         }
@@ -128,10 +127,9 @@ public class CartServiceImpl implements CartService {
         // 一条 DELETE 完成（由 N 条 select + N 条 delete 降为 1 条），
         // 并对每个购物车项附加「数量与下单时一致」的乐观守卫：
         // 下单之后若用户又加购合并进同一行，qty 会变，此时保留该行而不是误删。
-        LambdaQueryWrapper<CartItem> wrapper = new LambdaQueryWrapper<CartItem>()
-                .eq(CartItem::getUserId, userId);
-        wrapper.and(w -> cartItemQty.forEach((itemId, qty) ->
-                w.or(x -> x.eq(CartItem::getId, itemId).eq(CartItem::getQty, qty))));
+        LambdaQueryWrapper<CartItem> wrapper = new LambdaQueryWrapper<CartItem>().eq(CartItem::getUserId, userId);
+        wrapper.and(w -> cartItemQty.forEach(
+                (itemId, qty) -> w.or(x -> x.eq(CartItem::getId, itemId).eq(CartItem::getQty, qty))));
         cartItemMapper.delete(wrapper);
     }
 
@@ -153,7 +151,10 @@ public class CartServiceImpl implements CartService {
     public CartSummaryVO summary(Long userId) {
         List<CartItem> items = queryItems(userId);
         int totalQty = items.stream().mapToInt(i -> nvl(i.getQty())).sum();
-        int checkedQty = items.stream().filter(this::isChecked).mapToInt(i -> nvl(i.getQty())).sum();
+        int checkedQty = items.stream()
+                .filter(this::isChecked)
+                .mapToInt(i -> nvl(i.getQty()))
+                .sum();
         BigDecimal checkedAmount = items.stream()
                 .filter(this::isChecked)
                 .map(i -> nvl(i.getPrice()).multiply(BigDecimal.valueOf(nvl(i.getQty()))))

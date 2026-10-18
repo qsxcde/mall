@@ -2,27 +2,25 @@ package com.geekmall.modules.merchant.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.geekmall.common.enums.MerchantAftersaleStatus;
 import com.geekmall.common.exception.BizException;
 import com.geekmall.common.result.ResultCode;
 import com.geekmall.modules.aftersale.entity.AfterSale;
-import com.geekmall.modules.aftersale.mapper.AfterSaleMapper;
 import com.geekmall.modules.aftersale.service.AfterSaleService;
+import com.geekmall.modules.aftersale.service.MerchantAfterSaleQueryService;
 import com.geekmall.modules.merchant.converter.MerchantAftersaleConverter;
 import com.geekmall.modules.merchant.dto.AftersaleResolveDTO;
 import com.geekmall.modules.merchant.dto.MerchantAftersaleQueryDTO;
 import com.geekmall.modules.merchant.mapper.MerchantStatsMapper;
 import com.geekmall.modules.merchant.service.MerchantAftersaleService;
-import com.geekmall.modules.merchant.support.MerchantAftersaleStatus;
 import com.geekmall.modules.merchant.support.Numbers;
 import com.geekmall.modules.merchant.vo.MerchantAftersaleVO;
 import com.geekmall.modules.merchant.vo.MerchantPageVO;
 import com.geekmall.modules.trade.entity.Order;
 import com.geekmall.modules.trade.entity.OrderItem;
-import com.geekmall.modules.trade.mapper.OrderItemMapper;
-import com.geekmall.modules.trade.mapper.OrderMapper;
+import com.geekmall.modules.trade.service.MerchantOrderQueryService;
 import com.geekmall.modules.user.entity.SysUser;
-import com.geekmall.modules.user.mapper.SysUserMapper;
+import com.geekmall.modules.user.service.UserService;
 import com.geekmall.security.MerchantSecurityUtils;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -52,10 +50,9 @@ import org.springframework.util.StringUtils;
 @RequiredArgsConstructor
 public class MerchantAftersaleServiceImpl implements MerchantAftersaleService {
 
-    private final AfterSaleMapper afterSaleMapper;
-    private final OrderMapper orderMapper;
-    private final OrderItemMapper orderItemMapper;
-    private final SysUserMapper sysUserMapper;
+    private final MerchantAfterSaleQueryService afterSaleQuery;
+    private final MerchantOrderQueryService orderQuery;
+    private final UserService userService;
     private final MerchantStatsMapper statsMapper;
     private final AfterSaleService afterSaleService;
     /** 经代理调用本类的事务方法，避免自调用导致 {@code @Transactional} 失效。 */
@@ -80,8 +77,7 @@ public class MerchantAftersaleServiceImpl implements MerchantAftersaleService {
         }
         applySort(wrapper, query.getSort());
 
-        Page<AfterSale> page = new Page<>(query.getPage(), query.getSize());
-        IPage<AfterSale> result = afterSaleMapper.selectPage(page, wrapper);
+        IPage<AfterSale> result = afterSaleQuery.pageByShop(shopId, wrapper, query.getPage(), query.getSize());
         List<MerchantAftersaleVO> list = assemble(result.getRecords());
 
         MerchantPageVO<MerchantAftersaleVO> vo =
@@ -94,10 +90,7 @@ public class MerchantAftersaleServiceImpl implements MerchantAftersaleService {
     @Override
     public MerchantAftersaleVO detail(String id) {
         Long shopId = MerchantSecurityUtils.getShopId();
-        AfterSale item = afterSaleMapper.selectOne(new LambdaQueryWrapper<AfterSale>()
-                .eq(AfterSale::getShopId, shopId)
-                .eq(AfterSale::getId, MerchantAftersaleConverter.parseId(id))
-                .last("limit 1"));
+        AfterSale item = afterSaleQuery.findByShopAndId(shopId, MerchantAftersaleConverter.parseId(id));
         if (item == null) {
             throw BizException.of(ResultCode.NOT_FOUND);
         }
@@ -125,7 +118,7 @@ public class MerchantAftersaleServiceImpl implements MerchantAftersaleService {
         if (!"approve".equals(action) && !"receive".equals(action)) {
             return false;
         }
-        AfterSale item = afterSaleMapper.selectById(id);
+        AfterSale item = afterSaleQuery.findByShopAndId(MerchantSecurityUtils.getShopId(), id);
         if (item == null) {
             return false;
         }
@@ -159,11 +152,7 @@ public class MerchantAftersaleServiceImpl implements MerchantAftersaleService {
         // 动作允许的前置状态，非法动作直接拒绝（同时起到「状态机」的作用）
         String expected = expectedStatusOf(action);
 
-        Map<Long, AfterSale> byId = afterSaleMapper
-                .selectList(new LambdaQueryWrapper<AfterSale>()
-                        .eq(AfterSale::getShopId, shopId)
-                        .in(AfterSale::getId, ids))
-                .stream()
+        Map<Long, AfterSale> byId = afterSaleQuery.listByShopAndIds(shopId, ids).stream()
                 .collect(Collectors.toMap(AfterSale::getId, Function.identity(), (a, b) -> a));
         if (byId.isEmpty()) {
             throw BizException.of(ResultCode.NOT_FOUND);
@@ -200,7 +189,7 @@ public class MerchantAftersaleServiceImpl implements MerchantAftersaleService {
                         case "receive" -> 1;
                         default -> 0;
                     };
-            int rows = afterSaleMapper.transferStatus(
+            int rows = afterSaleQuery.transferStatus(
                     id,
                     shopId,
                     expected,
@@ -278,29 +267,22 @@ public class MerchantAftersaleServiceImpl implements MerchantAftersaleService {
         if (items == null || items.isEmpty()) {
             return List.of();
         }
+        Long shopId = MerchantSecurityUtils.getShopId();
         List<String> orderNos = items.stream()
                 .map(AfterSale::getOrderNo)
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
-        Map<String, Order> orderMap = orderNos.isEmpty()
-                ? Map.of()
-                : orderMapper.selectList(new LambdaQueryWrapper<Order>().in(Order::getOrderNo, orderNos)).stream()
-                        .collect(Collectors.toMap(Order::getOrderNo, Function.identity(), (a, b) -> a));
-        Map<String, OrderItem> itemMap = orderNos.isEmpty()
-                ? Map.of()
-                : orderItemMapper
-                        .selectList(new LambdaQueryWrapper<OrderItem>().in(OrderItem::getOrderNo, orderNos))
-                        .stream()
-                        .collect(Collectors.toMap(OrderItem::getOrderNo, Function.identity(), (a, b) -> a));
+        // 注意：按 shopId 过滤，避免查到其他店铺的同号订单（历史实现只按 orderNo 查，越权可达）
+        Map<String, Order> orderMap = orderQuery.listByShopAndOrderNos(shopId, orderNos).stream()
+                .collect(Collectors.toMap(Order::getOrderNo, Function.identity(), (a, b) -> a));
+        Map<String, OrderItem> itemMap = orderQuery.itemsByOrderNos(orderNos).entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().get(0), (a, b) -> a));
         Set<Long> userIds = items.stream()
                 .map(AfterSale::getUserId)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toSet());
-        Map<Long, SysUser> userMap = userIds.isEmpty()
-                ? Map.of()
-                : sysUserMapper.selectBatchIds(userIds).stream()
-                        .collect(Collectors.toMap(SysUser::getId, Function.identity(), (a, b) -> a));
+        Map<Long, SysUser> userMap = userService.usersByIds(userIds);
 
         return items.stream()
                 .map(item -> MerchantAftersaleConverter.toVO(
@@ -336,16 +318,13 @@ public class MerchantAftersaleServiceImpl implements MerchantAftersaleService {
         long total = counts.values().stream().mapToLong(Long::longValue).sum();
         long done = counts.getOrDefault(MerchantAftersaleStatus.DONE, 0L);
 
-        List<AfterSale> finished = afterSaleMapper.selectList(new LambdaQueryWrapper<AfterSale>()
-                .eq(AfterSale::getShopId, shopId)
-                .eq(AfterSale::getMerchantStatus, MerchantAftersaleStatus.DONE));
-        BigDecimal refundTotal =
-                afterSaleMapper
-                        .selectList(new LambdaQueryWrapper<AfterSale>().eq(AfterSale::getShopId, shopId))
-                        .stream()
-                        .map(AfterSale::getAmount)
-                        .filter(Objects::nonNull)
-                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<AfterSale> finished = afterSaleQuery.listByShop(
+                shopId,
+                new LambdaQueryWrapper<AfterSale>().eq(AfterSale::getMerchantStatus, MerchantAftersaleStatus.DONE));
+        BigDecimal refundTotal = afterSaleQuery.listByShop(shopId, new LambdaQueryWrapper<>()).stream()
+                .map(AfterSale::getAmount)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal doneAmount = finished.stream()
                 .map(AfterSale::getAmount)
                 .filter(Objects::nonNull)

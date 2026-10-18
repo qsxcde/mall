@@ -1,8 +1,8 @@
 package com.geekmall.modules.aftersale.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.geekmall.common.enums.MerchantAftersaleStatus;
 import com.geekmall.modules.aftersale.entity.AfterSale;
-import com.geekmall.modules.merchant.support.MerchantAftersaleStatus;
 import java.math.BigDecimal;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;

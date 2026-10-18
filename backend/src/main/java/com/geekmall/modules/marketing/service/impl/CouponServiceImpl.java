@@ -11,13 +11,6 @@ import com.geekmall.modules.marketing.mapper.UserCouponMapper;
 import com.geekmall.modules.marketing.service.CouponService;
 import com.geekmall.modules.marketing.vo.CouponTemplateVO;
 import com.geekmall.modules.marketing.vo.UserCouponVO;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
-
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -27,6 +20,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 /**
  * 优惠券服务实现（交易结算切片）。
@@ -58,11 +57,15 @@ public class CouponServiceImpl implements CouponService {
         }
         Set<Long> claimedIds = Set.of();
         if (userId != null) {
-            List<Long> templateIds = templates.stream().map(CouponTemplate::getId).toList();
-            claimedIds = userCouponMapper.selectList(new LambdaQueryWrapper<UserCoupon>()
+            List<Long> templateIds =
+                    templates.stream().map(CouponTemplate::getId).toList();
+            claimedIds = userCouponMapper
+                    .selectList(new LambdaQueryWrapper<UserCoupon>()
                             .eq(UserCoupon::getUserId, userId)
                             .in(UserCoupon::getTemplateId, templateIds))
-                    .stream().map(UserCoupon::getTemplateId).collect(Collectors.toSet());
+                    .stream()
+                    .map(UserCoupon::getTemplateId)
+                    .collect(Collectors.toSet());
         }
         Set<Long> finalClaimed = claimedIds;
         return templates.stream()
@@ -150,15 +153,16 @@ public class CouponServiceImpl implements CouponService {
             return BigDecimal.ZERO;
         }
         String type = coupon.getType() == null ? "full" : coupon.getType();
-        BigDecimal discount = switch (type) {
-            // 免运费券不减商品金额，运费由交易域置零
-            case "shipping" -> BigDecimal.ZERO;
-            // 折扣券：amount = 9 表示 9 折
-            case "percent" -> goodsAmount.multiply(
-                    BigDecimal.ONE.subtract(coupon.getAmount().divide(BigDecimal.TEN, 4, RoundingMode.HALF_UP)));
-            // 满减券：抵扣额不超过商品金额
-            default -> coupon.getAmount().min(goodsAmount);
-        };
+        BigDecimal discount =
+                switch (type) {
+                        // 免运费券不减商品金额，运费由交易域置零
+                    case "shipping" -> BigDecimal.ZERO;
+                        // 折扣券：amount = 9 表示 9 折
+                    case "percent" -> goodsAmount.multiply(BigDecimal.ONE.subtract(
+                            coupon.getAmount().divide(BigDecimal.TEN, 4, RoundingMode.HALF_UP)));
+                        // 满减券：抵扣额不超过商品金额
+                    default -> coupon.getAmount().min(goodsAmount);
+                };
         return discount.max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
     }
 
@@ -178,12 +182,14 @@ public class CouponServiceImpl implements CouponService {
     @Transactional(rollbackFor = Exception.class)
     public void releaseByOrderNo(String orderNo) {
         // 注意：需要显式 set 为 null，MyBatis-Plus 默认忽略 null 字段
-        int rows = userCouponMapper.update(null, new LambdaUpdateWrapper<UserCoupon>()
-                .eq(UserCoupon::getOrderNo, orderNo)
-                .eq(UserCoupon::getStatus, STATUS_USED)
-                .set(UserCoupon::getStatus, STATUS_UNUSED)
-                .set(UserCoupon::getOrderNo, null)
-                .set(UserCoupon::getUseTime, null));
+        int rows = userCouponMapper.update(
+                null,
+                new LambdaUpdateWrapper<UserCoupon>()
+                        .eq(UserCoupon::getOrderNo, orderNo)
+                        .eq(UserCoupon::getStatus, STATUS_USED)
+                        .set(UserCoupon::getStatus, STATUS_UNUSED)
+                        .set(UserCoupon::getOrderNo, null)
+                        .set(UserCoupon::getUseTime, null));
         if (rows > 0) {
             log.info("订单 {} 取消，已回退 {} 张优惠券", orderNo, rows);
         }
@@ -240,7 +246,8 @@ public class CouponServiceImpl implements CouponService {
         if (coupons == null || coupons.isEmpty()) {
             return List.of();
         }
-        List<Long> templateIds = coupons.stream().map(UserCoupon::getTemplateId).distinct().toList();
+        List<Long> templateIds =
+                coupons.stream().map(UserCoupon::getTemplateId).distinct().toList();
         Map<Long, CouponTemplate> templateMap = templateMapper.selectBatchIds(templateIds).stream()
                 .collect(Collectors.toMap(CouponTemplate::getId, Function.identity(), (a, b) -> a));
         return coupons.stream()
@@ -306,5 +313,10 @@ public class CouponServiceImpl implements CouponService {
             case 2 -> "已过期";
             default -> "";
         };
+    }
+
+    @Override
+    public List<CouponTemplate> allTemplates() {
+        return templateMapper.selectList(new LambdaQueryWrapper<CouponTemplate>().orderByDesc(CouponTemplate::getId));
     }
 }

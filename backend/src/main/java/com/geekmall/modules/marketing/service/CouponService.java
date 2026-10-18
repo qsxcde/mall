@@ -2,7 +2,6 @@ package com.geekmall.modules.marketing.service;
 
 import com.geekmall.modules.marketing.vo.CouponTemplateVO;
 import com.geekmall.modules.marketing.vo.UserCouponVO;
-
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -40,4 +39,12 @@ public interface CouponService {
 
     /** 为演示账号发放几张券，便于结算页有券可选。 */
     void grantDemoCoupons(Long userId);
+
+    /**
+     * 全部优惠券模板（商家端营销页展示用）。
+     *
+     * <p>返回实体而非 VO：商家侧有自己的展示模型（{@code MerchantCouponVO}），
+     * 由营销域提供数据、商家域负责转换，避免营销域为了商家展示而绑死一个 VO。</p>
+     */
+    java.util.List<com.geekmall.modules.marketing.entity.CouponTemplate> allTemplates();
 }
