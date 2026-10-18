@@ -288,6 +288,16 @@ management:
   endpoint:
     health:
       show-details: when_authorized
+  health:
+    elasticsearch:
+      # 引入 elasticsearch-java 后，Boot 会因 classpath 上存在 RestClient
+      # 自动装配 ElasticsearchRestClientHealthIndicator —— 即使我们根本没用 ES
+      # 作为搜索引擎（mall.search.engine=mysql-like）。它连不上 localhost:9200
+      # 就把整体 health 拉成 DOWN（HTTP 503），导致：
+      #   · 监控误判服务故障；
+      #   · RateLimitIntegrationTest 的「豁免路径应可访问」用例失败。
+      # 因此默认关闭；只有真正把 ES 当搜索引擎时才需要打开（设 SEARCH_HEALTH_ENABLED=true）。
+      enabled: ${SEARCH_HEALTH_ENABLED:false}
   metrics:
     tags:
       application: ${spring.application.name}
