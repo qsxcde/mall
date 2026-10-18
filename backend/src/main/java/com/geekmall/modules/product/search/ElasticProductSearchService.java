@@ -54,16 +54,26 @@ public class ElasticProductSearchService implements ProductSearchService {
             ProductMapper productMapper,
             @Value("${mall.search.es.uris:http://localhost:9200}") String uris,
             @Value("${mall.search.es.index:product}") String index,
-            @Value("${mall.search.es.degrade-to-mysql:true}") boolean degradeToMysql) {
+            @Value("${mall.search.es.degrade-to-mysql:true}") boolean degradeToMysql,
+            @Value("${mall.search.es.connect-timeout-ms:2000}") int connectTimeoutMs,
+            @Value("${mall.search.es.socket-timeout-ms:5000}") int socketTimeoutMs) {
         this.productMapper = productMapper;
         // 降级实现不注册成 Bean（条件装配互斥），直接构造一个只依赖 Mapper 的实例
         this.mysqlFallback = LikeProductSearchService.forFallback(productMapper);
         this.index = index;
         this.degradeToMysql = degradeToMysql;
-        this.client = buildClient(uris);
+        this.client = buildClient(uris, connectTimeoutMs, socketTimeoutMs);
     }
 
-    private static ElasticsearchClient buildClient(String uris) {
+    /**
+     * 构建 ES 客户端。
+     *
+     * <p><b>超时必须显式设置</b>：官方 low-level 客户端的默认 socket 超时是 30s，
+     * 与整个搜索接口的目标延迟（毫秒级）严重不匹配 —— ES 一旦变慢而不是直接拒绝，
+     * 请求线程会被挂住几十秒，进而耗尽 Tomcat 线程池。这里的 2s/5s 是
+     * 「宁可判定失败并降级到 MySQL，也不要拖住调用方」。</p>
+     */
+    private static ElasticsearchClient buildClient(String uris, int connectTimeoutMs, int socketTimeoutMs) {
         List<HttpHost> hosts = new ArrayList<>();
         for (String uri : uris.split(",")) {
             String trimmed = uri.trim();
@@ -71,8 +81,10 @@ public class ElasticProductSearchService implements ProductSearchService {
                 hosts.add(HttpHost.create(trimmed));
             }
         }
-        RestClient restClient =
-                RestClient.builder(hosts.toArray(new HttpHost[0])).build();
+        RestClient restClient = RestClient.builder(hosts.toArray(new HttpHost[0]))
+                .setRequestConfigCallback(
+                        config -> config.setConnectTimeout(connectTimeoutMs).setSocketTimeout(socketTimeoutMs))
+                .build();
         return new ElasticsearchClient(new RestClientTransport(restClient, new JacksonJsonpMapper()));
     }
 

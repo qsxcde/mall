@@ -77,7 +77,10 @@ class ProductSearchContractIntegrationTest extends AbstractSearchIntegrationTest
     void setUp() {
         likeService = new LikeProductSearchService(productMapper);
         fulltextService = new FulltextProductSearchService(productMapper);
-        esService = new ElasticProductSearchService(productMapper, "http://" + ES.getHttpHostAddress(), INDEX, false);
+        // 超时参数取与被测配置一致的默认值（2s / 5s）：契约测试关注语义一致性，
+        // 超时只影响失败路径的表现，不参与断言。
+        esService = new ElasticProductSearchService(
+                productMapper, "http://" + ES.getHttpHostAddress(), INDEX, false, 2000, 5000);
 
         engines = Map.of(
                 "like", likeService,
