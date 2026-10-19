@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.3.5</version>
+        <version>3.3.13</version>
         <relativePath/>
     </parent>
 
@@ -19,18 +19,18 @@
 
     <properties>
         <java.version>21</java.version>
-        <mybatis-plus.version>3.5.7</mybatis-plus.version>
-        <jjwt.version>0.12.6</jjwt.version>
-        <springdoc.version>2.6.0</springdoc.version>
+        <mybatis-plus.version>3.5.8</mybatis-plus.version>
+        <jjwt.version>0.12.7</jjwt.version>
+        <springdoc.version>2.9.1</springdoc.version>
         <shedlock.version>7.10.1</shedlock.version>
         <!-- Elasticsearch Java 客户端：8.15.x 与 ES 8.x 服务端兼容 -->
         <elasticsearch-java.version>8.15.3</elasticsearch-java.version>
-        <archunit.version>1.4.0</archunit.version>
+        <archunit.version>1.5.1</archunit.version>
         <!--
           结构化日志（JSON）。8.0 对应 logback 1.5.x，与 Spring Boot 3.3.5 自带的
           logback 版本对齐；用 7.x 会在 logback 1.5 上引入兼容性风险。
         -->
-        <logstash-encoder.version>8.0</logstash-encoder.version>
+        <logstash-encoder.version>8.1</logstash-encoder.version>
         <!--
           覆盖 Spring Boot 3.3.5 默认的 Testcontainers 1.19.8。
           1.19.8 携带的 docker-java 使用过旧的 Docker API 版本（1.32），
@@ -141,7 +141,7 @@
         <dependency>
             <groupId>io.minio</groupId>
             <artifactId>minio</artifactId>
-            <version>8.5.12</version>
+            <version>8.6.0</version>
         </dependency>
 
         <!-- 定时任务分布式互斥（多实例部署时防止任务重复执行） -->
@@ -289,7 +289,7 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.12</version>
+                <version>0.8.15</version>
                 <!--
                     规则放在插件级而非 execution 级：execution 级配置只有绑定的 phase
                     才会加载，CI 里单独执行 `mvn jacoco:check` 时会失效（静默跳过校验）。
