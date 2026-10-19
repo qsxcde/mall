@@ -24,7 +24,7 @@
         <springdoc.version>2.6.0</springdoc.version>
         <shedlock.version>7.10.1</shedlock.version>
         <!-- Elasticsearch Java 客户端：8.15.x 与 ES 8.x 服务端兼容 -->
-        <elasticsearch-java.version>8.15.3</elasticsearch-java.version>
+        <elasticsearch-java.version>9.5.5</elasticsearch-java.version>
         <archunit.version>1.4.0</archunit.version>
         <!--
           结构化日志（JSON）。8.0 对应 logback 1.5.x，与 Spring Boot 3.3.5 自带的
