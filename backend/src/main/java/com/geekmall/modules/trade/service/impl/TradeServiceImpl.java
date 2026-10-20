@@ -44,6 +44,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -476,29 +477,51 @@ public class TradeServiceImpl implements TradeService {
             throw orderNotFound(orderNo);
         }
         OrderStatus current = OrderStatus.of(order.getStatus());
+        if (current == null) {
+            throw new BizException(ResultCode.BIZ_ERROR, "订单状态异常：" + order.getStatus());
+        }
         if (current == OrderStatus.CANCELED) {
             log.warn("订单 {} 已关闭，支付成功需转退款", orderNo);
             return PaymentApplyResult.ORDER_CLOSED;
         }
-        if (current == OrderStatus.PENDING_SHIP) {
-            // 幂等：回调与主动查单可能都走到这里
-            log.info("订单 {} 已是待发货，支付落账按幂等返回", orderNo);
-            return PaymentApplyResult.APPLIED;
+        // 订单已不在待支付：同一 tradeNo 视为幂等，不同 tradeNo 视为第二笔支付，必须退款
+        if (current != OrderStatus.PENDING_PAY) {
+            return resolveAlreadyPaid(order, tradeNo);
         }
         try {
             // 走代理开启独立事务：tradeNo 写入与状态流转要么一起成功、要么一起回滚
             selfProvider.getObject().doApplyPayment(order, tradeNo, payMethod);
             return PaymentApplyResult.APPLIED;
         } catch (BizException e) {
-            // 状态在「读到」与「流转」之间被并发改成已关闭：不能把异常抛给支付域
-            // （那会回滚掉支付单已成功），而要转成「需退款」信号
+            // 状态在「读到」与「流转」之间被并发改动：回读最新状态再判定，
+            // 不能把异常抛给支付域（那会回滚掉支付单已成功）。
             Order latest = orderMapper.selectById(order.getId());
-            if (latest != null && OrderStatus.of(latest.getStatus()) == OrderStatus.CANCELED) {
-                log.warn("订单 {} 在支付落账过程中被并发关闭，转退款", orderNo);
-                return PaymentApplyResult.ORDER_CLOSED;
+            if (latest != null) {
+                OrderStatus latestStatus = OrderStatus.of(latest.getStatus());
+                if (latestStatus == OrderStatus.CANCELED) {
+                    log.warn("订单 {} 在支付落账过程中被并发关闭，转退款", orderNo);
+                    return PaymentApplyResult.ORDER_CLOSED;
+                }
+                if (latestStatus != OrderStatus.PENDING_PAY) {
+                    return resolveAlreadyPaid(latest, tradeNo);
+                }
             }
             throw e;
         }
+    }
+
+    /**
+     * 订单已不在待支付状态时的幂等/重复支付判定。
+     *
+     * <p>同一个 {@code tradeNo} 重复到达是渠道重试，按幂等成功处理；
+     * 不同 {@code tradeNo} 说明用户用另一张支付单又付了一次，必须转退款。</p>
+     */
+    private PaymentApplyResult resolveAlreadyPaid(Order order, String tradeNo) {
+        if (StringUtils.hasText(order.getTradeNo()) && !Objects.equals(order.getTradeNo(), tradeNo)) {
+            log.warn("订单 {} 已由支付单 {} 落账，收到第二笔支付 {}，判定为重复支付", order.getOrderNo(), order.getTradeNo(), tradeNo);
+            return PaymentApplyResult.DUPLICATE_PAYMENT;
+        }
+        return PaymentApplyResult.APPLIED;
     }
 
     /** 支付落账的事务单元，仅供 {@link #applyPayment} 经代理调用。 */
@@ -603,6 +626,14 @@ public class TradeServiceImpl implements TradeService {
                 closed++;
             } catch (Exception e) {
                 log.warn("订单 {} 超时关闭失败（可能已被并发支付），跳过本轮", order.getOrderNo(), e);
+                continue;
+            }
+            // 关单事务已提交：若此前「支付单已成功、订单落账却失败」，此时订单会被误关。
+            // 放在事务外调用渠道退款，避免 HTTP 调用持有订单行锁；失败留给对账/人工兜底。
+            try {
+                paymentRefundService.refundIfPaid(order.getOrderNo(), "订单超时关闭，支付成功转退款");
+            } catch (Exception e) {
+                log.error("订单 {} 超时关闭后退款失败，需人工核查", order.getOrderNo(), e);
             }
         }
         log.info("超时未支付订单已关闭 {} 笔（本批扫描 {} 笔）", closed, expired.size());

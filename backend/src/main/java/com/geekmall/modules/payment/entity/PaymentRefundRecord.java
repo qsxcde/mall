@@ -48,6 +48,15 @@ public class PaymentRefundRecord implements Serializable {
     /** 0 处理中 1 已退款 2 退款失败 */
     private Integer status;
 
+    /** 已重试次数（乐观锁：抢任务时按旧值 CAS，避免多实例/并发重复退款）。 */
+    private Integer retryCount;
+
+    /** 下次可重试时间；null 表示立即可重试。 */
+    private LocalDateTime nextRetryTime;
+
+    /** 是否整单退款：1 是 0 否。重试时据此决定是否更新支付单的整单退款状态。 */
+    private Integer fullRefund;
+
     private String reason;
 
     private LocalDateTime callbackTime;

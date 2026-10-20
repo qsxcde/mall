@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -59,6 +60,15 @@ public class PaymentServiceImpl implements PaymentService {
     private final StringRedisTemplate redisTemplate;
 
     /**
+     * 是否允许模拟支付（prod=false）。
+     *
+     * <p>即使某次部署误把渠道留成 local，只要 mock 开关关闭，{@code /mock-pay}
+     * 就不能再自签支付成功通知 —— 这是防止「零元购」的第二道闸门。</p>
+     */
+    @Value("${mall.mock.enabled:false}")
+    private boolean mockEnabled;
+
+    /**
      * 创建支付单。
      *
      * <p>刻意<b>不加事务</b>：预下单是对渠道网关的网络调用，放进事务会长时间持有数据库连接与行锁。</p>
@@ -70,11 +80,19 @@ public class PaymentServiceImpl implements PaymentService {
         String payMethod = StringUtils.hasText(dto.getPayMethod()) ? dto.getPayMethod() : PayMethod.DEFAULT_CODE;
         String channel = paymentChannel.channelCode();
 
-        // 复用未过期的待支付单：前端切换支付方式会重新 create，
-        // 不复用就会对同一订单产生多张可付的渠道订单，用户可能付两笔
-        PaymentRecord reusable = findReusable(dto.getOrderNo(), payMethod, channel);
+        // 同一订单只允许一张待支付单（跨支付方式复用同一渠道订单）：
+        // 否则用户切换支付方式后可能对同一订单付两笔。
+        PaymentRecord reusable = findReusable(dto.getOrderNo(), channel);
         if (reusable != null) {
-            log.info("支付单复用：订单 {} 已有待支付单 {}（{}）", dto.getOrderNo(), reusable.getTradeNo(), channel);
+            if (!payMethod.equals(reusable.getPayMethod())) {
+                PaymentRecord update = new PaymentRecord();
+                update.setId(reusable.getId());
+                update.setPayMethod(payMethod);
+                paymentRecordMapper.updateById(update);
+                reusable.setPayMethod(payMethod);
+            }
+            closeOtherPending(dto.getOrderNo(), reusable.getId());
+            log.info("支付单复用：订单 {} 已有待支付单 {}（{}，方式 {}）", dto.getOrderNo(), reusable.getTradeNo(), channel, payMethod);
             return toVO(reusable);
         }
 
@@ -97,6 +115,9 @@ public class PaymentServiceImpl implements PaymentService {
         record.setRefundStatus(0);
         record.setRefundAmount(BigDecimal.ZERO);
         paymentRecordMapper.insert(record);
+        // 这里刻意不再「关闭其余待支付单」：并发创建时两个请求可能各自插入一张，
+        // 后执行者会把先插入的那张也关掉，导致用户一张都付不了。
+        // 重复支付由落账时的 tradeNo 比对识别并退款；复用路径才会清理历史多余待支付单。
         log.info("创建支付单 {}，订单 {}，渠道 {}，金额 ¥{}", tradeNo, dto.getOrderNo(), channel, amount);
         return toVO(record);
     }
@@ -111,6 +132,10 @@ public class PaymentServiceImpl implements PaymentService {
     public void mockPay(Long userId, String tradeNo) {
         PaymentRecord record = requireOwnRecord(userId, tradeNo);
         if (paymentChannel.supportsSimulatedPayment()) {
+            // 模拟支付会直接产生「支付成功」，生产必须关闭；真实渠道下本接口只做主动查单刷新。
+            if (!mockEnabled) {
+                throw new BizException(ResultCode.FORBIDDEN, "模拟支付未开启，请通过真实支付渠道完成付款");
+            }
             // 本地渠道：签一份「渠道侧支付成功」通知投递给自己，等价于真实回调
             Map<String, String> params = paymentChannel.simulatePaidNotify(
                     record.getTradeNo(), "LOCAL" + record.getTradeNo(), record.getAmount());
@@ -208,6 +233,41 @@ public class PaymentServiceImpl implements PaymentService {
         return changed;
     }
 
+    @Override
+    public int reconcileSucceeded(int batchSize) {
+        PaymentProperties.Reconcile cfg = paymentProperties.getReconcile();
+        int limit = Math.max(1, batchSize);
+        LocalDateTime since = LocalDateTime.now().minusDays(Math.max(1, cfg.getMaxAgeDays()));
+        List<PaymentRecord> candidates = paymentRecordMapper.selectSuccessWithUnsettledOrder(since, limit);
+        int reconciled = 0;
+        for (PaymentRecord record : candidates) {
+            try {
+                TradeService.PaymentApplyResult result =
+                        tradeService.applyPayment(record.getOrderNo(), record.getTradeNo(), record.getPayMethod());
+                if (result == TradeService.PaymentApplyResult.ORDER_CLOSED) {
+                    // 钱已到账但订单已关闭：必须给资金一条出路
+                    paymentRefundService.refundForClosedOrder(record, "支付成功但订单已关闭，对账转退款");
+                } else if (result == TradeService.PaymentApplyResult.DUPLICATE_PAYMENT) {
+                    // 订单已由另一笔支付落账：第二笔支付必须原路退回
+                    paymentRefundService.refundFull(record, "重复支付退款");
+                }
+                reconciled++;
+                log.warn(
+                        "[支付对账] 修正支付成功但订单未落账：tradeNo={}, orderNo={}, result={}",
+                        record.getTradeNo(),
+                        record.getOrderNo(),
+                        result);
+            } catch (Exception e) {
+                // 单笔失败不中断整批；下一轮仍会命中同一条记录并重试
+                log.error("[支付对账] 处理失败：tradeNo={}, orderNo={}", record.getTradeNo(), record.getOrderNo(), e);
+            }
+        }
+        if (reconciled > 0) {
+            log.info("[支付对账] 本轮修正 {} 笔（本批扫描 {} 笔）", reconciled, candidates.size());
+        }
+        return reconciled;
+    }
+
     /* ------------------------------ 私有方法 ------------------------------ */
 
     /**
@@ -243,6 +303,10 @@ public class PaymentServiceImpl implements PaymentService {
             // 钱收到了但订单已关闭 —— 资金必须有出路
             log.warn("订单 {} 已关闭，支付单 {} 转退款", record.getOrderNo(), record.getTradeNo());
             paymentRefundService.refundForClosedOrder(record, "订单已关闭，支付成功转退款");
+        } else if (result == TradeService.PaymentApplyResult.DUPLICATE_PAYMENT) {
+            // 订单已由另一笔支付落账：第二笔钱必须原路退回
+            log.warn("订单 {} 收到重复支付 {}，转退款", record.getOrderNo(), record.getTradeNo());
+            paymentRefundService.refundFull(record, "重复支付退款");
         }
     }
 
@@ -321,15 +385,35 @@ public class PaymentServiceImpl implements PaymentService {
         return record;
     }
 
-    /** 查找同一订单 + 同一方式 + 同一渠道下未过期的待支付单。 */
-    private PaymentRecord findReusable(String orderNo, String payMethod, String channel) {
+    /** 查找同一订单 + 同一渠道下未过期的待支付单（不区分支付方式，避免多张可付订单）。 */
+    private PaymentRecord findReusable(String orderNo, String channel) {
         return paymentRecordMapper.selectOne(new LambdaQueryWrapper<PaymentRecord>()
                 .eq(PaymentRecord::getOrderNo, orderNo)
-                .eq(PaymentRecord::getPayMethod, payMethod)
                 .eq(PaymentRecord::getChannel, channel)
                 .eq(PaymentRecord::getStatus, STATUS_PENDING)
                 .orderByDesc(PaymentRecord::getId)
                 .last("limit 1"));
+    }
+
+    /**
+     * 关闭同一订单下其余待支付单。
+     *
+     * <p>渠道侧的二维码/订单可能仍然可付，但本地先关闭，避免继续扩大可付入口；
+     * 若用户真的付了被关闭的那张，落账时会被 {@code tradeNo} 比对识别为重复支付并退款。</p>
+     */
+    private void closeOtherPending(String orderNo, Long keepId) {
+        PaymentRecord close = new PaymentRecord();
+        close.setStatus(STATUS_CLOSED);
+        LambdaUpdateWrapper<PaymentRecord> wrapper = new LambdaUpdateWrapper<PaymentRecord>()
+                .eq(PaymentRecord::getOrderNo, orderNo)
+                .eq(PaymentRecord::getStatus, STATUS_PENDING);
+        if (keepId != null) {
+            wrapper.ne(PaymentRecord::getId, keepId);
+        }
+        int closed = paymentRecordMapper.update(close, wrapper);
+        if (closed > 0) {
+            log.info("已关闭订单 {} 的 {} 张多余待支付单", orderNo, closed);
+        }
     }
 
     private PaymentRecord findByTradeNo(String tradeNo) {
