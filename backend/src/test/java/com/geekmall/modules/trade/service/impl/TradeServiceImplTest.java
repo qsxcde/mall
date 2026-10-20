@@ -34,6 +34,7 @@ import com.geekmall.modules.trade.mapper.OrderItemMapper;
 import com.geekmall.modules.trade.mapper.OrderMapper;
 import com.geekmall.modules.trade.mapper.OrderStatusLogMapper;
 import com.geekmall.modules.trade.service.OrderStateMachine;
+import com.geekmall.modules.trade.service.TradeService;
 import com.geekmall.modules.trade.support.OrderNoGenerator;
 import com.geekmall.modules.trade.vo.PreOrderVO;
 import com.geekmall.modules.user.service.UserService;
@@ -221,6 +222,44 @@ class TradeServiceImplTest {
             when(orderMapper.selectOne(any())).thenReturn(order(USER_ID, OrderStatus.PENDING_PAY.getCode(), "GM1"));
 
             assertThat(tradeService.requirePayableAmount(USER_ID, "GM1")).isEqualByComparingTo("5967.00");
+        }
+    }
+
+    @Nested
+    @DisplayName("支付落账")
+    class ApplyPayment {
+
+        @Test
+        @DisplayName("同一支付单重复到达 → 幂等成功")
+        void sameTradeNoIsIdempotent() {
+            Order order = order(USER_ID, OrderStatus.PENDING_SHIP.getCode(), "GM1");
+            order.setTradeNo("T1");
+            when(orderMapper.selectOne(any())).thenReturn(order);
+
+            assertThat(tradeService.applyPayment("GM1", "T1", "wechat"))
+                    .isEqualTo(TradeService.PaymentApplyResult.APPLIED);
+            verify(orderStateMachine, never()).transfer(any(), any(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("另一张支付单到达 → 判定为重复支付，交由支付域退款")
+        void differentTradeNoIsDuplicatePayment() {
+            Order order = order(USER_ID, OrderStatus.PENDING_SHIP.getCode(), "GM1");
+            order.setTradeNo("T1");
+            when(orderMapper.selectOne(any())).thenReturn(order);
+
+            assertThat(tradeService.applyPayment("GM1", "T2", "alipay"))
+                    .isEqualTo(TradeService.PaymentApplyResult.DUPLICATE_PAYMENT);
+            verify(orderStateMachine, never()).transfer(any(), any(), anyString(), anyString());
+        }
+
+        @Test
+        @DisplayName("订单已关闭 → 返回 ORDER_CLOSED，由支付域转退款")
+        void canceledOrderReturnsClosed() {
+            when(orderMapper.selectOne(any())).thenReturn(order(USER_ID, OrderStatus.CANCELED.getCode(), "GM1"));
+
+            assertThat(tradeService.applyPayment("GM1", "T1", "wechat"))
+                    .isEqualTo(TradeService.PaymentApplyResult.ORDER_CLOSED);
         }
     }
 
@@ -531,6 +570,8 @@ class TradeServiceImplTest {
                             anyString());
             verify(couponService).releaseByOrderNo("GM-A");
             verify(couponService).releaseByOrderNo("GM-B");
+            // 关单事务提交后必须检查「支付单已成功但订单未落账」的情况并转退款（P0-2）
+            verify(paymentRefundService, times(2)).refundIfPaid(anyString(), anyString());
         }
     }
 

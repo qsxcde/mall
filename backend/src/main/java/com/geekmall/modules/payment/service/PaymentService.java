@@ -37,4 +37,14 @@ public interface PaymentService {
      * @return 本次发生状态变更的单数
      */
     int compensatePending(int batchSize);
+
+    /**
+     * 对账「支付成功但资金状态仍需修正」的支付单。
+     *
+     * <p>覆盖三类：订单仍待支付（重新驱动落账）、订单已关闭（转退款）、
+     * 订单已由另一笔支付落账（重复支付，转退款）。处理成功后记录不再命中。</p>
+     *
+     * @return 本次处理的单数
+     */
+    int reconcileSucceeded(int batchSize);
 }

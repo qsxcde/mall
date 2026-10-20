@@ -23,6 +23,10 @@ public class PaymentProperties {
 
     private Compensation compensation = new Compensation();
 
+    private Reconcile reconcile = new Reconcile();
+
+    private RefundRetry refundRetry = new RefundRetry();
+
     private StatusQuery statusQuery = new StatusQuery();
 
     @Data
@@ -39,6 +43,58 @@ public class PaymentProperties {
 
         /** 超过该秒数仍未支付的单不再查（多半已本地关闭，查了也无意义）。 */
         private long maxAgeSeconds = 1800;
+    }
+
+    /**
+     * 「支付单已成功、但资金状态仍需修正」的对账补偿。
+     *
+     * <p>覆盖的故障窗口：支付单先 CAS 成成功，随后订单落账因数据库抖动/异常失败；
+     * 渠道重试时又会因「支付单已成功」而直接应答 success，导致订单永远停在待支付。
+     * 同时兜住「订单已由另一笔支付落账」的重复支付退款。本任务按精确条件扫描，
+     * 避免全量扫描成功支付单。</p>
+     */
+    @Data
+    public static class Reconcile {
+
+        /** 是否启用对账任务。 */
+        private boolean enabled = true;
+
+        /** 单轮处理条数上限。 */
+        private int batchSize = 100;
+
+        /** 只处理最近 N 天内创建的支付单，避免对历史数据做无意义扫描。 */
+        private int maxAgeDays = 30;
+
+        /** 首次执行延迟。 */
+        private long initialDelayMs = 90_000;
+
+        /** 执行间隔。 */
+        private long intervalMs = 60_000;
+    }
+
+    /**
+     * 退款失败重试。
+     *
+     * <p>只重试 {@code pay_refund_record}，重试时复用同一个 {@code refund_no}
+     * （渠道侧 out_request_no 幂等），并由 {@code retry_count} 乐观锁保证单实例执行。</p>
+     */
+    @Data
+    public static class RefundRetry {
+
+        /** 是否启用退款重试任务。 */
+        private boolean enabled = true;
+
+        /** 单轮处理条数上限。 */
+        private int batchSize = 100;
+
+        /** 单条退款单最大重试次数（达到后停止并告警）。 */
+        private int maxRetry = 5;
+
+        /** 首次执行延迟。 */
+        private long initialDelayMs = 60_000;
+
+        /** 执行间隔。 */
+        private long intervalMs = 300_000;
     }
 
     /**

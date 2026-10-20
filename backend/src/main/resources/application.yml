@@ -263,6 +263,22 @@ mall:
       initial-delay-ms: 15000
       # 无公网回调通道时的兜底节奏：15s 一轮（有回调时它只是安全网，可以调大）
       interval-ms: 15000
+    # 「支付成功但资金状态仍需修正」对账：覆盖订单未落账、关单未退款、重复支付未退款。
+    # 只扫描需要动作的记录，已落账/已退款的不会再命中。
+    reconcile:
+      enabled: true
+      batch-size: 100
+      max-age-days: 30
+      initial-delay-ms: 90000
+      interval-ms: 60000
+    # 退款失败重试：按退款单维度重试，复用 refund_no 保证渠道侧幂等；
+    # retry_count 乐观锁保证同一退款单只被一个执行者处理
+    refund-retry:
+      enabled: true
+      batch-size: 100
+      max-retry: 5
+      initial-delay-ms: 60000
+      interval-ms: 300000
     # 「查询支付状态时顺带主动查单」—— 没有内网穿透（回调打不进来）时的主链路：
     # 用户付款后由前端轮询驱动我们主动问支付宝要结果，延迟通常 < 5s
     status-query:

@@ -10,6 +10,7 @@ import com.geekmall.modules.payment.entity.PaymentRecord;
 import com.geekmall.modules.payment.entity.PaymentRefundRecord;
 import com.geekmall.modules.payment.mapper.PaymentRecordMapper;
 import com.geekmall.modules.payment.mapper.PaymentRefundRecordMapper;
+import com.geekmall.modules.payment.service.PaymentRefundService;
 import com.geekmall.modules.payment.service.PaymentService;
 import com.geekmall.modules.product.entity.Product;
 import com.geekmall.modules.product.mapper.ProductMapper;
@@ -60,6 +61,9 @@ class PaymentSandboxIntegrationTest extends AbstractIntegrationTest {
     private PaymentService paymentService;
 
     @Autowired
+    private PaymentRefundService paymentRefundService;
+
+    @Autowired
     private LocalSandboxChannel localChannel;
 
     /* ============================ 下单 / 预支付 ============================ */
@@ -75,10 +79,83 @@ class PaymentSandboxIntegrationTest extends AbstractIntegrationTest {
 
         // 前端切换支付方式会重新 create：必须复用，否则同一订单会产生多张可付的渠道订单
         String again = assertSuccess(
-                        post("/api/v1/pay/create", Map.of("orderNo", s.orderNo(), "payMethod", "alipay"), s.token()))
+                        post("/api/v1/pay/create", Map.of("orderNo", s.orderNo(), "payMethod", "wechat"), s.token()))
                 .get("tradeNo")
                 .asText();
         assertThat(again).isEqualTo(s.tradeNo());
+    }
+
+    @Test
+    @DisplayName("同一订单出现第二张支付单：第二笔支付必须自动退款")
+    void duplicatePaymentIsRefunded() {
+        Scenario s = newOrder("66.00");
+        Order order = reloadOrder(s.orderNo());
+
+        // 模拟历史数据/异常路径下已经存在的第二张待支付单
+        PaymentRecord duplicate = new PaymentRecord();
+        duplicate.setTradeNo(
+                "DUP" + UUID.randomUUID().toString().replace("-", "").substring(0, 20));
+        duplicate.setOrderNo(s.orderNo());
+        duplicate.setUserId(order.getUserId());
+        duplicate.setPayMethod("wechat");
+        duplicate.setChannel("local");
+        duplicate.setAmount(new BigDecimal("66.00"));
+        duplicate.setStatus(0);
+        duplicate.setRefundStatus(0);
+        duplicate.setRefundAmount(BigDecimal.ZERO);
+        paymentRecordMapper.insert(duplicate);
+
+        // 第二张先付：订单由它落账
+        assertThat(postFormRaw(
+                        "/api/v1/pay/callback",
+                        localChannel.signNotify(notifyParams(duplicate.getTradeNo(), "66.00", "TRADE_SUCCESS"))))
+                .isEqualTo(SUCCESS);
+        assertThat(reloadOrder(s.orderNo()).getStatus()).isEqualTo(OrderStatus.PENDING_SHIP.getCode());
+        assertThat(reloadOrder(s.orderNo()).getTradeNo()).isEqualTo(duplicate.getTradeNo());
+
+        // 第一张后付：订单已由另一笔支付落账，本次支付必须转退款
+        assertThat(postFormRaw("/api/v1/pay/callback", signed(s, "TRADE_SUCCESS", "66.00")))
+                .isEqualTo(SUCCESS);
+
+        PaymentRecord first = reloadPayment(s.tradeNo());
+        assertThat(first.getStatus()).as("钱已经到账，支付单仍是成功").isEqualTo(1);
+        assertThat(first.getRefundStatus()).as("重复支付必须自动退款").isEqualTo(2);
+        assertThat(refundCount(s.tradeNo())).isEqualTo(1);
+        assertThat(reloadRefund(s.tradeNo()).getStatus()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("退款失败重试：复用同一退款单号，成功后落定累计退款金额")
+    void retryFailedRefundSucceeds() {
+        Scenario s = newOrder("88.00");
+        assertThat(postFormRaw("/api/v1/pay/callback", signed(s, "TRADE_SUCCESS", "88.00")))
+                .isEqualTo(SUCCESS);
+        PaymentRecord payment = reloadPayment(s.tradeNo());
+
+        // 模拟一张已经失败、等待重试的整单退款单
+        PaymentRefundRecord failed = new PaymentRefundRecord();
+        failed.setRefundNo("RF" + s.tradeNo());
+        failed.setTradeNo(s.tradeNo());
+        failed.setOrderNo(s.orderNo());
+        failed.setUserId(payment.getUserId());
+        failed.setChannel("local");
+        failed.setAmount(new BigDecimal("88.00"));
+        failed.setStatus(2);
+        failed.setRetryCount(0);
+        failed.setFullRefund(1);
+        refundRecordMapper.insert(failed);
+
+        int retried = paymentRefundService.retryFailedRefunds(10);
+
+        assertThat(retried).as("本次至少应落定这张退款单").isGreaterThanOrEqualTo(1);
+        PaymentRefundRecord reloaded = reloadRefund(s.tradeNo());
+        assertThat(reloaded.getStatus()).isEqualTo(1);
+        assertThat(reloaded.getRetryCount()).as("重试次数必须推进，避免无限重试").isEqualTo(1);
+        assertThat(reloaded.getChannelRefundNo()).isNotBlank();
+
+        PaymentRecord after = reloadPayment(s.tradeNo());
+        assertThat(after.getRefundStatus()).isEqualTo(2);
+        assertThat(after.getRefundAmount()).isEqualByComparingTo("88.00");
     }
 
     /* ============================ 回调：验签与分支 ============================ */
