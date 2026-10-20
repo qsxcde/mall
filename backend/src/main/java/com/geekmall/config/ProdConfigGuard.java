@@ -63,6 +63,19 @@ public class ProdConfigGuard {
     @Value("${springdoc.api-docs.enabled:true}")
     private boolean apiDocsEnabled;
 
+    /** 支付渠道：生产必须使用真实渠道，本地模拟渠道会绕过真实资金流。 */
+    @Value("${mall.payment.channel:local}")
+    private String paymentChannel;
+
+    /**
+     * 是否允许 prod profile 使用本地模拟支付渠道。
+     *
+     * <p>仅用于「本地多实例验证」这类以 prod 启动、但不接真实支付的场景；
+     * 生产环境必须保持 false，否则 {@code /mock-pay} 可被用来零元购。</p>
+     */
+    @Value("${mall.payment.allow-local-in-prod:false}")
+    private boolean allowLocalPaymentInProd;
+
     public ProdConfigGuard(Environment environment) {
         this.environment = environment;
     }
@@ -97,6 +110,13 @@ public class ProdConfigGuard {
         }
         if (!rateLimitEnabled) {
             violations.append("\n  · mall.rate-limit.enabled=false：生产关闭限流等于对撞库/刷接口敞开大门");
+        }
+        // 本地渠道不产生真实资金，但 /mock-pay 可以自签支付成功通知 —— 生产必须使用真实渠道。
+        boolean localPayment =
+                paymentChannel == null || paymentChannel.isBlank() || "local".equalsIgnoreCase(paymentChannel);
+        if (localPayment && !allowLocalPaymentInProd) {
+            violations.append("\n  · mall.payment.channel=local：生产环境禁止本地模拟支付渠道"
+                    + "（请配置 MALL_PAYMENT_CHANNEL=alipay；仅本地多实例验证才可设 MALL_ALLOW_LOCAL_PAYMENT=true）");
         }
         if (!apiDocsEnabled) {
             // 不是错误，但值得提示：关掉更安全，只是需要知道自己在关什么

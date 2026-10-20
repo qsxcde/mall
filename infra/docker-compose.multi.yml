@@ -61,12 +61,15 @@ x-app-env: &app-env
   MALL_ALIPAY_SELLER_ID: "${MALL_ALIPAY_SELLER_ID:-}"
   MALL_ALIPAY_NOTIFY_URL: "${MALL_ALIPAY_NOTIFY_URL:-}"
   TZ: Asia/Shanghai
-  # 用 -D 系统属性（优先级高于 application.yml 与 OS env），避免驼峰/短横线环境变量名的歧义
+  # 用 -D 系统属性（优先级高于 application.yml 与 OS env），避免驼峰/短横线环境变量名的歧义。
+  # 最后一项仅用于本地多实例验证：prod profile 下显式允许 local 支付渠道，
+  # 否则 ProdConfigGuard 会按「生产禁止模拟支付」拒绝启动。生产环境不得设置该开关。
   JAVA_OPTS: >-
     -Xms256m -Xmx512m -XX:+UseG1GC -Duser.timezone=Asia/Shanghai
     -Dmall.cluster.instance-count=${APP_REPLICAS:-3}
     -Dmall.rate-limit.enabled=${RATE_LIMIT_ENABLED:-true}
     -Dmall.seckill.async.enabled=${SECKILL_ASYNC_ENABLED:-false}
+    -Dmall.payment.allow-local-in-prod=${ALLOW_LOCAL_PAYMENT_IN_PROD:-true}
 
 x-app: &app
   image: "${APP_IMAGE:-geek-mall-server:1.0.0}"

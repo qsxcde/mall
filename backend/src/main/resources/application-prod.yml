@@ -66,6 +66,13 @@ mall:
   rate-limit:
     enabled: true
 
+  # 支付渠道：生产必须使用真实渠道。这里显式声明（而不是依赖 application.yml 的 local 默认值），
+  # 未配置 MALL_PAYMENT_CHANNEL 时会由 ProdConfigGuard 拦下启动，避免悄悄跑在模拟支付上。
+  payment:
+    channel: ${MALL_PAYMENT_CHANNEL:local}
+    # 仅「以 prod profile 做本地多实例验证」时可设 true；生产必须为 false。
+    allow-local-in-prod: ${MALL_ALLOW_LOCAL_PAYMENT:false}
+
   cluster:
     # 生产实例数必须按实际副本数声明，否则 LOCAL 限流额度会被放大 N 倍
     instance-count: ${MALL_INSTANCE_COUNT:1}
