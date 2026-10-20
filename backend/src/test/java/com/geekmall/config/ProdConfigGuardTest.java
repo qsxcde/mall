@@ -43,6 +43,9 @@ class ProdConfigGuardTest {
         ReflectionTestUtils.setField(guard, "smsExposeCode", exposeCode);
         ReflectionTestUtils.setField(guard, "rateLimitEnabled", rateLimit);
         ReflectionTestUtils.setField(guard, "apiDocsEnabled", true);
+        // 默认视为「生产已切到真实支付渠道」；需要验证本地渠道拦截时再单独覆盖。
+        ReflectionTestUtils.setField(guard, "paymentChannel", "alipay");
+        ReflectionTestUtils.setField(guard, "allowLocalPaymentInProd", false);
         return guard;
     }
 
@@ -90,6 +93,43 @@ class ProdConfigGuardTest {
             assertThatThrownBy(guard::validate)
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("mall.jwt.secret 未设置");
+        }
+    }
+
+    @Nested
+    @DisplayName("支付渠道")
+    class PaymentChannel {
+
+        @Test
+        @DisplayName("prod 使用本地模拟渠道 → 拒绝启动（/mock-pay 可零元购）")
+        void localChannelIsRejected() {
+            ProdConfigGuard guard = compliant();
+            ReflectionTestUtils.setField(guard, "paymentChannel", "local");
+
+            assertThatThrownBy(guard::validate)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("本地模拟支付渠道");
+        }
+
+        @Test
+        @DisplayName("渠道为空同样按本地渠道处理，避免空值绕过校验")
+        void blankChannelIsRejected() {
+            ProdConfigGuard guard = compliant();
+            ReflectionTestUtils.setField(guard, "paymentChannel", " ");
+
+            assertThatThrownBy(guard::validate)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("本地模拟支付渠道");
+        }
+
+        @Test
+        @DisplayName("本地多实例验证显式放行时必须明确设置开关")
+        void explicitOverrideAllowsLocalChannel() {
+            ProdConfigGuard guard = compliant();
+            ReflectionTestUtils.setField(guard, "paymentChannel", "local");
+            ReflectionTestUtils.setField(guard, "allowLocalPaymentInProd", true);
+
+            assertThatCode(guard::validate).doesNotThrowAnyException();
         }
     }
 
