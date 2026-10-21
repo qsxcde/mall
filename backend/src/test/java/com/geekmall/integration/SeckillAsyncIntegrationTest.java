@@ -1,5 +1,9 @@
 package com.geekmall.integration;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.geekmall.common.constant.RedisKeys;
@@ -15,6 +19,10 @@ import com.geekmall.modules.product.mapper.ProductMapper;
 import com.geekmall.modules.trade.entity.Order;
 import com.geekmall.modules.trade.mapper.OrderMapper;
 import com.geekmall.support.AbstractIntegrationTest;
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,15 +32,6 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
-
-import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashMap;
-import java.util.Map;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * 秒杀削峰（Redis Stream 异步落库）集成测试。
@@ -46,14 +45,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *       必须由 {@code uk_user_request} 唯一索引拦下并返回原订单号。</li>
  * </ol>
  */
-@SpringBootTest(properties = {
-        "mall.seckill.async.enabled=true",
-        "mall.seckill.async.consumer-threads=2",
-        "mall.seckill.async.block=200ms",
-        "mall.seckill.async.reclaim-min-idle=1s",
-        "mall.seckill.async.reclaim-interval=1s",
-        "mall.seckill.async.result-ttl=10m"
-})
+@SpringBootTest(
+        properties = {
+            "mall.seckill.async.enabled=true",
+            "mall.seckill.async.consumer-threads=2",
+            "mall.seckill.async.block=200ms",
+            "mall.seckill.async.reclaim-min-idle=1s",
+            "mall.seckill.async.reclaim-interval=1s",
+            "mall.seckill.async.result-ttl=10m"
+        })
 @DisplayName("秒杀削峰集成测试")
 class SeckillAsyncIntegrationTest extends AbstractIntegrationTest {
 
@@ -61,10 +61,13 @@ class SeckillAsyncIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private SeckillSessionMapper seckillSessionMapper;
+
     @Autowired
     private SeckillItemMapper seckillItemMapper;
+
     @Autowired
     private ProductMapper productMapper;
+
     @Autowired
     private OrderMapper orderMapper;
 
@@ -142,15 +145,16 @@ class SeckillAsyncIntegrationTest extends AbstractIntegrationTest {
      */
     private JsonNode grabOrder(long itemId, long addressId, String token) throws Exception {
         // 用全限定名而非 static import：父类已有 post(String, Object, String) 实例方法，会撞名
-        MockHttpServletRequestBuilder builder = MockMvcRequestBuilders
-                .post("/api/v1/seckill/" + itemId + "/order")
+        MockHttpServletRequestBuilder builder = MockMvcRequestBuilders.post("/api/v1/seckill/" + itemId + "/order")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsBytes(Map.of("addressId", addressId)));
         builder.header(SecurityConstants.TOKEN_HEADER, SecurityConstants.TOKEN_PREFIX + token);
 
         MvcResult result = mockMvc.perform(builder).andReturn();
         if (result.getRequest().isAsyncStarted()) {
-            result = mockMvc.perform(asyncDispatch(result)).andExpect(status().isOk()).andReturn();
+            result = mockMvc.perform(asyncDispatch(result))
+                    .andExpect(status().isOk())
+                    .andReturn();
         }
         String json = result.getResponse().getContentAsString(StandardCharsets.UTF_8);
         return objectMapper.readTree(json);
@@ -173,12 +177,14 @@ class SeckillAsyncIntegrationTest extends AbstractIntegrationTest {
 
     private void redeliver(SeckillGrabResult settled, long userId, SeckillItem item, long addressId) {
         // 手动再投一条 requestId 完全相同的消息，模拟消费者崩溃后消息被回收重投
-        stringRedisTemplate.opsForStream().add(StreamRecords.mapBacked(Map.of(
-                        "requestId", settled.requestId(),
-                        "userId", String.valueOf(userId),
-                        "itemId", String.valueOf(item.getId()),
-                        "addressId", String.valueOf(addressId)))
-                .withStreamKey(RedisKeys.SECKILL_ORDER_STREAM));
+        stringRedisTemplate
+                .opsForStream()
+                .add(StreamRecords.mapBacked(Map.of(
+                                "requestId", settled.requestId(),
+                                "userId", String.valueOf(userId),
+                                "itemId", String.valueOf(item.getId()),
+                                "addressId", String.valueOf(addressId)))
+                        .withStreamKey(RedisKeys.SECKILL_ORDER_STREAM));
     }
 
     /* ------------------------------ 用例 ------------------------------ */
@@ -193,7 +199,8 @@ class SeckillAsyncIntegrationTest extends AbstractIntegrationTest {
         String token = registerAndLogin(phone);
         long addressId = createAddress(token);
 
-        String requestId = assertSuccess(grabOrder(item.getId(), addressId, token)).asText();
+        String requestId =
+                assertSuccess(grabOrder(item.getId(), addressId, token)).asText();
 
         assertThat(requestId)
                 .as("削峰模式返回的是 32 位请求号，而不是订单号 —— 这正是接口契约的变化")
@@ -220,12 +227,13 @@ class SeckillAsyncIntegrationTest extends AbstractIntegrationTest {
         String token = registerAndLogin(phone);
         long addressId = createAddress(token);
 
-        String requestId = assertSuccess(grabOrder(item.getId(), addressId, token)).asText();
+        String requestId =
+                assertSuccess(grabOrder(item.getId(), addressId, token)).asText();
         SeckillGrabResult first = awaitResult(token, requestId);
         assertThat(first.status()).isEqualTo(SeckillGrabResult.Status.SUCCESS);
 
-        long userId = Long.parseLong(assertSuccess(get("/api/v1/user/profile", token))
-                .get("id").asText());
+        long userId = Long.parseLong(
+                assertSuccess(get("/api/v1/user/profile", token)).get("id").asText());
         int activityStockBefore = seckillItemMapper.selectById(item.getId()).getStock();
         int productStockBefore = productMapper.selectById(product.getId()).getStock();
 
@@ -237,8 +245,7 @@ class SeckillAsyncIntegrationTest extends AbstractIntegrationTest {
         // 等消费端处理完（block 200ms + 处理耗时，给足余量）
         Thread.sleep(3_000);
 
-        long orders = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getRequestId, requestId));
+        long orders = orderMapper.selectCount(new LambdaQueryWrapper<Order>().eq(Order::getRequestId, requestId));
         assertThat(orders)
                 .as("同一 requestId 只允许存在一单 —— 靠 uk_user_request 唯一索引兜底")
                 .isEqualTo(1);
@@ -253,9 +260,7 @@ class SeckillAsyncIntegrationTest extends AbstractIntegrationTest {
 
         // 且消费端应当把结果补写回终态，让用户不再卡在「排队中」
         SeckillGrabResult recovered = awaitResult(token, requestId);
-        assertThat(recovered.status())
-                .as("重投后结果应被补写为成功，用户才能拿到订单号")
-                .isEqualTo(SeckillGrabResult.Status.SUCCESS);
+        assertThat(recovered.status()).as("重投后结果应被补写为成功，用户才能拿到订单号").isEqualTo(SeckillGrabResult.Status.SUCCESS);
         assertThat(recovered.orderNo()).isEqualTo(first.orderNo());
     }
 
@@ -268,14 +273,42 @@ class SeckillAsyncIntegrationTest extends AbstractIntegrationTest {
         String ownerToken = registerAndLogin(randomPhone());
         long addressId = createAddress(ownerToken);
 
-        String requestId = assertSuccess(grabOrder(item.getId(), addressId, ownerToken)).asText();
+        String requestId =
+                assertSuccess(grabOrder(item.getId(), addressId, ownerToken)).asText();
         awaitResult(ownerToken, requestId);
 
         String otherToken = registerAndLogin(randomPhone());
         JsonNode response = get("/api/v1/seckill/result/" + requestId, otherToken);
 
+        assertThat(response.get("code").asInt()).as("不属于自己的抢购记录一律按不存在返回").isEqualTo(ResultCode.NOT_FOUND.getCode());
+    }
+
+    @Test
+    @DisplayName("库存 key 在活动进行中丢失：已预扣过则拒绝按 DB 重建，不把预扣放出来")
+    void shouldRefuseRebuildWhenStockKeyLostAfterReservation() throws Exception {
+        long sessionId = createSession();
+        Product product = createProduct("削峰商品D", 10, "999.00");
+        SeckillItem item = createSeckillItem(sessionId, product.getId(), 5, "199.00");
+        String token = registerAndLogin(randomPhone());
+        long addressId = createAddress(token);
+
+        String requestId =
+                assertSuccess(grabOrder(item.getId(), addressId, token)).asText();
+        assertThat(awaitResult(token, requestId).status()).isEqualTo(SeckillGrabResult.Status.SUCCESS);
+
+        // 模拟 Redis 丢失活动库存 key：DB 里仍是在途预扣前的余量，重建即超卖
+        stringRedisTemplate.delete(RedisKeys.SECKILL_STOCK + item.getId());
+
+        String anotherToken = registerAndLogin(randomPhone());
+        long anotherAddress = createAddress(anotherToken);
+        JsonNode response = grabOrder(item.getId(), anotherAddress, anotherToken);
+
         assertThat(response.get("code").asInt())
-                .as("不属于自己的抢购记录一律按不存在返回")
-                .isEqualTo(ResultCode.NOT_FOUND.getCode());
+                .as("异步模式下已发生过预扣，库存 key 缺失必须 fail-closed，而不是按 DB 重建")
+                .isEqualTo(ResultCode.SYSTEM_ERROR.getCode());
+        assertThat(response.get("msg").asText()).contains("校准");
+        assertThat(stringRedisTemplate.hasKey(RedisKeys.SECKILL_STOCK + item.getId()))
+                .as("被拒绝的请求不得把库存 key 写回 Redis")
+                .isFalse();
     }
 }

@@ -356,8 +356,8 @@ public class SeckillServiceImpl implements SeckillService {
         };
         BucketPick pick = pickBucket(redisTemplate.execute(GRAB_BUCKET_SCRIPT, keys, (Object[]) args));
         if (pick.code == -1) {
-            if (asyncEnabled) {
-                // 活动已开始且桶 key 缺失：DB 余量滞后于队列预扣，重建会超卖
+            if (!mayRebuildStock(item)) {
+                // 已发生过预扣而桶 key 缺失：DB 余量滞后于队列，重建会超卖
                 meterRegistry.counter("mall_seckill_stock_missing_total").increment();
                 log.error("[秒杀分桶] 活动已开始但 Redis 库存 key 缺失，拒绝按 DB 重建：itemId={}", item.getId());
                 throw new BizException(ResultCode.SYSTEM_ERROR, "活动库存正在校准，请稍后再试");
@@ -447,15 +447,35 @@ public class SeckillServiceImpl implements SeckillService {
     }
 
     /**
+     * 异步模式下 Redis 库存 key 缺失时，是否允许按 DB 余量重建。
+     *
+     * <p>异步削峰的 DB 余量滞后于队列中的预扣，因此「key 缺失」不能一概 fail-closed：
+     * 启动后才新建的活动商品本来就没有 key，直接拒绝会让它永远抢不到。
+     * 真正危险的只有「曾经发生过预扣、key 又丢失」——此时 DB 少扣了一部分在途预扣，
+     * 按 DB 重建等于把已预扣的库存重新放出来。</p>
+     *
+     * <p>预扣脚本在 {@code DECR} 的同一次原子调用里 {@code SADD} 一人一单集合，
+     * 因此该集合存在 ⟺ 近 {@link #BOUGHT_TTL} 内发生过预扣，正好可以作为判据。</p>
+     */
+    private boolean mayRebuildStock(SeckillItem item) {
+        if (!asyncEnabled) {
+            // 同步模式 DB 就是扣减后的权威值，任何时候都可以按 DB 重建
+            return true;
+        }
+        return !Boolean.TRUE.equals(redisTemplate.hasKey(RedisKeys.SECKILL_BOUGHT + item.getId()));
+    }
+
+    /**
      * 从 Redis 读取活动库存，缺失时用 DB 值初始化。
      *
      * <p>同步模式下 DB 库存就是扣减后的权威值，缺失时按 DB 重建是安全的；
-     * <b>异步模式下 DB 库存滞后于队列中的预扣</b>，活动进行中 key 缺失只能说明
-     * Redis 数据丢失/被淘汰，此时按 DB 重建会把已预扣的库存重新放出来，因此 fail-closed。</p>
+     * <b>异步模式下 DB 库存滞后于队列中的预扣</b>，若确认发生过预扣则 key 缺失只能说明
+     * Redis 数据丢失/被淘汰，此时按 DB 重建会把已预扣的库存重新放出来，因此 fail-closed
+     * （判定依据见 {@link #mayRebuildStock}）。</p>
      */
     private void ensureStockLoaded(SeckillItem item) {
         String stockKey = RedisKeys.SECKILL_STOCK + item.getId();
-        if (asyncEnabled && !Boolean.TRUE.equals(redisTemplate.hasKey(stockKey))) {
+        if (asyncEnabled && !Boolean.TRUE.equals(redisTemplate.hasKey(stockKey)) && !mayRebuildStock(item)) {
             meterRegistry.counter("mall_seckill_stock_missing_total").increment();
             log.error("[秒杀] 异步模式下活动库存 key 缺失，拒绝按 DB 重建：itemId={}", item.getId());
             throw new BizException(ResultCode.SYSTEM_ERROR, "活动库存正在校准，请稍后再试");

@@ -30,8 +30,9 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>Redis 中已有该活动库存（活动进行中）→ 跳过，不覆盖进行中的扣减；</li>
  *   <li>key 不存在且活动尚未开始 → 写入，完成对齐；</li>
- *   <li>异步削峰模式下活动已开始但 key 缺失 → <b>拒绝按 DB 重建</b>，因为 DB 库存
- *       滞后于队列中的预扣，重建会把已预扣的库存重新放出来（fail-closed + 告警）。</li>
+ *   <li>异步削峰模式下已发生过预扣（一人一单集合存在）但 key 缺失 → <b>拒绝按 DB 重建</b>，
+ *       因为 DB 库存滞后于队列中的预扣，重建会把已预扣的库存重新放出来（fail-closed + 告警）；
+ *       从未发生过预扣（如全新 Redis）则照常写入，否则新活动会永远无法抢购。</li>
  * </ul>
  *
  * <h3>需要「强制重新对齐」时怎么办</h3>
@@ -64,8 +65,11 @@ public class SeckillStockWarmUp implements ApplicationRunner {
         int skipped = 0;
         for (SeckillItem item : items) {
             boolean preStart = item.getNotStart() != null && item.getNotStart() == 1;
-            // 异步模式下活动已开始且 key 缺失：按 DB 重建会把在途预扣重新放出来
-            boolean allowMissing = !asyncEnabled || preStart;
+            // 异步模式下 DB 滞后于队列中的预扣，只有「曾发生过预扣」才禁止按 DB 重建；
+            // 从未预热过（如全新 Redis）必须允许重建，否则该活动永远无法抢购
+            boolean allowMissing = !asyncEnabled
+                    || preStart
+                    || !Boolean.TRUE.equals(redisTemplate.hasKey(RedisKeys.SECKILL_BOUGHT + item.getId()));
             if (bucketManager.isBucketed(item)) {
                 // 分桶商品：逐桶 setIfAbsent 预热；桶行缺失时会按 item.stock 均分补建
                 bucketManager.warmUp(item, allowMissing);
