@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -16,6 +17,8 @@ import com.geekmall.modules.payment.entity.PaymentRecord;
 import com.geekmall.modules.payment.entity.PaymentRefundRecord;
 import com.geekmall.modules.payment.mapper.PaymentRecordMapper;
 import com.geekmall.modules.payment.mapper.PaymentRefundRecordMapper;
+import com.geekmall.modules.payment.support.PaymentRefundLock;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -36,6 +39,7 @@ class PaymentRefundServiceImplTest {
     private PaymentRefundRecordMapper refundRecordMapper;
     private PaymentChannelClient paymentChannel;
     private PaymentRefundSettlementService settlementService;
+    private PaymentRefundLock refundLock;
     private PaymentRefundServiceImpl refundService;
 
     @BeforeEach
@@ -44,8 +48,16 @@ class PaymentRefundServiceImplTest {
         refundRecordMapper = mock(PaymentRefundRecordMapper.class);
         paymentChannel = mock(PaymentChannelClient.class);
         settlementService = mock(PaymentRefundSettlementService.class);
+        refundLock = mock(PaymentRefundLock.class);
+        lenient().when(refundLock.tryLock(anyString(), any(), any())).thenReturn("token");
         refundService = new PaymentRefundServiceImpl(
-                paymentRecordMapper, refundRecordMapper, paymentChannel, settlementService, new PaymentProperties());
+                paymentRecordMapper,
+                refundRecordMapper,
+                paymentChannel,
+                settlementService,
+                new PaymentProperties(),
+                new SimpleMeterRegistry(),
+                refundLock);
     }
 
     private static PaymentRecord payment(String tradeNo, String amount, String refunded, int refundStatus) {
@@ -88,6 +100,7 @@ class PaymentRefundServiceImplTest {
         @DisplayName("已有部分退款时只退剩余金额")
         void refundsRemainingAmount() {
             PaymentRecord payment = payment("T1", "100.00", "30.00", 0);
+            when(paymentRecordMapper.selectById(1L)).thenReturn(payment);
             when(paymentRecordMapper.update(any(), any())).thenReturn(1);
             when(refundRecordMapper.insert(any(PaymentRefundRecord.class))).thenReturn(1);
             when(paymentChannel.refund(eq("T1"), eq("RFT1"), eq(new BigDecimal("70.00")), eq("reason")))
@@ -103,6 +116,7 @@ class PaymentRefundServiceImplTest {
         @DisplayName("已全额退款时不再调用渠道")
         void fullyRefundedIsNoop() {
             PaymentRecord payment = payment("T2", "100.00", "100.00", 2);
+            when(paymentRecordMapper.selectById(1L)).thenReturn(payment);
 
             assertThat(refundService.refundFull(payment, "reason")).isFalse();
 
@@ -114,7 +128,10 @@ class PaymentRefundServiceImplTest {
         void refundsAllSuccessfulPayments() {
             PaymentRecord first = payment("T3", "50.00", "0.00", 0);
             PaymentRecord second = payment("T4", "50.00", "0.00", 0);
+            second.setId(2L);
             when(paymentRecordMapper.selectList(any())).thenReturn(List.of(first, second));
+            when(paymentRecordMapper.selectById(1L)).thenReturn(first);
+            when(paymentRecordMapper.selectById(2L)).thenReturn(second);
             when(paymentRecordMapper.update(any(), any())).thenReturn(1);
             when(refundRecordMapper.insert(any(PaymentRefundRecord.class))).thenReturn(1);
             when(paymentChannel.refund(anyString(), anyString(), any(), anyString()))
@@ -136,6 +153,7 @@ class PaymentRefundServiceImplTest {
         void partialRefundDoesNotCloseFullRefundGate() {
             PaymentRecord payment = payment("T5", "100.00", "0.00", 0);
             when(paymentRecordMapper.selectOne(any())).thenReturn(payment);
+            when(paymentRecordMapper.selectById(1L)).thenReturn(payment);
             when(refundRecordMapper.insert(any(PaymentRefundRecord.class))).thenReturn(1);
             when(paymentChannel.refund(eq("T5"), eq("RFASAS1"), eq(new BigDecimal("30.00")), eq("reason")))
                     .thenReturn(success());
@@ -151,6 +169,7 @@ class PaymentRefundServiceImplTest {
         void fullAmountAfterSaleClosesGate() {
             PaymentRecord payment = payment("T6", "100.00", "0.00", 0);
             when(paymentRecordMapper.selectOne(any())).thenReturn(payment);
+            when(paymentRecordMapper.selectById(1L)).thenReturn(payment);
             when(refundRecordMapper.insert(any(PaymentRefundRecord.class))).thenReturn(1);
             when(paymentChannel.refund(eq("T6"), eq("RFASAS2"), eq(new BigDecimal("100.00")), eq("reason")))
                     .thenReturn(success());

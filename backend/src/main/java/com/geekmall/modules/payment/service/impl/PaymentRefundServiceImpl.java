@@ -2,6 +2,8 @@ package com.geekmall.modules.payment.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.geekmall.common.exception.BizException;
+import com.geekmall.common.result.ResultCode;
 import com.geekmall.modules.payment.channel.PaymentChannelClient;
 import com.geekmall.modules.payment.config.PaymentProperties;
 import com.geekmall.modules.payment.entity.PaymentRecord;
@@ -9,7 +11,10 @@ import com.geekmall.modules.payment.entity.PaymentRefundRecord;
 import com.geekmall.modules.payment.mapper.PaymentRecordMapper;
 import com.geekmall.modules.payment.mapper.PaymentRefundRecordMapper;
 import com.geekmall.modules.payment.service.PaymentRefundService;
+import com.geekmall.modules.payment.support.PaymentRefundLock;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -46,11 +51,17 @@ public class PaymentRefundServiceImpl implements PaymentRefundService {
     /** 重试退避阶梯（秒）：1m / 5m / 15m / 1h / 6h。 */
     private static final List<Long> RETRY_BACKOFF_SECONDS = List.of(60L, 300L, 900L, 3_600L, 21_600L);
 
+    private static final Duration REFUND_LOCK_TTL = Duration.ofSeconds(30);
+    private static final Duration REFUND_LOCK_WAIT = Duration.ofSeconds(2);
+
     private final PaymentRecordMapper paymentRecordMapper;
     private final PaymentRefundRecordMapper refundRecordMapper;
     private final PaymentChannelClient paymentChannel;
     private final PaymentRefundSettlementService settlementService;
     private final PaymentProperties paymentProperties;
+    private final MeterRegistry meterRegistry;
+    /** 同一支付单的退款串行锁：避免部分售后与整单退款并发读旧额度导致超退。 */
+    private final PaymentRefundLock refundLock;
 
     @Override
     public boolean refundForClosedOrder(PaymentRecord payment, String reason) {
@@ -60,11 +71,27 @@ public class PaymentRefundServiceImpl implements PaymentRefundService {
 
     @Override
     public boolean refundFull(PaymentRecord payment, String reason) {
-        if (payment == null || payment.getStatus() == null || payment.getStatus() != PAY_STATUS_SUCCESS) {
+        if (!isSuccessful(payment)) {
             log.debug("支付单非支付成功状态，跳过退款：{}", payment == null ? null : payment.getTradeNo());
             return false;
         }
+        String lock = refundLock.tryLock(payment.getTradeNo(), REFUND_LOCK_TTL, REFUND_LOCK_WAIT);
+        if (lock == null) {
+            throw new BizException(ResultCode.BIZ_ERROR, "退款处理中，请稍后重试");
+        }
+        try {
+            // 拿到锁后重新读取，确保基于其它退款提交后的最新累计金额计算
+            PaymentRecord current = paymentRecordMapper.selectById(payment.getId());
+            if (!isSuccessful(current)) {
+                return false;
+            }
+            return doRefundFull(current, reason);
+        } finally {
+            refundLock.unlock(payment.getTradeNo(), lock);
+        }
+    }
 
+    private boolean doRefundFull(PaymentRecord payment, String reason) {
         BigDecimal paid = payment.getAmount() == null ? BigDecimal.ZERO : payment.getAmount();
         BigDecimal refunded = payment.getRefundAmount() == null ? BigDecimal.ZERO : payment.getRefundAmount();
         BigDecimal remaining = paid.subtract(refunded);
@@ -141,7 +168,22 @@ public class PaymentRefundServiceImpl implements PaymentRefundService {
             log.info("订单 {} 无支付成功的支付单，售后 {} 无需退款", orderNo, afterSaleNo);
             return false;
         }
+        String lock = refundLock.tryLock(payment.getTradeNo(), REFUND_LOCK_TTL, REFUND_LOCK_WAIT);
+        if (lock == null) {
+            throw new BizException(ResultCode.BIZ_ERROR, "退款处理中，请稍后重试");
+        }
+        try {
+            PaymentRecord current = paymentRecordMapper.selectById(payment.getId());
+            if (!isSuccessful(current)) {
+                return false;
+            }
+            return doRefundForAfterSale(current, afterSaleNo, amount, reason);
+        } finally {
+            refundLock.unlock(payment.getTradeNo(), lock);
+        }
+    }
 
+    private boolean doRefundForAfterSale(PaymentRecord payment, String afterSaleNo, BigDecimal amount, String reason) {
         BigDecimal paid = payment.getAmount() == null ? BigDecimal.ZERO : payment.getAmount();
         BigDecimal refunded = payment.getRefundAmount() == null ? BigDecimal.ZERO : payment.getRefundAmount();
         BigDecimal remaining = paid.subtract(refunded);
@@ -182,20 +224,37 @@ public class PaymentRefundServiceImpl implements PaymentRefundService {
                 continue;
             }
 
-            PaymentRecord payment = findPaymentByTradeNo(record.getTradeNo());
-            if (payment == null || payment.getStatus() == null || payment.getStatus() != PAY_STATUS_SUCCESS) {
-                log.error("退款重试跳过：支付单不存在或非支付成功状态，refundNo={}, tradeNo={}", record.getRefundNo(), record.getTradeNo());
+            String lock = refundLock.tryLock(record.getTradeNo(), REFUND_LOCK_TTL, REFUND_LOCK_WAIT);
+            if (lock == null) {
+                log.info("退款重试锁被占用，本轮跳过：refundNo={}", record.getRefundNo());
                 continue;
             }
-
             try {
-                PaymentChannelClient.RefundResult result = paymentChannel.refund(
-                        record.getTradeNo(), record.getRefundNo(), record.getAmount(), record.getReason());
-                settlementService.settle(record.getId(), payment, result, record.getAmount(), isFullRefund(record));
-                retried++;
-            } catch (Exception e) {
-                // next_retry_time 已在 claim 时写入；本次失败等下一轮，达到 maxRetry 后不再被选中
-                log.error("退款重试失败：refundNo={}，下次重试时间={}", record.getRefundNo(), nextRetry, e);
+                PaymentRecord payment = findPaymentByTradeNo(record.getTradeNo());
+                if (!isSuccessful(payment)) {
+                    log.error(
+                            "退款重试跳过：支付单不存在或非支付成功状态，refundNo={}, tradeNo={}", record.getRefundNo(), record.getTradeNo());
+                    continue;
+                }
+
+                try {
+                    PaymentChannelClient.RefundResult result = paymentChannel.refund(
+                            record.getTradeNo(), record.getRefundNo(), record.getAmount(), record.getReason());
+                    settlementService.settle(record.getId(), payment, result, record.getAmount(), isFullRefund(record));
+                    if (result.success()) {
+                        retried++;
+                    } else if (expected + 1 >= maxRetry) {
+                        recordRetryExhausted(record, maxRetry);
+                    }
+                } catch (Exception e) {
+                    if (expected + 1 >= maxRetry) {
+                        recordRetryExhausted(record, maxRetry);
+                    }
+                    // next_retry_time 已在 claim 时写入；本次失败等下一轮，达到 maxRetry 后不再被选中
+                    log.error("退款重试失败：refundNo={}，下次重试时间={}", record.getRefundNo(), nextRetry, e);
+                }
+            } finally {
+                refundLock.unlock(record.getTradeNo(), lock);
             }
         }
         if (retried > 0) {
@@ -210,6 +269,16 @@ public class PaymentRefundServiceImpl implements PaymentRefundService {
     private long backoffSeconds(int retryNumber) {
         int index = Math.min(Math.max(1, retryNumber), RETRY_BACKOFF_SECONDS.size()) - 1;
         return RETRY_BACKOFF_SECONDS.get(index);
+    }
+
+    private void recordRetryExhausted(PaymentRefundRecord record, int maxRetry) {
+        meterRegistry.counter("mall_payment_refund_retry_exhausted_total").increment();
+        log.error(
+                "退款重试达到上限（{} 次），需人工处理：refundNo={}, tradeNo={}, amount={}",
+                maxRetry,
+                record.getRefundNo(),
+                record.getTradeNo(),
+                record.getAmount());
     }
 
     /**
@@ -229,6 +298,10 @@ public class PaymentRefundServiceImpl implements PaymentRefundService {
         return paymentRecordMapper.selectOne(new LambdaQueryWrapper<PaymentRecord>()
                 .eq(PaymentRecord::getTradeNo, tradeNo)
                 .last("limit 1"));
+    }
+
+    private boolean isSuccessful(PaymentRecord payment) {
+        return payment != null && payment.getStatus() != null && payment.getStatus() == PAY_STATUS_SUCCESS;
     }
 
     private PaymentRecord findSuccessfulPayment(String orderNo) {
