@@ -23,11 +23,10 @@
         <jjwt.version>0.12.6</jjwt.version>
         <springdoc.version>3.1.1</springdoc.version>
         <shedlock.version>7.10.1</shedlock.version>
-        <!-- Elasticsearch Java 客户端：8.15.x 与 ES 8.x 服务端兼容。
-             刻意保持 8.15.3，不用 Boot 4 BOM 管理的 9.x：客户端 9 要求从
-             org.elasticsearch.client.RestClient 迁到 Rest5Client（Apache HttpClient 5），
-             属于独立的 ES 大版本升级，与 Boot 升级不混做。 -->
-        <elasticsearch-java.version>8.15.3</elasticsearch-java.version>
+        <!-- Elasticsearch Java 客户端：9.4.5 与 Boot 4.1 的依赖管理对齐，
+             使用 Rest5ClientTransport（Apache HttpClient 5）。客户端 9.x 只保证与
+             同大版本服务端兼容，因此测试容器镜像同步为 9.4.5。 -->
+        <elasticsearch-java.version>9.4.5</elasticsearch-java.version>
         <archunit.version>1.4.0</archunit.version>
         <!--
           结构化日志（JSON）。8.0 对应 logback 1.5.x，与 Spring Boot 4.1.x 自带的
