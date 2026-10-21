@@ -1,23 +1,21 @@
 package com.geekmall.integration;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.geekmall.common.ratelimit.RateLimitPolicies;
 import com.geekmall.common.ratelimit.RateLimitPolicy;
 import com.geekmall.support.AbstractIntegrationTest;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.mvc.condition.PathPatternsRequestCondition;
-import org.springframework.web.servlet.mvc.condition.PatternsRequestCondition;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 限流覆盖度集成测试 —— 用来<b>证明「没有端点漏配」</b>。
@@ -48,7 +46,8 @@ class RateLimitCoverageIntegrationTest extends AbstractIntegrationTest {
         List<String> exempt = new ArrayList<>();
         int inspected = 0;
 
-        for (Map.Entry<RequestMappingInfo, HandlerMethod> entry : handlerMapping.getHandlerMethods().entrySet()) {
+        for (Map.Entry<RequestMappingInfo, HandlerMethod> entry :
+                handlerMapping.getHandlerMethods().entrySet()) {
             RequestMappingInfo mapping = entry.getKey();
             HandlerMethod handler = entry.getValue();
             for (String pattern : pathPatternsOf(mapping)) {
@@ -67,11 +66,10 @@ class RateLimitCoverageIntegrationTest extends AbstractIntegrationTest {
             }
         }
 
-        assertThat(inspected)
-                .as("应扫描到全部业务端点，数量明显偏少说明端点枚举逻辑失效了")
-                .isGreaterThanOrEqualTo(100);
+        assertThat(inspected).as("应扫描到全部业务端点，数量明显偏少说明端点枚举逻辑失效了").isGreaterThanOrEqualTo(100);
         assertThat(unclassified)
-                .as("以下端点未在 RateLimitPolicies 中显式分类（会退化到兜底规则，请补充规则）：%n%s",
+                .as(
+                        "以下端点未在 RateLimitPolicies 中显式分类（会退化到兜底规则，请补充规则）：%n%s",
                         String.join(System.lineSeparator(), unclassified))
                 .isEmpty();
         assertThat(exempt).as("豁免路径应由策略表统一声明").isNotEmpty();
@@ -81,7 +79,8 @@ class RateLimitCoverageIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("策略表里声明的规则全部都能被至少一个真实端点命中（防止留下僵尸规则）")
     void noOrphanRules() {
         List<String> hit = new ArrayList<>();
-        for (Map.Entry<RequestMappingInfo, HandlerMethod> entry : handlerMapping.getHandlerMethods().entrySet()) {
+        for (Map.Entry<RequestMappingInfo, HandlerMethod> entry :
+                handlerMapping.getHandlerMethods().entrySet()) {
             for (String pattern : pathPatternsOf(entry.getKey())) {
                 String concretePath = concretize(pattern);
                 if (policies.isExempt(concretePath)) {
@@ -105,19 +104,14 @@ class RateLimitCoverageIntegrationTest extends AbstractIntegrationTest {
             }
         }
         assertThat(orphans.size())
-                .as("以下规则的路径模式没有命中任何真实端点，疑似写错：%n%s",
-                        String.join(System.lineSeparator(), orphans))
+                .as("以下规则的路径模式没有命中任何真实端点，疑似写错：%n%s", String.join(System.lineSeparator(), orphans))
                 .isLessThanOrEqualTo(1);
     }
 
-    /** 兼容 PathPattern（Boot 3 默认）与旧版 PatternsRequestCondition 两种条件。 */
+    /** 读取映射的路径模式：Spring Framework 7 只保留 PathPattern 一种条件。 */
     private static List<String> pathPatternsOf(RequestMappingInfo mapping) {
         PathPatternsRequestCondition pathPatterns = mapping.getPathPatternsCondition();
-        if (pathPatterns != null) {
-            return List.copyOf(pathPatterns.getPatternValues());
-        }
-        PatternsRequestCondition patterns = mapping.getPatternsCondition();
-        return patterns == null ? List.of() : List.copyOf(patterns.getPatterns());
+        return pathPatterns == null ? List.of() : List.copyOf(pathPatterns.getPatternValues());
     }
 
     /** 未声明 HTTP 方法的映射视为任意方法，这里用 GET 代表。 */
