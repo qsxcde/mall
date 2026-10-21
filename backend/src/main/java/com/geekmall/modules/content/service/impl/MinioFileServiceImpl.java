@@ -8,18 +8,21 @@ import com.geekmall.modules.content.service.FileService;
 import com.geekmall.modules.content.support.FileValidator;
 import com.geekmall.modules.content.vo.UploadResultVO;
 import io.minio.BucketExistsArgs;
+import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.SetBucketPolicyArgs;
+import io.minio.http.Method;
+import java.io.InputStream;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
-
-import java.io.InputStream;
 
 /**
  * 对象存储实现（MinIO / 兼容 S3 的服务）。默认实现。
@@ -52,15 +55,14 @@ public class MinioFileServiceImpl implements FileService {
         }
         // 参数校验刻意放在熔断保护之外：用户传错格式不该被计成「依赖失败」，
         // 更不能因此把一个非法文件降级写进本地磁盘
-        FileValidator.validate(file);
-        String contentType = FileValidator.contentTypeOf(file);
+        String contentType = FileValidator.validateAndDetect(file);
         String objectName = FileValidator.buildObjectName(biz, contentType);
 
         ResilienceGuard.Action<UploadResultVO> primary = () -> putObject(file, objectName, contentType);
         if (properties.getDegradableBiz().contains(biz)) {
             // 展示型附件：对象存储不可用时改存本地磁盘，用户无感（响应里会带 degraded 标记）
-            return resilienceGuard.execute(RESOURCE, primary,
-                    () -> localDiskFileStore.storeValidated(file, contentType, objectName, true));
+            return resilienceGuard.execute(
+                    RESOURCE, primary, () -> localDiskFileStore.storeValidated(file, contentType, objectName, true));
         }
         // 不可降级的业务（如售后凭证）：熔断打开时直接失败，让用户稍后重试，
         // 而不是静默写到一个多实例部署下并不共享的本地目录里
@@ -73,11 +75,15 @@ public class MinioFileServiceImpl implements FileService {
     private UploadResultVO putObject(MultipartFile file, String objectName, String contentType) throws Exception {
         ensureBucket();
         try (InputStream inputStream = file.getInputStream()) {
-            minioClient.putObject(PutObjectArgs.builder()
-                    .bucket(properties.getBucket())
-                    .object(objectName)
-                    .stream(inputStream, file.getSize(), -1)
+            minioClient.putObject(PutObjectArgs.builder().bucket(properties.getBucket()).object(objectName).stream(
+                            inputStream, file.getSize(), -1)
                     .contentType(contentType)
+                    // 展示型图片 inline 展示；敏感附件强制下载。nosniff 防止浏览器按内容嗅探执行
+                    .headers(Map.of(
+                            "Content-Disposition",
+                            objectName.startsWith("aftersale/") ? "attachment" : "inline",
+                            "X-Content-Type-Options",
+                            "nosniff"))
                     .build());
         } catch (Exception e) {
             log.error("文件上传失败：{}", objectName, e);
@@ -107,20 +113,27 @@ public class MinioFileServiceImpl implements FileService {
             }
             try {
                 String bucket = properties.getBucket();
-                if (!minioClient.bucketExists(BucketExistsArgs.builder().bucket(bucket).build())) {
-                    minioClient.makeBucket(MakeBucketArgs.builder().bucket(bucket).build());
+                if (!minioClient.bucketExists(
+                        BucketExistsArgs.builder().bucket(bucket).build())) {
+                    minioClient.makeBucket(
+                            MakeBucketArgs.builder().bucket(bucket).build());
                     log.info("已创建存储桶 {}", bucket);
                 }
-                // 允许匿名读取，前端才能直接用 URL 展示图片；生产建议改用预签名 URL 或私有桶 + CDN
+                // 只公开展示型附件；售后凭证等敏感文件保持私有，读取走短时效预签名 URL
                 String policy = "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\","
                         + "\"Principal\":{\"AWS\":[\"*\"]},\"Action\":[\"s3:GetObject\"],"
-                        + "\"Resource\":[\"arn:aws:s3:::" + bucket + "/*\"]}]}";
+                        + "\"Resource\":[\"arn:aws:s3:::" + bucket + "/avatar/*\","
+                        + "\"arn:aws:s3:::" + bucket + "/review/*\","
+                        + "\"arn:aws:s3:::" + bucket + "/common/*\"]}]}";
                 minioClient.setBucketPolicy(SetBucketPolicyArgs.builder()
-                        .bucket(bucket).config(policy).build());
+                        .bucket(bucket)
+                        .config(policy)
+                        .build());
                 bucketReady = true;
             } catch (Exception e) {
                 log.error("初始化存储桶失败，请确认 MinIO 已启动：{}", properties.getEndpoint(), e);
-                throw new BizException(ResultCode.SYSTEM_ERROR,
+                throw new BizException(
+                        ResultCode.SYSTEM_ERROR,
                         "对象存储不可用，请确认 MinIO 已启动（" + properties.getEndpoint()
                                 + "），或将 mall.storage.type 切为 local 使用本地磁盘存储");
             }
@@ -128,6 +141,9 @@ public class MinioFileServiceImpl implements FileService {
     }
 
     private String publicUrl(String objectName) {
+        if (objectName.startsWith("aftersale/")) {
+            return presignedUrl(objectName);
+        }
         String base = StringUtils.hasText(properties.getPublicBaseUrl())
                 ? properties.getPublicBaseUrl()
                 : properties.getEndpoint();
@@ -135,5 +151,25 @@ public class MinioFileServiceImpl implements FileService {
             base = base.substring(0, base.length() - 1);
         }
         return base + "/" + properties.getBucket() + "/" + objectName;
+    }
+
+    /**
+     * 敏感附件（售后凭证）走预签名 URL。
+     *
+     * <p>当前返回 7 天有效期的地址；长期方案应改为「前端通过鉴权接口换取短时效地址」，
+     * 避免把带时效的 URL 长期落在业务表里。</p>
+     */
+    private String presignedUrl(String objectName) {
+        try {
+            return minioClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+                    .method(Method.GET)
+                    .bucket(properties.getBucket())
+                    .object(objectName)
+                    .expiry(7, TimeUnit.DAYS)
+                    .build());
+        } catch (Exception e) {
+            log.error("生成预签名文件地址失败：{}", objectName, e);
+            throw new BizException(ResultCode.SYSTEM_ERROR, "生成文件访问地址失败，请稍后重试");
+        }
     }
 }
