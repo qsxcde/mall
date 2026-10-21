@@ -5,14 +5,15 @@ import com.geekmall.common.constant.RedisKeys;
 import com.geekmall.modules.marketing.bucket.SeckillBucketManager;
 import com.geekmall.modules.marketing.entity.SeckillItem;
 import com.geekmall.modules.marketing.mapper.SeckillItemMapper;
+import io.micrometer.core.instrument.MeterRegistry;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
-
-import java.util.List;
 
 /**
  * 秒杀库存预热：启动时把 DB 库存同步到 Redis 计数（<b>仅在 Redis 缺失该 key 时写入</b>）。
@@ -28,7 +29,9 @@ import java.util.List;
  * <p>改为 {@code setIfAbsent} 后：</p>
  * <ul>
  *   <li>Redis 中已有该活动库存（活动进行中）→ 跳过，不覆盖进行中的扣减；</li>
- *   <li>key 不存在（首次部署 / Redis 被清空）→ 写入，完成对齐。</li>
+ *   <li>key 不存在且活动尚未开始 → 写入，完成对齐；</li>
+ *   <li>异步削峰模式下活动已开始但 key 缺失 → <b>拒绝按 DB 重建</b>，因为 DB 库存
+ *       滞后于队列中的预扣，重建会把已预扣的库存重新放出来（fail-closed + 告警）。</li>
  * </ul>
  *
  * <h3>需要「强制重新对齐」时怎么办</h3>
@@ -44,6 +47,11 @@ public class SeckillStockWarmUp implements ApplicationRunner {
     private final SeckillItemMapper seckillItemMapper;
     private final StringRedisTemplate redisTemplate;
     private final SeckillBucketManager bucketManager;
+    private final MeterRegistry meterRegistry;
+
+    /** 异步削峰模式下 DB 库存滞后于队列预扣，活动进行中禁止按 DB 重建 key。 */
+    @Value("${mall.seckill.async.enabled:false}")
+    private boolean asyncEnabled;
 
     @Override
     public void run(ApplicationArguments args) {
@@ -53,21 +61,34 @@ public class SeckillStockWarmUp implements ApplicationRunner {
         }
         int seeded = 0;
         int bucketed = 0;
+        int skipped = 0;
         for (SeckillItem item : items) {
+            boolean preStart = item.getNotStart() != null && item.getNotStart() == 1;
+            // 异步模式下活动已开始且 key 缺失：按 DB 重建会把在途预扣重新放出来
+            boolean allowMissing = !asyncEnabled || preStart;
             if (bucketManager.isBucketed(item)) {
                 // 分桶商品：逐桶 setIfAbsent 预热；桶行缺失时会按 item.stock 均分补建
-                bucketManager.warmUp(item);
+                bucketManager.warmUp(item, allowMissing);
                 bucketed++;
                 continue;
             }
             String key = RedisKeys.SECKILL_STOCK + item.getId();
+            if (!allowMissing && !Boolean.TRUE.equals(redisTemplate.hasKey(key))) {
+                skipped++;
+                meterRegistry.counter("mall_seckill_stock_missing_total").increment();
+                log.error("[秒杀预热] 活动已开始且 Redis 库存缺失，拒绝按 DB 重建：itemId={}", item.getId());
+                continue;
+            }
             String stock = String.valueOf(item.getStock() == null ? 0 : item.getStock());
             if (Boolean.TRUE.equals(redisTemplate.opsForValue().setIfAbsent(key, stock))) {
                 seeded++;
             }
         }
-        log.info("秒杀库存预热完成：共 {} 个商品（其中分桶 {} 个），单键本次写入 {} 个"
-                        + "（已存在的不覆盖，避免滚动发布把进行中的扣减复位）",
-                items.size(), bucketed, seeded);
+        log.info(
+                "秒杀库存预热完成：共 {} 个商品（其中分桶 {} 个），单键本次写入 {} 个，" + "跳过缺失 {} 个（异步模式下活动进行中不允许按 DB 重建）",
+                items.size(),
+                bucketed,
+                seeded,
+                skipped);
     }
 }

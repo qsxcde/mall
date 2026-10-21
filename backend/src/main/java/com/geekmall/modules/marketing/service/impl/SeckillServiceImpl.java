@@ -35,6 +35,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
@@ -170,6 +171,10 @@ public class SeckillServiceImpl implements SeckillService {
     private final ResilienceGuard resilienceGuard;
     /** 分桶场景下的「预扣 / 记账不一致」告警指标。 */
     private final MeterRegistry meterRegistry;
+
+    /** 异步削峰模式下 DB 库存滞后于队列预扣，活动进行中禁止按 DB 重建 Redis 库存。 */
+    @Value("${mall.seckill.async.enabled:false}")
+    private boolean asyncEnabled;
 
     /**
      * 秒杀商品元数据本地缓存（3s）。
@@ -351,6 +356,12 @@ public class SeckillServiceImpl implements SeckillService {
         };
         BucketPick pick = pickBucket(redisTemplate.execute(GRAB_BUCKET_SCRIPT, keys, (Object[]) args));
         if (pick.code == -1) {
+            if (asyncEnabled) {
+                // 活动已开始且桶 key 缺失：DB 余量滞后于队列预扣，重建会超卖
+                meterRegistry.counter("mall_seckill_stock_missing_total").increment();
+                log.error("[秒杀分桶] 活动已开始但 Redis 库存 key 缺失，拒绝按 DB 重建：itemId={}", item.getId());
+                throw new BizException(ResultCode.SYSTEM_ERROR, "活动库存正在校准，请稍后再试");
+            }
             bucketManager.warmUp(item);
             pick = pickBucket(redisTemplate.execute(GRAB_BUCKET_SCRIPT, keys, (Object[]) args));
         }
@@ -437,10 +448,18 @@ public class SeckillServiceImpl implements SeckillService {
 
     /**
      * 从 Redis 读取活动库存，缺失时用 DB 值初始化。
-     * 正式玩法应在活动开始前由定时任务统一预热（见 SeckillStockWarmUp）。
+     *
+     * <p>同步模式下 DB 库存就是扣减后的权威值，缺失时按 DB 重建是安全的；
+     * <b>异步模式下 DB 库存滞后于队列中的预扣</b>，活动进行中 key 缺失只能说明
+     * Redis 数据丢失/被淘汰，此时按 DB 重建会把已预扣的库存重新放出来，因此 fail-closed。</p>
      */
     private void ensureStockLoaded(SeckillItem item) {
         String stockKey = RedisKeys.SECKILL_STOCK + item.getId();
+        if (asyncEnabled && !Boolean.TRUE.equals(redisTemplate.hasKey(stockKey))) {
+            meterRegistry.counter("mall_seckill_stock_missing_total").increment();
+            log.error("[秒杀] 异步模式下活动库存 key 缺失，拒绝按 DB 重建：itemId={}", item.getId());
+            throw new BizException(ResultCode.SYSTEM_ERROR, "活动库存正在校准，请稍后再试");
+        }
         Boolean absent = redisTemplate
                 .opsForValue()
                 .setIfAbsent(stockKey, String.valueOf(item.getStock() == null ? 0 : item.getStock()));

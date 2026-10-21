@@ -4,18 +4,17 @@ import com.geekmall.common.constant.RedisKeys;
 import com.geekmall.modules.marketing.entity.SeckillBucket;
 import com.geekmall.modules.marketing.entity.SeckillItem;
 import com.geekmall.modules.marketing.mapper.SeckillBucketMapper;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.stereotype.Component;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Component;
 
 /**
  * 秒杀库存分桶的「建桶 / 预热 / 汇总」支撑。
@@ -88,13 +87,45 @@ public class SeckillBucketManager {
      * 也就能作为「Redis 桶 key 丢失」时的自愈手段。</p>
      */
     public void warmUp(SeckillItem item) {
+        warmUp(item, true);
+    }
+
+    /**
+     * 按桶预热，并声明是否允许在 key 缺失时按 DB 重建。
+     *
+     * <p>异步削峰模式下 DB 桶余量滞后于队列中的预扣，活动进行中 key 丢失时
+     * 按 DB 重建会把「已预扣未落库」重新放出来。此时调用方应传 {@code false}，
+     * 本方法只做完整性检查并拒绝重建。</p>
+     */
+    public void warmUp(SeckillItem item, boolean allowMissing) {
         if (!isBucketed(item)) {
             return;
         }
-        for (SeckillBucket bucket : ensureBuckets(item)) {
+        List<SeckillBucket> buckets = bucketMapper.selectByItem(item.getId());
+        if (buckets.isEmpty()) {
+            if (!allowMissing) {
+                log.error("[秒杀分桶] 桶行缺失且活动已开始，拒绝按 item.stock 重建：itemId={}", item.getId());
+                return;
+            }
+            buckets = ensureBuckets(item);
+        }
+        if (!allowMissing) {
+            for (SeckillBucket bucket : buckets) {
+                String key = RedisKeys.seckillBucketStock(item.getId(), bucket.getBucketNo());
+                if (!Boolean.TRUE.equals(redisTemplate.hasKey(key))) {
+                    log.error(
+                            "[秒杀分桶] 库存 key 缺失且活动已开始，拒绝按 DB 重建：itemId={}, bucketNo={}",
+                            item.getId(),
+                            bucket.getBucketNo());
+                    return;
+                }
+            }
+        }
+        for (SeckillBucket bucket : buckets) {
             String key = RedisKeys.seckillBucketStock(item.getId(), bucket.getBucketNo());
-            redisTemplate.opsForValue().setIfAbsent(key,
-                    String.valueOf(bucket.getStock() == null ? 0 : bucket.getStock()));
+            redisTemplate
+                    .opsForValue()
+                    .setIfAbsent(key, String.valueOf(bucket.getStock() == null ? 0 : bucket.getStock()));
         }
     }
 
