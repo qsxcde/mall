@@ -159,7 +159,7 @@ public class ProductServiceImpl implements ProductService {
      *
      * <p><b>为什么必须返回 {@link ArrayList}，不能用 {@code List.of()} / {@code Stream#toList()}：</b></p>
      *
-     * <p>缓存值用 {@code GenericJackson2JsonRedisSerializer} 写 JSON，并开启了
+     * <p>缓存值用 {@code GenericJacksonJsonRedisSerializer} 写 JSON，并开启了
      * {@code DefaultTyping.NON_FINAL} 类型信息。<b>根节点是 final 类时不会写入类型 id</b>
      * （{@code List.of()} / {@code Stream#toList()} 返回的 {@code ImmutableCollections$ListN} 是 final，
      * {@code ArrayList} 不是），而读取时目标类型是 {@code Object}，反序列化器要求根节点必须带类型 id，

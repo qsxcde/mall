@@ -4,8 +4,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
+import tools.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 
 /**
  * Redis 配置：key 用 String 序列化，value 用 JSON，便于人工查看与跨语言排查。
@@ -21,7 +22,13 @@ public class RedisConfig {
         template.setConnectionFactory(connectionFactory);
 
         StringRedisSerializer keySerializer = new StringRedisSerializer();
-        GenericJackson2JsonRedisSerializer valueSerializer = new GenericJackson2JsonRedisSerializer();
+        // 与 CacheConfig 保持一致：开启默认类型信息，否则 RedisTemplate<String, Object>
+        // 反序列化只能拿到 LinkedHashMap。允许任意子类型是为了兼容升级前写入的缓存。
+        GenericJacksonJsonRedisSerializer valueSerializer = GenericJacksonJsonRedisSerializer.builder()
+                .enableDefaultTyping(BasicPolymorphicTypeValidator.builder()
+                        .allowIfSubType(Object.class)
+                        .build())
+                .build();
 
         template.setKeySerializer(keySerializer);
         template.setHashKeySerializer(keySerializer);
