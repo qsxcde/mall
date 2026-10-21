@@ -1,6 +1,6 @@
 # 极客数码商城 - 后端服务（backend）
 
-Spring Boot 3.3 + JDK 21 + MyBatis-Plus + MySQL 8 + Redis 7 的后端脚手架，接口与前端
+Spring Boot 4.1 + JDK 21 + MyBatis-Plus + MySQL 8 + Redis 7 的后端脚手架，接口与前端
 `src/views` 各页面一一对应，统一前缀 `/api/v1`。
 
 ## 技术栈
@@ -8,9 +8,9 @@ Spring Boot 3.3 + JDK 21 + MyBatis-Plus + MySQL 8 + Redis 7 的后端脚手架�
 | 维度 | 选型 |
 | --- | --- |
 | 运行时 | JDK 21 |
-| 框架 | Spring Boot 3.3.13 |
-| 安全 | Spring Security 6 + JWT（无状态，Redis 保存会话） |
-| 持久层 | MyBatis-Plus 3.5.7 + MySQL 8 + Flyway（自动建表 + 种子数据） |
+| 框架 | Spring Boot 4.1.1（Jackson 3） |
+| 安全 | Spring Security 7 + JWT（无状态，Redis 保存会话） |
+| 持久层 | MyBatis-Plus 3.5.17 + MySQL 8 + Flyway（自动建表 + 种子数据） |
 | 缓存 | Redis 7（验证码 / 登录会话 / 秒杀库存预留） |
 | 文档 | springdoc-openapi（Swagger UI） |
 | 可观测性 | Actuator + Micrometer/Prometheus + 结构化 JSON 日志 + TraceId 全链路（跨线程 / 跨队列） |

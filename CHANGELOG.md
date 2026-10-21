@@ -35,6 +35,10 @@
   数据看板独立为 `MerchantAnalyticsAssembler`，共用日序列计算抽为 `MerchantDailySeries`
 - `V14__product_search_fulltext.sql`：新增商品搜索全文索引（幂等迁移）
 - Spring Boot 3.3.5 → 3.3.13；后端镜像改为非 root 运行
+- **升级到 Spring Boot 4.1.1**（Spring Framework 7 / Spring Security 7 / Jackson 3）：
+  切换到模块化 starter（webmvc / aspectj / flyway）、MyBatis-Plus 3.5.17（boot4 starter + jsqlparser）、
+  springdoc 3.1.1、Testcontainers 2.0.5；缓存序列化改用 `GenericJacksonJsonRedisSerializer`，
+  健康检查迁到 `org.springframework.boot.health.contributor`；JaCoCo 升至 0.8.15
 - 多实例 Compose 强制 `MALL_JWT_SECRET` / `REDIS_PASSWORD`，Redis 开启认证
 
 ### 修复

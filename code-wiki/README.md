@@ -12,7 +12,7 @@
 | 维度 | 说明 |
 | --- | --- |
 | 项目定位 | 三端齐备的数码 3C 电商学习项目：**买家端 + 商家端 + 后端**，重点在后端高并发治理 |
-| 后端 | Spring Boot 3.3.13 + JDK 21 + MyBatis-Plus + MySQL 8 + Redis 7，134 个 REST 接口，统一前缀 `/api/v1` |
+| 后端 | Spring Boot 4.1.1 + JDK 21 + MyBatis-Plus + MySQL 8 + Redis 7，134 个 REST 接口，统一前缀 `/api/v1` |
 | 前端 | Vue 3 + Vite + Pinia + Element Plus，买家端（5173）与商家端（5174）两个独立工程 |
 | 基础设施 | Docker Compose 编排 MySQL / Redis / MinIO（可选 Elasticsearch），`observability` profile 额外起 Prometheus / Grafana / Loki / Promtail |
 | 质量保障 | 668 个测试用例（Testcontainers 真实容器集成测试 + ArchUnit 架构约束），JaCoCo 行覆盖率 71.17%（门禁 ≥60%）+ k6/JMeter 压测体系 + GitHub Actions CI |
