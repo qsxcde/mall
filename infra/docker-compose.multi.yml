@@ -42,7 +42,7 @@ x-app-env: &app-env
   MYSQL_HOST: mysql
   MYSQL_PORT: "3306"
   MYSQL_USER: root
-  MYSQL_PASSWORD: root
+  MYSQL_PASSWORD: "${MYSQL_ROOT_PASSWORD:-root}"
   MYSQL_DB: geek_mall
   # 配比铁律：实例数 × 单实例池 ≤ MySQL max_connections(=300)
   # 3 × 50 = 150，留出余量；设成 prod 默认的 100 会正好顶格 300，再加实例就超
@@ -50,6 +50,9 @@ x-app-env: &app-env
   MYSQL_POOL_MIN_IDLE: "5"
   REDIS_HOST: redis
   REDIS_PORT: "6379"
+  # prod profile 必填：缺任意一个都会让容器启动失败，而不是带着公开默认值运行
+  MALL_JWT_SECRET: "${MALL_JWT_SECRET:?请在 infra/.env 设置 MALL_JWT_SECRET（至少 32 字节）}"
+  REDIS_PASSWORD: "${REDIS_PASSWORD:?请在 infra/.env 设置 REDIS_PASSWORD}"
   # 压测/验证实例不依赖 MinIO（未起该容器时走本地磁盘，避免启动期连不上对象存储）
   STORAGE_TYPE: local
   # 支付宝沙箱（可选）：默认空 → 走本地渠道；密钥配齐后把 MALL_PAYMENT_CHANNEL 设为 alipay
@@ -85,6 +88,18 @@ x-app: &app
       condition: service_healthy
 
 services:
+  # 覆盖主 compose 的 Redis：多实例 prod profile 强制密码认证。
+  # 主 compose 保持无密码以兼容 dev；只有叠加本 overlay 时才要求 REDIS_PASSWORD。
+  redis:
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?}"]
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?}"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   app1:
     <<: *app
     container_name: geek-mall-app1
