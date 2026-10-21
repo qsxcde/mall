@@ -343,17 +343,26 @@ class ProductSearchContractIntegrationTest extends AbstractSearchIntegrationTest
         @Test
         @DisplayName("无关键词时三种引擎都退化为普通列表（不报错、结果一致）")
         void emptyKeywordFallsBackToPlainList() {
+            // 必须用本用例独有的父分类：测试库是全类共享的，而 ES 索引在每个用例前都会被重置。
+            // 若直接按固定的 PARENT_KEY 查，mysql 侧会看到其他用例累计的商品、ES 侧却是空索引，
+            // 断言结果就取决于嵌套类的执行顺序（Boot 4 下顺序变化后曾因此偶发失败）。
+            String parentKey = PARENT_KEY + "-" + uniqueToken();
+            int expected = 5;
+            for (int i = 0; i < expected; i++) {
+                createProduct(parentKey + " 无关键词商品" + i, 5, String.valueOf((i + 1) * 100), parentKey);
+            }
+
             ProductQueryDTO q = query(x -> x.setKeyword(null));
-            q.setCat(PARENT_KEY);
+            q.setCat(parentKey);
             q.setPageSize(50);
 
             Map<String, PageResult<ProductCardVO>> results = runAll(q);
-            long likeTotal = results.get("like").getTotal();
             for (Map.Entry<String, PageResult<ProductCardVO>> e : results.entrySet()) {
                 assertThat(e.getValue().getTotal())
                         .as("引擎 %s 在无关键词时的 total", e.getKey())
-                        .isEqualTo(likeTotal);
+                        .isEqualTo(expected);
             }
+            assertEnginesAgree(q);
         }
 
         @Test
@@ -433,12 +442,17 @@ class ProductSearchContractIntegrationTest extends AbstractSearchIntegrationTest
     }
 
     private Product createProduct(String title, int stock, String price) {
+        return createProduct(title, stock, price, PARENT_KEY);
+    }
+
+    /** 指定父分类造商品：需要把数据与其它用例彻底隔离时使用。 */
+    private Product createProduct(String title, int stock, String price, String parentKey) {
         Product product = new Product();
         product.setShopId(DEMO_SHOP_ID);
         product.setTitle(title);
         product.setCategoryId(1L);
         product.setCategoryKey(CATEGORY_KEY);
-        product.setParentKey(PARENT_KEY);
+        product.setParentKey(parentKey);
         product.setCover("https://img/test/contract.png");
         product.setSpec("标准版");
         product.setPrice(new BigDecimal(price));
