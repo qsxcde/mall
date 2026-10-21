@@ -1,21 +1,13 @@
 package com.geekmall.common.log;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.ConsoleAppender;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
-
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -23,8 +15,15 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 结构化日志配置断言。
@@ -83,8 +82,7 @@ class StructuredLoggingTest {
             console.setEncoder(encoder);
             console.start();
 
-            ch.qos.logback.classic.Logger root =
-                    context.getLogger(ch.qos.logback.classic.Logger.ROOT_LOGGER_NAME);
+            ch.qos.logback.classic.Logger root = context.getLogger(ch.qos.logback.classic.Logger.ROOT_LOGGER_NAME);
             root.addAppender(console);
             root.setLevel(Level.INFO);
         }
@@ -156,9 +154,7 @@ class StructuredLoggingTest {
     void shouldNotMaskLongerDigitRuns() throws Exception {
         List<String> lines = captureLines(() -> log.info("任务耗时 1759840000000 纳秒"));
 
-        assertThat(lines.get(0))
-                .as("13 位数字内部含 11 位数字，脱敏正则必须用边界环视排除")
-                .contains("1759840000000");
+        assertThat(lines.get(0)).as("13 位数字内部含 11 位数字，脱敏正则必须用边界环视排除").contains("1759840000000");
     }
 
     @Test

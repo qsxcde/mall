@@ -1,20 +1,19 @@
 package com.geekmall.integration;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.geekmall.modules.product.entity.Product;
 import com.geekmall.modules.product.mapper.ProductMapper;
 import com.geekmall.support.AbstractIntegrationTest;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import tools.jackson.databind.JsonNode;
 
 /**
  * 库存分桶端到端集成测试（真实 MySQL + Flyway V11 迁移 + 真实交易链路）。
@@ -37,7 +36,10 @@ class InventoryBucketIntegrationTest extends AbstractIntegrationTest {
         Product product = createOnShelfProduct("分桶下单商品", 100, "199.00");
 
         long ruleId = saveRule(merchantToken, "效期分桶-" + product.getId(), "EXPIRY", "EXPIRY_FIRST");
-        JsonNode balance = allocate(merchantToken, product.getId(), ruleId,
+        JsonNode balance = allocate(
+                merchantToken,
+                product.getId(),
+                ruleId,
                 bucketItem("2027-01-01", 20, "2027-01-01"),
                 bucketItem("2030-01-01", 30, "2030-01-01"));
 
@@ -66,8 +68,7 @@ class InventoryBucketIntegrationTest extends AbstractIntegrationTest {
         assertThat(logs.get("list").get(0).get("bizType").asText()).isEqualTo("OUTBOUND");
 
         // 取消订单：回补应还回「原来那一桶」（2027 -> 20），守恒保持
-        assertSuccess(post("/api/v1/trade/orders/" + orderNo + "/cancel",
-                Map.of("reason", "分桶测试取消"), buyerToken));
+        assertSuccess(post("/api/v1/trade/orders/" + orderNo + "/cancel", Map.of("reason", "分桶测试取消"), buyerToken));
 
         assertThat(productMapper.selectById(product.getId()).getStock()).isEqualTo(100);
         JsonNode afterCancel = assertSuccess(get(BUCKET_API + "/balance?productId=" + product.getId(), merchantToken));
@@ -121,10 +122,14 @@ class InventoryBucketIntegrationTest extends AbstractIntegrationTest {
     /* ------------------------------ 辅助 ------------------------------ */
 
     private long saveRule(String token, String ruleName, String dimension, String policy) {
-        return assertSuccess(post(BUCKET_API + "/rule/save", Map.of(
-                "ruleName", ruleName,
-                "dimension", dimension,
-                "deductPolicy", policy), token)).asLong();
+        return assertSuccess(post(
+                        BUCKET_API + "/rule/save",
+                        Map.of(
+                                "ruleName", ruleName,
+                                "dimension", dimension,
+                                "deductPolicy", policy),
+                        token))
+                .asLong();
     }
 
     private JsonNode allocate(String token, long productId, long ruleId, Map<String, Object>... items) {
@@ -196,8 +201,8 @@ class InventoryBucketIntegrationTest extends AbstractIntegrationTest {
     }
 
     private long addToCart(String token, long productId, int qty) {
-        return assertSuccess(post("/api/v1/cart/items",
-                Map.of("productId", productId, "qty", qty), token)).asLong();
+        return assertSuccess(post("/api/v1/cart/items", Map.of("productId", productId, "qty", qty), token))
+                .asLong();
     }
 
     private String submitOrder(String token, long addressId, long cartItemId) {

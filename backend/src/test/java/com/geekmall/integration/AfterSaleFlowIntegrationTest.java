@@ -376,14 +376,14 @@ class AfterSaleFlowIntegrationTest extends AbstractIntegrationTest {
         resolveRaw(buyerToken, body);
     }
 
-    private com.fasterxml.jackson.databind.JsonNode resolveRaw(String buyerToken, long afterSaleId, String action) {
+    private tools.jackson.databind.JsonNode resolveRaw(String buyerToken, long afterSaleId, String action) {
         Map<String, Object> body = new HashMap<>();
         body.put("ids", List.of(merchantId(afterSaleId)));
         body.put("action", action);
         return resolveRaw(buyerToken, body);
     }
 
-    private com.fasterxml.jackson.databind.JsonNode resolveRaw(String buyerToken, Map<String, Object> body) {
+    private tools.jackson.databind.JsonNode resolveRaw(String buyerToken, Map<String, Object> body) {
         // 商家令牌与买家令牌是两套作用域，这里显式换取商家令牌
         String merchantToken = loginMerchant(DEMO_MERCHANT, "123456");
         return post("/api/v1/merchant/aftersale/resolve", body, merchantToken);

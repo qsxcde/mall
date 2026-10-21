@@ -1,10 +1,6 @@
 package com.geekmall.config;
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.geekmall.common.cache.CacheGovernanceMetrics;
 import com.geekmall.common.cache.CacheNames;
 import com.geekmall.common.cache.CacheProperties;
@@ -22,9 +18,13 @@ import org.springframework.data.redis.cache.RedisCacheManager;
 import org.springframework.data.redis.cache.RedisCacheWriter;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
+import tools.jackson.databind.DefaultTyping;
+import tools.jackson.databind.cfg.DateTimeFeature;
+import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -95,15 +95,26 @@ public class CacheConfig {
     }
 
     /**
-     * 缓存专用 JSON 序列化器：注册 JavaTimeModule，并开启默认类型信息，
-     * 保证反序列化时能还原出具体类型（含嵌套集合）。
+     * 缓存专用 JSON 序列化器。
+     *
+     * <p>Jackson 3 已内置 java.time 支持（不再需要 JavaTimeModule），这里只需关闭
+     * 时间戳写法，并开启默认类型信息，保证反序列化时能还原出具体类型（含嵌套集合）。</p>
+     *
+     * <p>Jackson 3 移除了 {@code LaissezFaireSubTypeValidator}，改用
+     * {@link BasicPolymorphicTypeValidator}。这里仍允许任意子类型，是为了与升级前
+     * 的缓存行为保持一致；后续可收紧为只允许 {@code com.geekmall} / {@code java.*}
+     * 白名单，作为独立的安全加固项。</p>
      */
-    private GenericJackson2JsonRedisSerializer jsonSerializer() {
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.registerModule(new JavaTimeModule());
-        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        mapper.activateDefaultTyping(LaissezFaireSubTypeValidator.instance,
-                ObjectMapper.DefaultTyping.NON_FINAL, JsonTypeInfo.As.PROPERTY);
-        return new GenericJackson2JsonRedisSerializer(mapper);
+    private GenericJacksonJsonRedisSerializer jsonSerializer() {
+        JsonMapper mapper = JsonMapper.builder()
+                .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
+                .activateDefaultTyping(
+                        BasicPolymorphicTypeValidator.builder()
+                                .allowIfSubType(Object.class)
+                                .build(),
+                        DefaultTyping.NON_FINAL,
+                        JsonTypeInfo.As.PROPERTY)
+                .build();
+        return new GenericJacksonJsonRedisSerializer(mapper);
     }
 }

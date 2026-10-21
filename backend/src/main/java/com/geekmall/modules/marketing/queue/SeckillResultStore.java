@@ -1,14 +1,13 @@
 package com.geekmall.modules.marketing.queue;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.geekmall.common.constant.RedisKeys;
 import com.geekmall.modules.marketing.config.SeckillProperties;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
-
-import java.util.Optional;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 秒杀抢购结果的存储与查询（异步模式的必备配套）。
@@ -31,13 +30,16 @@ public class SeckillResultStore {
     public void save(SeckillGrabResult result) {
         try {
             String json = objectMapper.writeValueAsString(result);
-            redisTemplate.opsForValue().set(RedisKeys.seckillResult(result.requestId()), json,
-                    properties.getAsync().getResultTtl());
+            redisTemplate
+                    .opsForValue()
+                    .set(
+                            RedisKeys.seckillResult(result.requestId()),
+                            json,
+                            properties.getAsync().getResultTtl());
         } catch (Exception ex) {
             // 写结果失败不让主流程失败：最坏情况是用户轮询不到结果（订单其实已建），
             // 但绝不能因为一次 Redis 抖动把已成功的抢购回滚掉
-            log.error("写入秒杀结果失败：requestId={}, status={}",
-                    result.requestId(), result.status(), ex);
+            log.error("写入秒杀结果失败：requestId={}, status={}", result.requestId(), result.status(), ex);
         }
     }
 

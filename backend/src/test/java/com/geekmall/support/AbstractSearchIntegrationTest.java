@@ -1,6 +1,5 @@
 package com.geekmall.support;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -10,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import org.testcontainers.elasticsearch.ElasticsearchContainer;
 import org.testcontainers.utility.DockerImageName;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 需要 Elasticsearch 的集成测试基类。

@@ -1,7 +1,5 @@
 package com.geekmall.config;
 
-import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateTimeDeserializer;
-import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
 import com.geekmall.common.ratelimit.RateLimitInterceptor;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -9,7 +7,7 @@ import java.util.Arrays;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilderCustomizer;
+import org.springframework.boot.jackson.autoconfigure.JsonMapperBuilderCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
@@ -17,6 +15,9 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import tools.jackson.databind.ext.javatime.deser.LocalDateTimeDeserializer;
+import tools.jackson.databind.ext.javatime.ser.LocalDateTimeSerializer;
+import tools.jackson.databind.module.SimpleModule;
 
 /**
  * Web 层配置：跨域 + 时间序列化格式 + 接口限流拦截器。
@@ -76,11 +77,10 @@ public class WebMvcConfig implements WebMvcConfigurer {
      * LocalDateTime 统一格式化为 yyyy-MM-dd HH:mm:ss。
      */
     @Bean
-    public Jackson2ObjectMapperBuilderCustomizer jacksonCustomizer() {
+    public JsonMapperBuilderCustomizer jacksonCustomizer() {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern(DATE_TIME_PATTERN);
-        return builder -> {
-            builder.serializerByType(LocalDateTime.class, new LocalDateTimeSerializer(formatter));
-            builder.deserializerByType(LocalDateTime.class, new LocalDateTimeDeserializer(formatter));
-        };
+        return builder -> builder.addModule(new SimpleModule()
+                .addSerializer(LocalDateTime.class, new LocalDateTimeSerializer(formatter))
+                .addDeserializer(LocalDateTime.class, new LocalDateTimeDeserializer(formatter)));
     }
 }
