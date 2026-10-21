@@ -34,6 +34,8 @@
 - `MerchantDashboardServiceImpl`（397 行）按页面拆分：概览保留原类，
   数据看板独立为 `MerchantAnalyticsAssembler`，共用日序列计算抽为 `MerchantDailySeries`
 - `V14__product_search_fulltext.sql`：新增商品搜索全文索引（幂等迁移）
+- Spring Boot 3.3.5 → 3.3.13；后端镜像改为非 root 运行
+- 多实例 Compose 强制 `MALL_JWT_SECRET` / `REDIS_PASSWORD`，Redis 开启认证
 
 ### 修复
 
@@ -41,6 +43,14 @@
 - ES 客户端未读取配置的连接/读取超时（默认 30s 会挂住 Tomcat 线程）：已生效为 2s/5s
 - ES 搜索的排序语义：有关键词时 `_score` 曾抢占主排序键，导致 `sort=price_asc` 实际不按价格排
 - 商家售后按 `orderNo` 查订单时漏加 `shop_id` 条件（越权可达）：已收敛到 `MerchantOrderQueryService`
+- 支付资金一致性：生产禁止本地模拟渠道与未受开关保护的 `mock-pay`；支付成功未落账由对账任务修正；
+  重复支付自动退款；退款结算事务化、失败退避重试，并按支付单串行化避免并发超退
+- 安全：`X-Forwarded-For` 仅在来源命中可信代理时解析；验证码改 Lua 原子校验并增加失败锁定与每日上限；
+  登录连续失败锁定；生产关闭 Swagger，CORS 收敛为具体来源白名单
+- 秒杀：异步模式下 Redis 库存 key 缺失改为 fail-closed，避免按滞后的 DB 库存重建导致超卖
+- 文件：上传增加魔数与像素校验；MinIO 仅公开展示型前缀，售后凭证私有 + 预签名；
+  本地存储售后附件改走 HMAC 签名 URL
+- 前端：结算 `requestId` 按会话复用，网络超时重试不再重复下单
 
 ### 文档
 
