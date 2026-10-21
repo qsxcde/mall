@@ -16,7 +16,7 @@
 | --- | --- | --- |
 | 买家端 | `frontend/` | Vue 3 + Vite，数码商城前台（浏览 → 下单 → 支付 → 评价 → 售后全链路） |
 | 商家端 | `frontendMerchant/` | Vue 3 + Vite，商家中心（商品、订单、售后、资金） |
-| 后端 | `backend/` | Spring Boot 3.3.13 + JDK 21，134 个 REST 接口，统一前缀 `/api/v1` |
+| 后端 | `backend/` | Spring Boot 4.1.1 + JDK 21，134 个 REST 接口，统一前缀 `/api/v1` |
 | 基础设施 | `infra/` | Docker Compose 编排 MySQL / Redis / MinIO，可选开可观测性栈 |
 | 压测 | `loadtest/` | k6 为主、JMeter 为辅，含数据准备与结果校验脚本 |
 | 文档 | `docs/` | 24 份分析报告（现状、治理清单、限流策略、压测对比、多实例验证等） |
@@ -28,8 +28,8 @@
 | 维度 | 选型 |
 | --- | --- |
 | 运行时 | JDK 21 |
-| 框架 | Spring Boot 3.3.13 |
-| 安全 | Spring Security 6 + JWT 无状态（Redis 保存会话，支持登出踢下线） |
+| 框架 | Spring Boot 4.1.1（Spring Framework 7 + Jackson 3） |
+| 安全 | Spring Security 7 + JWT 无状态（Redis 保存会话，支持登出踢下线） |
 | 持久层 | MyBatis-Plus + MySQL 8 + Flyway（14 个版本化迁移，代码与库结构同源） |
 | 缓存 | Redis 7（分级 TTL + 本地 Caffeine L1） |
 | 分布式 | Redis Stream（秒杀削峰队列）、ShedLock（定时任务互斥） |
