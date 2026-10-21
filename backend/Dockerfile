@@ -15,12 +15,23 @@ ENV TZ=Asia/Shanghai \
     SPRING_PROFILES_ACTIVE=prod \
     JAVA_OPTS="-Xms512m -Xmx1024m -XX:+UseG1GC -Duser.timezone=Asia/Shanghai"
 
-COPY target/*.jar app.jar
+# curl 用于容器健康检查；同时创建非 root 运行用户与可写目录（日志 / 本地上传降级）
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r app \
+    && useradd -r -g app app \
+    && mkdir -p /app/logs /app/uploads \
+    && chown -R app:app /app
+
+COPY --chown=app:app target/*.jar app.jar
+
+USER app
 
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD ["sh", "-c", "wget -qO- http://127.0.0.1:8080/actuator/health | grep -q UP || exit 1"]
+    CMD ["sh", "-c", "curl -fsS http://127.0.0.1:8080/actuator/health | grep -q UP || exit 1"]
 
 # 用 sh -c 保证 $JAVA_OPTS 被展开
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]
