@@ -53,6 +53,23 @@ groups:
             有消息重投达上限仍未成功，已被放弃并回补预扣 —— 该用户会拿到「抢购未完成」。
             需要人工核对库存与订单是否一致。
 
+      - alert: MallSeckillStockMissing
+        expr: increase(mall_seckill_stock_missing_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          component: seckill-stock
+        annotations:
+          summary: "秒杀库存 key 缺失，活动已被 fail-closed 拒绝"
+          description: >-
+            异步削峰模式下活动进行中却读不到 Redis 库存 key。此时 DB 库存滞后于队列中的预扣，
+            按 DB 重建会超卖，因此代码选择拒绝请求而不是重建。
+            用户侧表现为抢购一直返回「库存正在校准」。
+          runbook: >-
+            ① 确认 Redis 是否发生过重启 / 淘汰（查 maxmemory-policy 是否 noeviction）；
+            ② 暂停该活动的新流量，等队列 pending 归零后再用 DB 值重新预热；
+            ③ 预热后核对 DB 库存与订单数是否一致。
+
   # ---------------- 熔断降级 ----------------
   - name: mall-resilience
     rules:
@@ -113,3 +130,23 @@ groups:
           description: >-
             阈值见 mall.logging.slow-sql-threshold-ms。常见根因：缺索引、数据量增长后计划退化、
             或热点行锁等待（可结合 mall_seckill_queue_pending 判断）。
+
+  # ---------------- 支付与退款 ----------------
+  - name: mall-payment-refund
+    rules:
+      - alert: MallRefundRetryExhausted
+        # 计数器只在「达到最大重试次数仍未成功」时自增，因此任何增长都需要人工介入
+        expr: increase(mall_payment_refund_retry_exhausted_total[30m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          component: payment-refund
+        annotations:
+          summary: "退款重试已达上限，资金未退给用户（30 分钟内 {{ $value }} 笔）"
+          description: >-
+            渠道退款失败或异常，退避重试已用尽，退款单会停在失败状态不再自动重试。
+            用户侧表现为「钱一直没退回来」。
+          runbook: >-
+            ① 用日志里的 refundNo / tradeNo 定位退款单（搜「退款重试达到上限」）；
+            ② 到渠道后台核对真实退款状态，避免重复退；
+            ③ 人工补退后把退款单与支付单的累计退款金额对齐。
