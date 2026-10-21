@@ -39,7 +39,7 @@
 ├── infra/               # docker-compose 编排 + Prometheus/Grafana/Loki provisioning
 ├── loadtest/            # k6 / JMeter 压测脚本、数据准备、结果校验、实测结果
 ├── scripts/             # run-backend.sh、check-frontend-style.sh
-├── docs/                # 23 份分析报告（planning / concurrency / benchmark / spec / governance）
+├── docs/                # 24 份分析报告（planning / concurrency / benchmark / spec / governance）
 ├── .github/workflows/   # CI（后端 Spotless + mvn test；双前端 ESLint + build）
 └── code-wiki/           # 本文档
 ```
