@@ -74,11 +74,12 @@ public class RateLimitInterceptor implements AsyncHandlerInterceptor {
     private final ClusterProperties clusterProperties;
     /** 限流拒绝计数（按规则 / 层级 / 原因打标签，供看板与告警使用）。 */
     private final RateLimitMetrics rateLimitMetrics;
+    /** 客户端 IP 解析：只信任可信代理写入的转发头。 */
+    private final ClientIpResolver clientIpResolver;
 
     @Override
-    public boolean preHandle(@NonNull HttpServletRequest request,
-                             @NonNull HttpServletResponse response,
-                             @NonNull Object handler) {
+    public boolean preHandle(
+            @NonNull HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull Object handler) {
         if (!properties.isEnabled()) {
             return true;
         }
@@ -117,8 +118,13 @@ public class RateLimitInterceptor implements AsyncHandlerInterceptor {
 
         if (!result.allowed()) {
             rateLimitMetrics.recordRejected(policy, RateLimitMetrics.REASON_RATE);
-            log.warn("[限流] 规则={}, 维度={}, 阈值={}/{}s, 层级={}",
-                    policy.name(), dimension, policy.limit(), policy.windowSeconds(), policy.tier());
+            log.warn(
+                    "[限流] 规则={}, 维度={}, 阈值={}/{}s, 层级={}",
+                    policy.name(),
+                    dimension,
+                    policy.limit(),
+                    policy.windowSeconds(),
+                    policy.tier());
             throw new RateLimitException("系统繁忙，请稍后再试", result.retryAfterSeconds());
         }
 
@@ -129,8 +135,7 @@ public class RateLimitInterceptor implements AsyncHandlerInterceptor {
             String concurrentKey = key + ":conc";
             if (!localRateLimiter.tryAcquireConcurrent(concurrentKey, maxConcurrent)) {
                 rateLimitMetrics.recordRejected(policy, RateLimitMetrics.REASON_CONCURRENT);
-                log.warn("[限流] 规则={} 并发已达上限 {}（实例数 {}），拒绝请求",
-                        policy.name(), maxConcurrent, instanceCount);
+                log.warn("[限流] 规则={} 并发已达上限 {}（实例数 {}），拒绝请求", policy.name(), maxConcurrent, instanceCount);
                 throw new RateLimitException("当前请求过多，请稍后再试", 1);
             }
             request.setAttribute(ATTR_CONCURRENT_KEY, concurrentKey);
@@ -143,18 +148,18 @@ public class RateLimitInterceptor implements AsyncHandlerInterceptor {
 
     /** 同步请求结束时释放并发槽位。 */
     @Override
-    public void afterCompletion(@NonNull HttpServletRequest request,
-                                @NonNull HttpServletResponse response,
-                                @NonNull Object handler,
-                                Exception ex) {
+    public void afterCompletion(
+            @NonNull HttpServletRequest request,
+            @NonNull HttpServletResponse response,
+            @NonNull Object handler,
+            Exception ex) {
         releaseConcurrency(request);
     }
 
     /** 异步请求（DeferredResult）在初次分发结束时走这里，同样要释放，否则槽位会泄漏。 */
     @Override
-    public void afterConcurrentHandlingStarted(@NonNull HttpServletRequest request,
-                                               @NonNull HttpServletResponse response,
-                                               @NonNull Object handler) {
+    public void afterConcurrentHandlingStarted(
+            @NonNull HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull Object handler) {
         releaseConcurrency(request);
     }
 
@@ -175,14 +180,14 @@ public class RateLimitInterceptor implements AsyncHandlerInterceptor {
     private String resolveDimension(RateLimitDimension dimension, HttpServletRequest request) {
         return switch (dimension) {
             case GLOBAL -> "global";
-            case IP -> "ip:" + clientIp(request);
+            case IP -> "ip:" + clientIpResolver.resolve(request);
             case SUBJECT -> {
                 Long buyerId = SecurityUtils.getUserIdOrNull();
                 if (buyerId != null) {
                     yield "u:" + buyerId;
                 }
                 Long merchantUserId = MerchantSecurityUtils.getMerchantUserIdOrNull();
-                yield merchantUserId != null ? "m:" + merchantUserId : "ip:" + clientIp(request);
+                yield merchantUserId != null ? "m:" + merchantUserId : "ip:" + clientIpResolver.resolve(request);
             }
         };
     }
@@ -201,20 +206,6 @@ public class RateLimitInterceptor implements AsyncHandlerInterceptor {
             return uri.substring(contextPath.length());
         }
         return uri;
-    }
-
-    /** 从代理头中取真实客户端 IP（限流按 IP 时不能取到网关 IP）。 */
-    private String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            int comma = forwarded.indexOf(',');
-            return (comma > 0 ? forwarded.substring(0, comma) : forwarded).trim();
-        }
-        String realIp = request.getHeader("X-Real-IP");
-        if (realIp != null && !realIp.isBlank()) {
-            return realIp.trim();
-        }
-        return request.getRemoteAddr();
     }
 
     /** 供诊断：当前请求命中的路由模板（可能为 null）。 */

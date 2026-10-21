@@ -1,15 +1,18 @@
 package com.geekmall.integration;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.geekmall.common.constant.RedisKeys;
+import com.geekmall.common.exception.BizException;
 import com.geekmall.common.result.ResultCode;
+import com.geekmall.modules.auth.service.SmsCodeService;
 import com.geekmall.support.AbstractIntegrationTest;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-
-import java.util.Map;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * 认证接口集成测试（MockMvc + 真实 MySQL/Redis + 真实过滤器链）。
@@ -19,22 +22,22 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class AuthApiIntegrationTest extends AbstractIntegrationTest {
 
+    @Autowired
+    private SmsCodeService smsCodeService;
+
     @Test
     @DisplayName("注册 → 登录 → 拉取个人资料：全链路打通且昵称沿用注册值")
     void shouldRegisterLoginAndFetchProfile() {
         String phone = randomPhone();
 
-        JsonNode sms = assertSuccess(post("/api/v1/auth/sms-code",
-                Map.of("phone", phone, "scene", "register"), null));
+        JsonNode sms = assertSuccess(post("/api/v1/auth/sms-code", Map.of("phone", phone, "scene", "register"), null));
         String code = sms.get("devCode").asText();
         assertThat(code).matches("\\d{6}");
 
-        assertSuccess(post("/api/v1/auth/register", Map.of(
-                "phone", phone,
-                "smsCode", code,
-                "password", "pass123456",
-                "nickname", "集成测试用户",
-                "agreed", true), null));
+        assertSuccess(post(
+                "/api/v1/auth/register",
+                Map.of("phone", phone, "smsCode", code, "password", "pass123456", "nickname", "集成测试用户", "agreed", true),
+                null));
 
         String token = loginBuyer(phone, "pass123456");
         assertThat(token).isNotBlank();
@@ -52,11 +55,10 @@ class AuthApiIntegrationTest extends AbstractIntegrationTest {
         String phone = randomPhone();
         seedSmsCode("register", phone, "123456");
 
-        JsonNode response = post("/api/v1/auth/register", Map.of(
-                "phone", phone,
-                "smsCode", "123456",
-                "password", "pass123456",
-                "agreed", true), null);
+        JsonNode response = post(
+                "/api/v1/auth/register",
+                Map.of("phone", phone, "smsCode", "123456", "password", "pass123456", "agreed", true),
+                null);
 
         assertThat(response.get("code").asInt()).isZero();
         assertThat(response.get("msg").asText()).isEqualTo("success");
@@ -67,15 +69,18 @@ class AuthApiIntegrationTest extends AbstractIntegrationTest {
     void shouldRejectDuplicatePhone() {
         String phone = randomPhone();
         seedSmsCode("register", phone, "111111");
-        assertSuccess(post("/api/v1/auth/register", Map.of(
-                "phone", phone, "smsCode", "111111", "password", "pass123456", "agreed", true), null));
+        assertSuccess(post(
+                "/api/v1/auth/register",
+                Map.of("phone", phone, "smsCode", "111111", "password", "pass123456", "agreed", true),
+                null));
 
         seedSmsCode("register", phone, "222222");
-        JsonNode response = post("/api/v1/auth/register", Map.of(
-                "phone", phone, "smsCode", "222222", "password", "pass123456", "agreed", true), null);
+        JsonNode response = post(
+                "/api/v1/auth/register",
+                Map.of("phone", phone, "smsCode", "222222", "password", "pass123456", "agreed", true),
+                null);
 
-        assertThat(response.get("code").asInt())
-                .isEqualTo(ResultCode.USER_ALREADY_EXISTS.getCode());
+        assertThat(response.get("code").asInt()).isEqualTo(ResultCode.USER_ALREADY_EXISTS.getCode());
     }
 
     @Test
@@ -84,11 +89,31 @@ class AuthApiIntegrationTest extends AbstractIntegrationTest {
         String phone = randomPhone();
         seedSmsCode("register", phone, "123456");
 
-        JsonNode response = post("/api/v1/auth/register", Map.of(
-                "phone", phone, "smsCode", "000000", "password", "pass123456", "agreed", true), null);
+        JsonNode response = post(
+                "/api/v1/auth/register",
+                Map.of("phone", phone, "smsCode", "000000", "password", "pass123456", "agreed", true),
+                null);
 
-        assertThat(response.get("code").asInt())
-                .isEqualTo(ResultCode.SMS_CODE_ERROR.getCode());
+        assertThat(response.get("code").asInt()).isEqualTo(ResultCode.SMS_CODE_ERROR.getCode());
+    }
+
+    @Test
+    @DisplayName("验证码连续输错 5 次后锁定，之后输入正确码也拒绝")
+    void smsCodeLocksAfterRepeatedFailures() {
+        String phone = randomPhone();
+        seedSmsCode("register", phone, "123456");
+
+        for (int i = 0; i < 5; i++) {
+            assertThatThrownBy(() -> smsCodeService.verify("register", phone, "000000"))
+                    .isInstanceOf(BizException.class)
+                    .extracting(e -> ((BizException) e).getCode())
+                    .isEqualTo(ResultCode.SMS_CODE_ERROR.getCode());
+        }
+        // 第 6 次即使输入正确码，也已进入锁定状态
+        assertThatThrownBy(() -> smsCodeService.verify("register", phone, "123456"))
+                .isInstanceOf(BizException.class)
+                .extracting(e -> ((BizException) e).getCode())
+                .isEqualTo(ResultCode.BIZ_ERROR.getCode());
     }
 
     @Test
@@ -96,12 +121,16 @@ class AuthApiIntegrationTest extends AbstractIntegrationTest {
     void smsCodeShouldBeSingleUse() {
         String phone = randomPhone();
         seedSmsCode("register", phone, "654321");
-        assertSuccess(post("/api/v1/auth/register", Map.of(
-                "phone", phone, "smsCode", "654321", "password", "pass123456", "agreed", true), null));
+        assertSuccess(post(
+                "/api/v1/auth/register",
+                Map.of("phone", phone, "smsCode", "654321", "password", "pass123456", "agreed", true),
+                null));
 
         String otherPhone = randomPhone();
-        JsonNode response = post("/api/v1/auth/register", Map.of(
-                "phone", otherPhone, "smsCode", "654321", "password", "pass123456", "agreed", true), null);
+        JsonNode response = post(
+                "/api/v1/auth/register",
+                Map.of("phone", otherPhone, "smsCode", "654321", "password", "pass123456", "agreed", true),
+                null);
 
         assertThat(response.get("code").asInt()).isEqualTo(ResultCode.SMS_CODE_ERROR.getCode());
     }
@@ -112,17 +141,47 @@ class AuthApiIntegrationTest extends AbstractIntegrationTest {
         String phone = randomPhone();
         seedSmsCode("register", phone, "123456");
 
-        JsonNode response = post("/api/v1/auth/register", Map.of(
-                "phone", phone, "smsCode", "123456", "password", "pass123456", "agreed", false), null);
+        JsonNode response = post(
+                "/api/v1/auth/register",
+                Map.of("phone", phone, "smsCode", "123456", "password", "pass123456", "agreed", false),
+                null);
 
         assertThat(response.get("code").asInt()).isEqualTo(ResultCode.PARAM_ERROR.getCode());
     }
 
     @Test
+    @DisplayName("密码连续错误 5 次后锁定，正确密码也暂时拒绝")
+    void loginLocksAfterRepeatedFailures() {
+        String phone = randomPhone();
+        JsonNode sms = assertSuccess(post("/api/v1/auth/sms-code", Map.of("phone", phone, "scene", "register"), null));
+        assertSuccess(post(
+                "/api/v1/auth/register",
+                Map.of(
+                        "phone",
+                        phone,
+                        "smsCode",
+                        sms.get("devCode").asText(),
+                        "password",
+                        "pass123456",
+                        "agreed",
+                        true),
+                null));
+
+        for (int i = 0; i < 5; i++) {
+            JsonNode fail = post("/api/v1/auth/login", Map.of("account", phone, "password", "wrong-password"), null);
+            assertThat(fail.get("code").asInt()).isEqualTo(ResultCode.PASSWORD_ERROR.getCode());
+        }
+
+        JsonNode locked = post("/api/v1/auth/login", Map.of("account", phone, "password", "pass123456"), null);
+        assertThat(locked.get("code").asInt()).isEqualTo(ResultCode.BIZ_ERROR.getCode());
+        assertThat(locked.get("msg").asText()).contains("次数过多");
+    }
+
+    @Test
     @DisplayName("密码错误时登录被拒绝，且不泄露账号是否存在")
     void shouldRejectWrongPassword() {
-        JsonNode response = post("/api/v1/auth/login",
-                Map.of("account", DEMO_BUYER, "password", "wrong-password"), null);
+        JsonNode response =
+                post("/api/v1/auth/login", Map.of("account", DEMO_BUYER, "password", "wrong-password"), null);
 
         assertThat(response.get("code").asInt()).isEqualTo(ResultCode.PASSWORD_ERROR.getCode());
     }
@@ -130,8 +189,7 @@ class AuthApiIntegrationTest extends AbstractIntegrationTest {
     @Test
     @DisplayName("参数校验失败（密码过短）返回 400 与具体原因")
     void shouldRejectInvalidPayload() {
-        JsonNode response = post("/api/v1/auth/login",
-                Map.of("account", DEMO_BUYER, "password", "123"), null);
+        JsonNode response = post("/api/v1/auth/login", Map.of("account", DEMO_BUYER, "password", "123"), null);
 
         assertThat(response.get("code").asInt()).isEqualTo(ResultCode.PARAM_ERROR.getCode());
         assertThat(response.get("msg").asText()).contains("密码长度");
@@ -141,12 +199,10 @@ class AuthApiIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("短信验证码登录：新手机号自动注册并签发令牌")
     void smsLoginShouldAutoRegister() {
         String phone = randomPhone();
-        JsonNode sms = assertSuccess(post("/api/v1/auth/sms-code",
-                Map.of("phone", phone, "scene", "login"), null));
+        JsonNode sms = assertSuccess(post("/api/v1/auth/sms-code", Map.of("phone", phone, "scene", "login"), null));
         String code = sms.get("devCode").asText();
 
-        JsonNode login = assertSuccess(post("/api/v1/auth/login/sms",
-                Map.of("phone", phone, "smsCode", code), null));
+        JsonNode login = assertSuccess(post("/api/v1/auth/login/sms", Map.of("phone", phone, "smsCode", code), null));
         String token = login.get("token").asText();
         assertThat(token).isNotBlank();
 
@@ -196,16 +252,13 @@ class AuthApiIntegrationTest extends AbstractIntegrationTest {
         // 注意：不能通过「连续两次登录」来构造新令牌 —— JWT 的时间戳精度为秒，
         // 同一秒内为同一用户签发的令牌是字节相同的，旧令牌不会真的失效。
         // 因此这里直接替换 Redis 中的会话令牌，等价于「在另一台设备登录」。
-        JsonNode login = assertSuccess(post("/api/v1/auth/login",
-                Map.of("account", phone, "password", DEMO_PASSWORD), null));
+        JsonNode login =
+                assertSuccess(post("/api/v1/auth/login", Map.of("account", phone, "password", DEMO_PASSWORD), null));
         long userId = login.get("user").get("id").asLong();
-        stringRedisTemplate.opsForValue()
-                .set(RedisKeys.loginToken(userId), "token-issued-on-another-device");
+        stringRedisTemplate.opsForValue().set(RedisKeys.loginToken(userId), "token-issued-on-another-device");
 
         JsonNode stale = get("/api/v1/user/profile", staleToken);
-        assertThat(stale.get("code").asInt())
-                .as("会话已被替换，旧令牌必须被判为失效")
-                .isEqualTo(ResultCode.UNAUTHORIZED.getCode());
+        assertThat(stale.get("code").asInt()).as("会话已被替换，旧令牌必须被判为失效").isEqualTo(ResultCode.UNAUTHORIZED.getCode());
 
         // 把会话恢复为新令牌，证明失效判定依据的是 Redis 中的会话值，而不是把旧令牌拉黑
         String freshToken = login.get("token").asText();
@@ -230,10 +283,13 @@ class AuthApiIntegrationTest extends AbstractIntegrationTest {
         registerAndLogin(phone);
 
         seedSmsCode("reset", phone, "888888");
-        assertSuccess(post("/api/v1/auth/password/reset", Map.of(
-                "phone", phone,
-                "smsCode", "888888",
-                "newPassword", "newpass123"), null));
+        assertSuccess(post(
+                "/api/v1/auth/password/reset",
+                Map.of(
+                        "phone", phone,
+                        "smsCode", "888888",
+                        "newPassword", "newpass123"),
+                null));
 
         assertThat(loginBuyer(phone, "newpass123")).isNotBlank();
     }

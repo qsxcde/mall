@@ -1,10 +1,14 @@
 package com.geekmall.integration;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.geekmall.common.ratelimit.LocalRateLimiter;
 import com.geekmall.common.ratelimit.RateLimitPolicies;
 import com.geekmall.common.ratelimit.RateLimitPolicy;
 import com.geekmall.common.result.ResultCode;
 import com.geekmall.support.AbstractIntegrationTest;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,11 +17,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
-
-import java.nio.charset.StandardCharsets;
-import java.util.Map;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 限流行为端到端集成测试。
@@ -87,8 +86,9 @@ class RateLimitIntegrationTest extends AbstractIntegrationTest {
         return call(MockMvcRequestBuilders.post(url), token);
     }
 
-    private MockHttpServletResponse call(org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder builder,
-                                        String token) throws Exception {
+    private MockHttpServletResponse call(
+            org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder builder, String token)
+            throws Exception {
         if (token != null) {
             builder.header("Authorization", "Bearer " + token);
         }
@@ -136,7 +136,10 @@ class RateLimitIntegrationTest extends AbstractIntegrationTest {
         MockHttpServletResponse over = probe.rejected();
         assertThat(over.getHeader("Retry-After")).as("必须告知客户端该退避多久").isNotNull();
         assertThat(Integer.parseInt(over.getHeader("Retry-After"))).isBetween(1, 10);
-        assertThat(objectMapper.readTree(over.getContentAsString(StandardCharsets.UTF_8)).get("code").asInt())
+        assertThat(objectMapper
+                        .readTree(over.getContentAsString(StandardCharsets.UTF_8))
+                        .get("code")
+                        .asInt())
                 .isEqualTo(ResultCode.TOO_MANY_REQUESTS.getCode());
     }
 
@@ -213,12 +216,12 @@ class RateLimitIntegrationTest extends AbstractIntegrationTest {
         for (int round = 0; round < 2; round++) {
             for (int i = 0; i < CONCURRENCY_ROUND; i++) {
                 MockHttpServletResponse response = mockMvc.perform(MockMvcRequestBuilders.post("/api/v1/trade/orders")
-                        .header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body)).andReturn().getResponse();
-                assertThat(limited(response))
-                        .as("参数不合法应被业务层拒绝（400），而不是被并发限流挡下")
-                        .isFalse();
+                                .header("Authorization", "Bearer " + token)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(body))
+                        .andReturn()
+                        .getResponse();
+                assertThat(limited(response)).as("参数不合法应被业务层拒绝（400），而不是被并发限流挡下").isFalse();
                 assertThat(localRateLimiter.inFlightCount(concurrencyKey))
                         .as("请求结束后并发槽位必须归还，否则第 %d 轮之后就会被永久 429", round + 1)
                         .isZero();
@@ -255,12 +258,12 @@ class RateLimitIntegrationTest extends AbstractIntegrationTest {
                 .as("分布式规则的计数必须落在 Redis 中（多实例才能全局准确）")
                 .isTrue();
         Long ttl = stringRedisTemplate.getExpire(redisKey);
-        assertThat(ttl).as("计数 key 必须有 TTL，否则会变成对该 IP 的永久封禁")
-                .isNotNull()
-                .isBetween(1L, 61L);
+        assertThat(ttl).as("计数 key 必须有 TTL，否则会变成对该 IP 的永久封禁").isNotNull().isBetween(1L, 61L);
 
         Probe probe = probeUntilLimited("/api/v1/auth/sms-code", true, policy.limit() * 2);
-        assertThat(probe.rejectedAtAll()).as("超过 %d 次/窗口后应返回 429", policy.limit()).isTrue();
+        assertThat(probe.rejectedAtAll())
+                .as("超过 %d 次/窗口后应返回 429", policy.limit())
+                .isTrue();
     }
 
     @Test
@@ -283,9 +286,7 @@ class RateLimitIntegrationTest extends AbstractIntegrationTest {
             allowed++;
         }
 
-        assertThat(allowed)
-                .as("异步分发若被重复计数，这里会远小于阈值 %d", limit)
-                .isGreaterThanOrEqualTo(limit);
+        assertThat(allowed).as("异步分发若被重复计数，这里会远小于阈值 %d", limit).isGreaterThanOrEqualTo(limit);
         assertThat(rejected).as("额度用尽后应出现 429").isTrue();
     }
 
@@ -299,9 +300,7 @@ class RateLimitIntegrationTest extends AbstractIntegrationTest {
 
         for (int i = 0; i < 20; i++) {
             MockHttpServletResponse response = rawPost("/api/v1/trade/orders", null);
-            assertThat(limited(response))
-                    .as("鉴权层已拒绝，不应再叠加限流 429")
-                    .isFalse();
+            assertThat(limited(response)).as("鉴权层已拒绝，不应再叠加限流 429").isFalse();
         }
 
         assertThat(stringRedisTemplate.hasKey(unauthenticatedKey))
@@ -314,15 +313,16 @@ class RateLimitIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("参数校验/业务失败的请求同样计入限流（防的是请求量，不是成功业务量）")
     void invalidRequestsAreAlsoCounted() throws Exception {
         int limit = limitOf("POST", "/api/v1/auth/login");
-        String body = objectMapper.writeValueAsString(
-                Map.of("account", "13800000000", "password", "wrong-pwd"));
+        String body = objectMapper.writeValueAsString(Map.of("account", randomPhone(), "password", "wrong-pwd"));
 
         int allowed = 0;
         MockHttpServletResponse rejected = null;
         for (int i = 0; i < limit * 2; i++) {
             MockHttpServletResponse response = mockMvc.perform(MockMvcRequestBuilders.post("/api/v1/auth/login")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(body)).andReturn().getResponse();
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andReturn()
+                    .getResponse();
             if (limited(response)) {
                 rejected = response;
                 break;
@@ -330,9 +330,7 @@ class RateLimitIntegrationTest extends AbstractIntegrationTest {
             allowed++;
         }
 
-        assertThat(allowed)
-                .as("业务失败（密码错误）的请求也应被计数，否则撞库可以无限尝试")
-                .isGreaterThanOrEqualTo(limit);
+        assertThat(allowed).as("业务失败（密码错误）的请求也应被计数，否则撞库可以无限尝试").isGreaterThanOrEqualTo(limit);
         assertThat(rejected).as("达到阈值后应限流").isNotNull();
     }
 }
