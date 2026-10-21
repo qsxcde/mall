@@ -27,7 +27,11 @@ import tools.jackson.databind.ObjectMapper;
  */
 public abstract class AbstractSearchIntegrationTest extends AbstractIntegrationTest {
 
-    private static final String ES_IMAGE = "docker.elastic.co/elasticsearch/elasticsearch:8.15.3";
+    /**
+     * ES 镜像版本必须与客户端大版本一致：客户端 9.x 只保证与 9.x 及更高服务端兼容
+     * （兼容模式只覆盖「旧客户端 → 新服务端」方向）。
+     */
+    private static final String ES_IMAGE = "docker.elastic.co/elasticsearch/elasticsearch:9.4.5";
 
     protected static final ElasticsearchContainer ES;
 
@@ -41,9 +45,10 @@ public abstract class AbstractSearchIntegrationTest extends AbstractIntegrationT
                 // 测试只要搜索能力，不需要 TLS 与账号体系
                 .withEnv("discovery.type", "single-node")
                 .withEnv("xpack.security.enabled", "false")
-                // 默认 1g 堆会让 CI runner 内存吃紧；测试数据量很小，256m 足够
-                .withEnv("ES_JAVA_OPTS", "-Xms256m -Xmx256m")
-                .withStartupTimeout(Duration.ofMinutes(3));
+                // ES 9 启动比 8.x 更吃内存：256m 在本机要 ~170s 才可用，接近超时上限。
+                // 512m 在 CI runner（7GB）上无压力，同时把启动超时放宽到 5 分钟避免抖动。
+                .withEnv("ES_JAVA_OPTS", "-Xms512m -Xmx512m")
+                .withStartupTimeout(Duration.ofMinutes(5));
         ES.start();
 
         Runtime.getRuntime().addShutdownHook(new Thread(ES::stop));

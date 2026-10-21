@@ -5,19 +5,21 @@ import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
-import co.elastic.clients.json.jackson.JacksonJsonpMapper;
-import co.elastic.clients.transport.rest_client.RestClientTransport;
+import co.elastic.clients.json.jackson.Jackson3JsonpMapper;
+import co.elastic.clients.transport.rest5_client.Rest5ClientTransport;
+import co.elastic.clients.transport.rest5_client.low_level.Rest5Client;
 import com.geekmall.common.result.PageResult;
 import com.geekmall.modules.product.converter.ProductConverter;
 import com.geekmall.modules.product.dto.ProductQueryDTO;
 import com.geekmall.modules.product.entity.Product;
 import com.geekmall.modules.product.mapper.ProductMapper;
 import com.geekmall.modules.product.vo.ProductCardVO;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.http.HttpHost;
-import org.elasticsearch.client.RestClient;
+import org.apache.hc.core5.http.HttpHost;
+import org.apache.hc.core5.util.Timeout;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -34,10 +36,13 @@ import org.springframework.util.StringUtils;
  * 因此流程是：ES 返回有序 id 列表 → 按 id 批量回表 → 用现有
  * {@link ProductConverter} 组装 VO。前端契约零变化。</p>
  *
- * <h3>为什么用 low-level 客户端而不是 Spring Data Elasticsearch</h3>
- * <p>Spring Data ES 对 Boot 版本与 ES 版本有严格的三方匹配约束（Boot 3.3 只能配 SDE 5.3.x /
- * ES 8.13），且 Repository 抽象会挡住 DSL 细节。这里直接构造 DSL，
- * 排序、过滤、相关度打分都能显式控制，便于与 MySQL 方案逐条对齐语义。</p>
+ * <h3>为什么用 9.x 客户端的 low-level 形态而不是 Spring Data Elasticsearch</h3>
+ * <p>Spring Data ES 对 Boot 版本与 ES 版本有严格的三方匹配约束，且 Repository 抽象会挡住
+ * DSL 细节。这里直接构造 DSL，排序、过滤、相关度打分都能显式控制，
+ * 便于与 MySQL 方案逐条对齐语义。</p>
+ *
+ * <p>客户端 9.x 用 {@code Rest5ClientTransport}（Apache HttpClient 5）；ES 官方只保证
+ * 「同大版本客户端 ↔ 同大版本或更高服务端」的兼容性，因此索引侧服务端也要求 9.x。</p>
  */
 @Slf4j
 @Service
@@ -68,24 +73,29 @@ public class ElasticProductSearchService implements ProductSearchService {
     /**
      * 构建 ES 客户端。
      *
-     * <p><b>超时必须显式设置</b>：官方 low-level 客户端的默认 socket 超时是 30s，
+     * <p><b>超时必须显式设置</b>：客户端的默认 socket 超时是 30s，
      * 与整个搜索接口的目标延迟（毫秒级）严重不匹配 —— ES 一旦变慢而不是直接拒绝，
      * 请求线程会被挂住几十秒，进而耗尽 Tomcat 线程池。这里的 2s/5s 是
      * 「宁可判定失败并降级到 MySQL，也不要拖住调用方」。</p>
+     *
+     * <p>HttpClient 5 的语义比 4.x 更细：连接超时属于 {@code ConnectionConfig}，
+     * 而「等响应」用 {@code RequestConfig.responseTimeout}（4.x 的 socketTimeout 等价物）。</p>
      */
     private static ElasticsearchClient buildClient(String uris, int connectTimeoutMs, int socketTimeoutMs) {
         List<HttpHost> hosts = new ArrayList<>();
         for (String uri : uris.split(",")) {
             String trimmed = uri.trim();
             if (!trimmed.isEmpty()) {
-                hosts.add(HttpHost.create(trimmed));
+                hosts.add(HttpHost.create(URI.create(trimmed)));
             }
         }
-        RestClient restClient = RestClient.builder(hosts.toArray(new HttpHost[0]))
-                .setRequestConfigCallback(
-                        config -> config.setConnectTimeout(connectTimeoutMs).setSocketTimeout(socketTimeoutMs))
+        Timeout connectTimeout = Timeout.ofMilliseconds(connectTimeoutMs);
+        Timeout responseTimeout = Timeout.ofMilliseconds(socketTimeoutMs);
+        Rest5Client restClient = Rest5Client.builder(hosts.toArray(new HttpHost[0]))
+                .setConnectionConfigCallback(config -> config.setConnectTimeout(connectTimeout))
+                .setRequestConfigCallback(config -> config.setResponseTimeout(responseTimeout))
                 .build();
-        return new ElasticsearchClient(new RestClientTransport(restClient, new JacksonJsonpMapper()));
+        return new ElasticsearchClient(new Rest5ClientTransport(restClient, new Jackson3JsonpMapper()));
     }
 
     @Override
