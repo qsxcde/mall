@@ -15,7 +15,7 @@
 ### 新增
 
 - **商品搜索抽象为三种可切换实现**（`mall.search.engine`）：`mysql-like`（默认）、
-  `mysql-fulltext`（MySQL FULLTEXT + ngram）、`elasticsearch`（ES 8.15，只召回 id、内容回表，
+  `mysql-fulltext`（MySQL FULLTEXT + ngram）、`elasticsearch`（ES 9.4，只召回 id、内容回表，
   故障自动降级回 LIKE）。三实现语义一致性由 `ProductSearchContractIntegrationTest` 锁定
 - 商品搜索三方案实测报告（100 万行）：`docs/benchmark/商品搜索三方案对比.md`、
   `docs/benchmark/商品搜索容量边界实测.md`
@@ -39,6 +39,9 @@
   切换到模块化 starter（webmvc / aspectj / flyway）、MyBatis-Plus 3.5.17（boot4 starter + jsqlparser）、
   springdoc 3.1.1、Testcontainers 2.0.5；缓存序列化改用 `GenericJacksonJsonRedisSerializer`，
   健康检查迁到 `org.springframework.boot.health.contributor`；JaCoCo 升至 0.8.15
+- **Elasticsearch 客户端升级到 9.4.5**：传输层从 `RestClientTransport`（HttpClient 4）
+  迁到 `Rest5ClientTransport`（HttpClient 5），JSON 映射改用 `Jackson3JsonpMapper`；
+  测试容器镜像同步为 9.4.5（客户端 9.x 只保证与同大版本服务端兼容）
 - 多实例 Compose 强制 `MALL_JWT_SECRET` / `REDIS_PASSWORD`，Redis 开启认证
 
 ### 修复

@@ -36,7 +36,7 @@
 | 可观测性 | Actuator + Micrometer/Prometheus + 结构化 JSON 日志 + TraceId 全链路（跨线程 / 跨队列） |
 | 接口文档 | springdoc-openapi（Swagger UI） |
 | 存储 | MinIO 对象存储，可切本地磁盘 |
-| 搜索 | 可切换三实现：MySQL `LIKE` / MySQL `FULLTEXT`(ngram) / Elasticsearch 8.15 |
+| 搜索 | 可切换三实现：MySQL `LIKE` / MySQL `FULLTEXT`(ngram) / Elasticsearch 9.4 |
 | 测试 | JUnit 5 + Testcontainers（真实 MySQL 8 / Redis 7 容器）+ ArchUnit（分层约束） |
 
 **前端**
