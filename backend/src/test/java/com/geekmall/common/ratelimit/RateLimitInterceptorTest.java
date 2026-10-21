@@ -1,9 +1,21 @@
 package com.geekmall.common.ratelimit;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
 import com.geekmall.common.cluster.ClusterProperties;
 import com.geekmall.security.LoginUser;
 import com.geekmall.security.MerchantLoginUser;
 import jakarta.servlet.DispatcherType;
+import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -19,19 +31,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.method.HandlerMethod;
 
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
-
 /**
  * 限流拦截器单元测试，专门覆盖「不该计数」与「该计数」的边界。
  *
@@ -44,8 +43,10 @@ class RateLimitInterceptorTest {
 
     @Mock
     private LocalRateLimiter localRateLimiter;
+
     @Mock
     private DistributedRateLimiter distributedRateLimiter;
+
     @Mock
     private RateLimitMetrics rateLimitMetrics;
 
@@ -66,8 +67,19 @@ class RateLimitInterceptorTest {
         properties = new RateLimitProperties();
         properties.setEnabled(true);
         clusterProperties = new ClusterProperties();
-        interceptor = new RateLimitInterceptor(properties, new RateLimitPolicies(),
-                localRateLimiter, distributedRateLimiter, clusterProperties, rateLimitMetrics);
+        interceptor = newInterceptor();
+    }
+
+    /** ClientIpResolver 在构造时固化可信代理配置，测试改配置后需重建拦截器。 */
+    private RateLimitInterceptor newInterceptor() {
+        return new RateLimitInterceptor(
+                properties,
+                new RateLimitPolicies(),
+                localRateLimiter,
+                distributedRateLimiter,
+                clusterProperties,
+                rateLimitMetrics,
+                new ClientIpResolver(properties));
     }
 
     @AfterEach
@@ -86,13 +98,14 @@ class RateLimitInterceptorTest {
     }
 
     private static void loginAsBuyer(long userId) {
-        SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(new LoginUser(userId, "13800000000", "买家"), null, List.of()));
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
+                        new LoginUser(userId, "13800000000", "买家"), null, List.of()));
     }
 
     private static void loginAsMerchant(long merchantUserId) {
-        SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(
+        SecurityContextHolder.getContext()
+                .setAuthentication(new UsernamePasswordAuthenticationToken(
                         new MerchantLoginUser(merchantUserId, "merchant", 1L, "店铺"), null, List.of()));
     }
 
@@ -105,8 +118,8 @@ class RateLimitInterceptorTest {
         void disabledBySwitch() throws Exception {
             properties.setEnabled(false);
 
-            boolean result = interceptor.preHandle(request("GET", "/api/v1/products"), new MockHttpServletResponse(),
-                    handlerMethod());
+            boolean result = interceptor.preHandle(
+                    request("GET", "/api/v1/products"), new MockHttpServletResponse(), handlerMethod());
 
             assertThat(result).isTrue();
             verifyNoInteractions(localRateLimiter, distributedRateLimiter);
@@ -130,23 +143,29 @@ class RateLimitInterceptorTest {
             MockHttpServletRequest request = request("GET", "/error");
             request.setDispatcherType(DispatcherType.ERROR);
 
-            assertThat(interceptor.preHandle(request, new MockHttpServletResponse(), handlerMethod())).isTrue();
+            assertThat(interceptor.preHandle(request, new MockHttpServletResponse(), handlerMethod()))
+                    .isTrue();
             verifyNoInteractions(localRateLimiter, distributedRateLimiter);
         }
 
         @Test
         @DisplayName("跨域预检 OPTIONS 不计数（浏览器自动发起，与用户行为无关）")
         void optionsIsNotCounted() throws Exception {
-            assertThat(interceptor.preHandle(request("OPTIONS", "/api/v1/products"),
-                    new MockHttpServletResponse(), handlerMethod())).isTrue();
+            assertThat(interceptor.preHandle(
+                            request("OPTIONS", "/api/v1/products"), new MockHttpServletResponse(), handlerMethod()))
+                    .isTrue();
             verifyNoInteractions(localRateLimiter, distributedRateLimiter);
         }
 
         @Test
         @DisplayName("健康检查/文档/静态资源豁免（否则监控抓取频率一高就被判故障）")
         void exemptPathsAreNotCounted() throws Exception {
-            for (String path : List.of("/actuator/health", "/v3/api-docs", "/swagger-ui/index.html",
-                    "/uploads/2026/10/07/a.png", "/error")) {
+            for (String path : List.of(
+                    "/actuator/health",
+                    "/v3/api-docs",
+                    "/swagger-ui/index.html",
+                    "/uploads/2026/10/07/a.png",
+                    "/error")) {
                 MockHttpServletResponse response = new MockHttpServletResponse();
                 assertThat(interceptor.preHandle(request("GET", path), response, handlerMethod()))
                         .as("%s 应放行", path)
@@ -158,8 +177,8 @@ class RateLimitInterceptorTest {
         @Test
         @DisplayName("非控制器处理器（静态资源等）放行，不参与限流")
         void nonHandlerMethodIsNotCounted() throws Exception {
-            boolean result = interceptor.preHandle(request("GET", "/api/v1/products"),
-                    new MockHttpServletResponse(), new Object());
+            boolean result = interceptor.preHandle(
+                    request("GET", "/api/v1/products"), new MockHttpServletResponse(), new Object());
 
             assertThat(result).isTrue();
             verifyNoInteractions(localRateLimiter, distributedRateLimiter);
@@ -202,11 +221,10 @@ class RateLimitInterceptorTest {
             when(distributedRateLimiter.tryAcquire(anyString(), anyInt(), anyInt(), any()))
                     .thenReturn(RateLimitResult.allow(10, 9));
 
-            interceptor.preHandle(request("POST", "/api/v1/auth/login"), new MockHttpServletResponse(),
-                    handlerMethod());
+            interceptor.preHandle(
+                    request("POST", "/api/v1/auth/login"), new MockHttpServletResponse(), handlerMethod());
 
-            verify(distributedRateLimiter).tryAcquire(anyString(), eq(10), eq(60),
-                    eq(RateLimitFallback.FAIL_CLOSED));
+            verify(distributedRateLimiter).tryAcquire(anyString(), eq(10), eq(60), eq(RateLimitFallback.FAIL_CLOSED));
         }
 
         @Test
@@ -215,11 +233,12 @@ class RateLimitInterceptorTest {
             when(localRateLimiter.tryAcquire(anyString(), anyInt(), anyInt()))
                     .thenReturn(RateLimitResult.reject(200, 7));
 
-            assertThatThrownBy(() -> interceptor.preHandle(request("GET", "/api/v1/products"),
-                    new MockHttpServletResponse(), handlerMethod()))
+            assertThatThrownBy(() -> interceptor.preHandle(
+                            request("GET", "/api/v1/products"), new MockHttpServletResponse(), handlerMethod()))
                     .isInstanceOf(RateLimitException.class)
                     .hasMessageContaining("系统繁忙")
-                    .satisfies(e -> assertThat(((RateLimitException) e).getRetryAfterSeconds()).isEqualTo(7));
+                    .satisfies(e -> assertThat(((RateLimitException) e).getRetryAfterSeconds())
+                            .isEqualTo(7));
 
             // 拒绝必须计入指标（reason=rate）：否则看板与告警看不到限流真的在生效
             verify(rateLimitMetrics).recordRejected(any(), eq(RateLimitMetrics.REASON_RATE));
@@ -234,8 +253,7 @@ class RateLimitInterceptorTest {
         @DisplayName("SUBJECT 维度优先用买家 ID 分组，同一出口 IP 下的不同用户互不影响")
         void subjectUsesBuyerId() throws Exception {
             loginAsBuyer(7L);
-            when(localRateLimiter.tryAcquire(anyString(), anyInt(), anyInt()))
-                    .thenReturn(RateLimitResult.allow(10, 9));
+            when(localRateLimiter.tryAcquire(anyString(), anyInt(), anyInt())).thenReturn(RateLimitResult.allow(10, 9));
 
             interceptor.preHandle(request("GET", "/api/v1/orders"), new MockHttpServletResponse(), handlerMethod());
 
@@ -249,8 +267,8 @@ class RateLimitInterceptorTest {
             when(localRateLimiter.tryAcquire(anyString(), anyInt(), anyInt()))
                     .thenReturn(RateLimitResult.allow(60, 59));
 
-            interceptor.preHandle(request("GET", "/api/v1/merchant/overview"), new MockHttpServletResponse(),
-                    handlerMethod());
+            interceptor.preHandle(
+                    request("GET", "/api/v1/merchant/overview"), new MockHttpServletResponse(), handlerMethod());
 
             assertThat(capturedKey()).isEqualTo("mall:rate:merchant-read:m:3");
         }
@@ -258,8 +276,7 @@ class RateLimitInterceptorTest {
         @Test
         @DisplayName("SUBJECT 维度在完全匿名时回退到 IP，保证匿名流量同样被约束")
         void subjectFallsBackToIp() throws Exception {
-            when(localRateLimiter.tryAcquire(anyString(), anyInt(), anyInt()))
-                    .thenReturn(RateLimitResult.allow(10, 9));
+            when(localRateLimiter.tryAcquire(anyString(), anyInt(), anyInt())).thenReturn(RateLimitResult.allow(10, 9));
 
             interceptor.preHandle(request("GET", "/api/v1/orders"), new MockHttpServletResponse(), handlerMethod());
 
@@ -267,8 +284,11 @@ class RateLimitInterceptorTest {
         }
 
         @Test
-        @DisplayName("IP 维度取代理头里的首个地址，而不是网关地址")
+        @DisplayName("IP 维度取可信代理链中的真实客户端，而不是网关地址")
         void ipDimensionUsesForwardedHeader() throws Exception {
+            // 只有来源命中可信代理时才会解析转发头；代理链最右是可信网关
+            properties.setTrustedProxies(List.of("127.0.0.1", "10.0.0.0/24"));
+            interceptor = newInterceptor();
             when(localRateLimiter.tryAcquire(anyString(), anyInt(), anyInt()))
                     .thenReturn(RateLimitResult.allow(60, 59));
             MockHttpServletRequest request = request("GET", "/api/v1/cms/about");
@@ -277,6 +297,19 @@ class RateLimitInterceptorTest {
             interceptor.preHandle(request, new MockHttpServletResponse(), handlerMethod());
 
             assertThat(capturedKey()).isEqualTo("mall:rate:content-read:ip:203.0.113.9");
+        }
+
+        @Test
+        @DisplayName("无可信代理配置时忽略伪造的 X-Forwarded-For")
+        void spoofedForwardedHeaderIsIgnoredWithoutTrustedProxy() throws Exception {
+            when(localRateLimiter.tryAcquire(anyString(), anyInt(), anyInt()))
+                    .thenReturn(RateLimitResult.allow(60, 59));
+            MockHttpServletRequest request = request("GET", "/api/v1/cms/about");
+            request.addHeader("X-Forwarded-For", "203.0.113.9");
+
+            interceptor.preHandle(request, new MockHttpServletResponse(), handlerMethod());
+
+            assertThat(capturedKey()).isEqualTo("mall:rate:content-read:ip:127.0.0.1");
         }
 
         private String capturedKey() {
@@ -293,12 +326,11 @@ class RateLimitInterceptorTest {
         @Test
         @DisplayName("并发已满时拒绝，避免慢请求把线程与连接池耗光")
         void rejectsWhenConcurrencyFull() throws Exception {
-            when(localRateLimiter.tryAcquire(anyString(), anyInt(), anyInt()))
-                    .thenReturn(RateLimitResult.allow(5, 4));
+            when(localRateLimiter.tryAcquire(anyString(), anyInt(), anyInt())).thenReturn(RateLimitResult.allow(5, 4));
             when(localRateLimiter.tryAcquireConcurrent(anyString(), eq(10))).thenReturn(false);
 
-            assertThatThrownBy(() -> interceptor.preHandle(request("POST", "/api/v1/trade/orders"),
-                    new MockHttpServletResponse(), handlerMethod()))
+            assertThatThrownBy(() -> interceptor.preHandle(
+                            request("POST", "/api/v1/trade/orders"), new MockHttpServletResponse(), handlerMethod()))
                     .isInstanceOf(RateLimitException.class)
                     .hasMessageContaining("请求过多");
 
@@ -310,8 +342,7 @@ class RateLimitInterceptorTest {
         @DisplayName("同步请求结束时释放槽位，且重复调用不会重复释放")
         void releasesOnCompletionExactlyOnce() throws Exception {
             MockHttpServletRequest request = request("POST", "/api/v1/trade/orders");
-            when(localRateLimiter.tryAcquire(anyString(), anyInt(), anyInt()))
-                    .thenReturn(RateLimitResult.allow(5, 4));
+            when(localRateLimiter.tryAcquire(anyString(), anyInt(), anyInt())).thenReturn(RateLimitResult.allow(5, 4));
             when(localRateLimiter.tryAcquireConcurrent(anyString(), eq(10))).thenReturn(true);
 
             interceptor.preHandle(request, new MockHttpServletResponse(), handlerMethod());
@@ -326,8 +357,7 @@ class RateLimitInterceptorTest {
         @DisplayName("异步请求走 afterConcurrentHandlingStarted 释放，否则槽位泄漏会把接口永久限死")
         void releasesOnAsyncStart() throws Exception {
             MockHttpServletRequest request = request("POST", "/api/v1/trade/orders");
-            when(localRateLimiter.tryAcquire(anyString(), anyInt(), anyInt()))
-                    .thenReturn(RateLimitResult.allow(5, 4));
+            when(localRateLimiter.tryAcquire(anyString(), anyInt(), anyInt())).thenReturn(RateLimitResult.allow(5, 4));
             when(localRateLimiter.tryAcquireConcurrent(anyString(), eq(10))).thenReturn(true);
 
             interceptor.preHandle(request, new MockHttpServletResponse(), handlerMethod());
@@ -386,8 +416,8 @@ class RateLimitInterceptorTest {
             when(distributedRateLimiter.tryAcquire(anyString(), anyInt(), anyInt(), any()))
                     .thenReturn(RateLimitResult.allow(10, 9));
 
-            interceptor.preHandle(request("POST", "/api/v1/auth/login"), new MockHttpServletResponse(),
-                    handlerMethod());
+            interceptor.preHandle(
+                    request("POST", "/api/v1/auth/login"), new MockHttpServletResponse(), handlerMethod());
 
             verify(distributedRateLimiter).tryAcquire(anyString(), eq(10), eq(60), any());
         }

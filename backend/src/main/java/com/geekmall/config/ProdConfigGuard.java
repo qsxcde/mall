@@ -76,6 +76,10 @@ public class ProdConfigGuard {
     @Value("${mall.payment.allow-local-in-prod:false}")
     private boolean allowLocalPaymentInProd;
 
+    /** 生产允许的跨域来源；出现通配符即视为配置错误。 */
+    @Value("${mall.cors.allowed-origins:}")
+    private String corsAllowedOrigins;
+
     public ProdConfigGuard(Environment environment) {
         this.environment = environment;
     }
@@ -118,7 +122,12 @@ public class ProdConfigGuard {
             violations.append("\n  · mall.payment.channel=local：生产环境禁止本地模拟支付渠道"
                     + "（请配置 MALL_PAYMENT_CHANNEL=alipay；仅本地多实例验证才可设 MALL_ALLOW_LOCAL_PAYMENT=true）");
         }
-        if (!apiDocsEnabled) {
+        if (corsAllowedOrigins != null && corsAllowedOrigins.contains("*")) {
+            violations.append("\n  · mall.cors.allowed-origins 含通配符 *：生产必须配置具体域名");
+        }
+        if (apiDocsEnabled) {
+            violations.append("\n  · springdoc.api-docs.enabled=true：生产会暴露 Swagger/OpenAPI 接口文档");
+        } else {
             // 不是错误，但值得提示：关掉更安全，只是需要知道自己在关什么
             log.info("[配置自检] 生产已关闭 Swagger（springdoc.api-docs.enabled=false），接口文档不再对外暴露");
         }

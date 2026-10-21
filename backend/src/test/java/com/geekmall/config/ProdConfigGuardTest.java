@@ -42,7 +42,9 @@ class ProdConfigGuardTest {
         ReflectionTestUtils.setField(guard, "mockEnabled", mock);
         ReflectionTestUtils.setField(guard, "smsExposeCode", exposeCode);
         ReflectionTestUtils.setField(guard, "rateLimitEnabled", rateLimit);
-        ReflectionTestUtils.setField(guard, "apiDocsEnabled", true);
+        // prod 默认关闭 Swagger，并配置具体跨域来源
+        ReflectionTestUtils.setField(guard, "apiDocsEnabled", false);
+        ReflectionTestUtils.setField(guard, "corsAllowedOrigins", "https://mall.example.com");
         // 默认视为「生产已切到真实支付渠道」；需要验证本地渠道拦截时再单独覆盖。
         ReflectionTestUtils.setField(guard, "paymentChannel", "alipay");
         ReflectionTestUtils.setField(guard, "allowLocalPaymentInProd", false);
@@ -130,6 +132,33 @@ class ProdConfigGuardTest {
             ReflectionTestUtils.setField(guard, "allowLocalPaymentInProd", true);
 
             assertThatCode(guard::validate).doesNotThrowAnyException();
+        }
+    }
+
+    @Nested
+    @DisplayName("接口文档与跨域")
+    class ApiDocsAndCors {
+
+        @Test
+        @DisplayName("prod 开启 Swagger → 拒绝启动")
+        void apiDocsEnabledIsRejected() {
+            ProdConfigGuard guard = compliant();
+            ReflectionTestUtils.setField(guard, "apiDocsEnabled", true);
+
+            assertThatThrownBy(guard::validate)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("Swagger");
+        }
+
+        @Test
+        @DisplayName("prod 跨域配置含通配符 → 拒绝启动")
+        void wildcardCorsIsRejected() {
+            ProdConfigGuard guard = compliant();
+            ReflectionTestUtils.setField(guard, "corsAllowedOrigins", "*");
+
+            assertThatThrownBy(guard::validate)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("通配符");
         }
     }
 

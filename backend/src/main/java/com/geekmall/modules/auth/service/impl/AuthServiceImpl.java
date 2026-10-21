@@ -17,6 +17,7 @@ import com.geekmall.modules.user.entity.SysUser;
 import com.geekmall.modules.user.service.UserService;
 import com.geekmall.security.LoginSessionBroadcaster;
 import com.geekmall.security.SecurityUtils;
+import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
@@ -39,8 +40,13 @@ public class AuthServiceImpl implements AuthService {
     /** 验证码场景，与前端调用一致 */
     public static final String SCENE_LOGIN = "login";
 
-    public static final String SCENE_REGISTER = "register";
+    private static final String SCENE_REGISTER = "register";
     public static final String SCENE_RESET = "reset";
+
+    /** 连续登录失败上限与锁定时长。 */
+    private static final int MAX_LOGIN_FAILURES = 5;
+
+    private static final Duration LOGIN_LOCK_TTL = Duration.ofMinutes(15);
 
     private final UserService userService;
     private final PasswordEncoder passwordEncoder;
@@ -55,10 +61,16 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public LoginVO login(LoginDTO dto) {
+        String failKey = RedisKeys.loginFail(dto.getAccount());
+        if (loginLocked(failKey)) {
+            throw new BizException(ResultCode.BIZ_ERROR, "账号或密码错误次数过多，请 15 分钟后再试");
+        }
         SysUser user = findUserByAccount(dto.getAccount());
         if (user == null || !passwordEncoder.matches(dto.getPassword(), user.getPassword())) {
+            recordLoginFailure(failKey);
             throw BizException.of(ResultCode.PASSWORD_ERROR);
         }
+        redisTemplate.delete(failKey);
         return issueToken(user);
     }
 
@@ -124,6 +136,26 @@ public class AuthServiceImpl implements AuthService {
     }
 
     /* ------------------------------ 私有方法 ------------------------------ */
+
+    private boolean loginLocked(String failKey) {
+        String value = redisTemplate.opsForValue().get(failKey);
+        if (value == null) {
+            return false;
+        }
+        try {
+            return Long.parseLong(value) >= MAX_LOGIN_FAILURES;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    private void recordLoginFailure(String failKey) {
+        Long count = redisTemplate.opsForValue().increment(failKey);
+        if (count != null && count == 1L) {
+            // 首次失败设置窗口；窗口内累计到上限即锁定，到期自动解锁
+            redisTemplate.expire(failKey, LOGIN_LOCK_TTL);
+        }
+    }
 
     private LoginVO issueToken(SysUser user) {
         if (user.getStatus() != null && user.getStatus() == 0) {
