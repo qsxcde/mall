@@ -166,8 +166,9 @@ public class AuthServiceImpl implements AuthService {
         redisTemplate
                 .opsForValue()
                 .set(RedisKeys.loginToken(user.getId()), token, jwtUtil.getExpireSeconds(), TimeUnit.SECONDS);
-        // P1-6：新会话已覆盖旧会话（单点登录语义），广播让各实例立即丢弃旧令牌的本地缓存
-        sessionBroadcaster.invalidate(user.getId());
+        // P1-6：新会话已覆盖旧会话（单点登录语义），只广播剔除旧令牌的本地缓存；
+        // 不能按 userId 无条件失效 —— 广播异步送达时可能把刚写入的新令牌缓存一起清掉
+        sessionBroadcaster.invalidatePrevious(user.getId(), token);
         return new LoginVO(token, "Bearer", jwtUtil.getExpireSeconds(), UserConverter.toProfile(user));
     }
 

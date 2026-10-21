@@ -2,11 +2,10 @@ package com.geekmall.security;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
-
 import java.time.Duration;
 import java.util.function.Function;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
  * 登录令牌的本地短缓存（带跨实例失效能力）。
@@ -44,8 +43,14 @@ public class LoginTokenLocalCache {
     private final Cache<Long, String> tokenByUser;
 
     public LoginTokenLocalCache() {
-        this.byToken = Caffeine.newBuilder().maximumSize(MAX_SIZE).expireAfterWrite(TTL).build();
-        this.tokenByUser = Caffeine.newBuilder().maximumSize(MAX_SIZE).expireAfterWrite(TTL).build();
+        this.byToken = Caffeine.newBuilder()
+                .maximumSize(MAX_SIZE)
+                .expireAfterWrite(TTL)
+                .build();
+        this.tokenByUser = Caffeine.newBuilder()
+                .maximumSize(MAX_SIZE)
+                .expireAfterWrite(TTL)
+                .build();
     }
 
     /**
@@ -83,6 +88,29 @@ public class LoginTokenLocalCache {
         }
         tokenByUser.invalidate(userId);
         log.debug("已失效本地登录令牌缓存：userId={}", userId);
+    }
+
+    /**
+     * 失效「该用户除 {@code currentToken} 之外」的令牌缓存。
+     *
+     * <p>用于登录成功后的顶下线广播：新会话覆盖旧会话，需要清掉其它实例上旧令牌的缓存，
+     * 但<b>不能连新令牌自己一起清掉</b>。广播是异步的，可能在新令牌已经被本实例校验并写入
+     * 缓存之后才送达 —— 若按 userId 无条件失效，刚建立的缓存会被自己的登录广播打掉，
+     * 本地缓存白失效一次（表现为「登录后紧接着的请求仍要回源 Redis」）。</p>
+     *
+     * <p>同时把反向索引指向新令牌：Redis 会话是「单用户单令牌」语义，这个索引始终代表
+     * 该用户最近被认可的令牌，后续 {@link #invalidate} 才能清对条目。</p>
+     */
+    public void invalidatePrevious(Long userId, String currentToken) {
+        if (userId == null || currentToken == null) {
+            return;
+        }
+        String cached = tokenByUser.getIfPresent(userId);
+        if (cached != null && !cached.equals(currentToken)) {
+            byToken.invalidate(cached);
+            log.debug("已失效被顶下线的旧令牌缓存：userId={}", userId);
+        }
+        tokenByUser.put(userId, currentToken);
     }
 
     /** 当前缓存的令牌条目数（诊断与测试用）。 */

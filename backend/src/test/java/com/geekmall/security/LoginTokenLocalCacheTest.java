@@ -1,12 +1,11 @@
 package com.geekmall.security;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-
-import java.util.concurrent.atomic.AtomicInteger;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * 登录令牌本地缓存单元测试（P1-2 缓存收益 / P1-6 跨实例失效）。
@@ -56,13 +55,15 @@ class LoginTokenLocalCacheTest {
         AtomicInteger loads = new AtomicInteger();
 
         assertThat(cache.get("token-X", t -> {
-            loads.incrementAndGet();
-            return null;
-        })).isNull();
+                    loads.incrementAndGet();
+                    return null;
+                }))
+                .isNull();
         assertThat(cache.get("token-X", t -> {
-            loads.incrementAndGet();
-            return null;
-        })).isNull();
+                    loads.incrementAndGet();
+                    return null;
+                }))
+                .isNull();
 
         assertThat(loads.get()).isEqualTo(2);
     }
@@ -111,6 +112,60 @@ class LoginTokenLocalCacheTest {
         cache.get("token-A", t -> user(1L));
 
         cache.invalidate(null);
+
+        assertThat(cache.get("token-A", t -> user(1L))).isNotNull();
+    }
+
+    @Test
+    @DisplayName("顶下线只剔除旧令牌，新令牌缓存不被自己登录时的广播误清")
+    void invalidatePreviousShouldKeepCurrentToken() {
+        cache.get("old-token", t -> user(1L));
+
+        // 模拟新令牌已写入本地缓存后，登录时的广播才异步送达
+        cache.get("new-token", t -> user(1L));
+        cache.invalidatePrevious(1L, "new-token");
+
+        AtomicInteger loads = new AtomicInteger();
+        assertThat(cache.get("new-token", t -> {
+                    loads.incrementAndGet();
+                    return user(1L);
+                }))
+                .isNotNull();
+        assertThat(loads.get()).as("当前令牌必须仍命中缓存").isZero();
+    }
+
+    @Test
+    @DisplayName("顶下线广播到达较晚时，仍会剔除旧令牌缓存")
+    void invalidatePreviousShouldEvictStaleToken() {
+        cache.get("old-token", t -> user(1L));
+
+        cache.invalidatePrevious(1L, "new-token");
+
+        AtomicInteger loads = new AtomicInteger();
+        cache.get("old-token", t -> {
+            loads.incrementAndGet();
+            return null; // Redis 中已是新令牌，旧令牌校验失败
+        });
+        assertThat(loads.get()).as("旧令牌应被剔除，需回源校验").isEqualTo(1);
+
+        // 后续按 userId 失效时，反向索引指向的必须是最新令牌
+        cache.get("new-token", t -> user(1L));
+        cache.invalidate(1L);
+        AtomicInteger reloads = new AtomicInteger();
+        cache.get("new-token", t -> {
+            reloads.incrementAndGet();
+            return null;
+        });
+        assertThat(reloads.get()).as("按 userId 失效应清掉反向索引中的最新令牌").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("顶下线参数为 null 时安全无副作用")
+    void invalidatePreviousWithNullTokenIsNoop() {
+        cache.get("token-A", t -> user(1L));
+
+        cache.invalidatePrevious(1L, null);
+        cache.invalidatePrevious(null, "token-A");
 
         assertThat(cache.get("token-A", t -> user(1L))).isNotNull();
     }
