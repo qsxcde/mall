@@ -13,6 +13,12 @@ public final class RedisKeys {
     /** 登录令牌（单点会话）：mall:login:token:{userId} */
     public static final String LOGIN_TOKEN = "mall:login:token:";
 
+    /** 买家登录失败计数：mall:login:fail:{account} */
+    public static final String LOGIN_FAIL = "mall:login:fail:";
+
+    /** 支付单退款串行锁：mall:pay:refund:lock:{tradeNo} */
+    public static final String PAY_REFUND_LOCK = "mall:pay:refund:lock:";
+
     /** 商家端登录令牌（与买家端隔离）：mall:merchant:token:{merchantUserId} */
     public static final String MERCHANT_LOGIN_TOKEN = "mall:merchant:token:";
 
@@ -87,6 +93,14 @@ public final class RedisKeys {
 
     public static String loginToken(Long userId) {
         return LOGIN_TOKEN + userId;
+    }
+
+    public static String loginFail(String account) {
+        return LOGIN_FAIL + account;
+    }
+
+    public static String payRefundLock(String tradeNo) {
+        return PAY_REFUND_LOCK + tradeNo;
     }
 
     public static String merchantLoginToken(Long merchantUserId) {
