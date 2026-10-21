@@ -3,7 +3,6 @@ package com.geekmall.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.geekmall.common.constant.RedisKeys;
 import com.geekmall.common.exception.BizException;
 import com.geekmall.common.result.ResultCode;
@@ -13,6 +12,7 @@ import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import tools.jackson.databind.JsonNode;
 
 /**
  * 认证接口集成测试（MockMvc + 真实 MySQL/Redis + 真实过滤器链）。

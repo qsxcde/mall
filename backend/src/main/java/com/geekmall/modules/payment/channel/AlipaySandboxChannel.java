@@ -1,7 +1,5 @@
 package com.geekmall.modules.payment.channel;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.geekmall.common.exception.BizException;
 import com.geekmall.common.resilience.ResilienceGuard;
 import com.geekmall.common.result.ResultCode;
@@ -25,6 +23,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 支付宝沙箱渠道（当面付）。

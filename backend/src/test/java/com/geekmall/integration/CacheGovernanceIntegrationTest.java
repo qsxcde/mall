@@ -1,6 +1,8 @@
 package com.geekmall.integration;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assumptions.assumeThat;
+
 import com.geekmall.common.cache.CacheNames;
 import com.geekmall.common.cache.RedisBloomFilter;
 import com.geekmall.common.cache.ResilientRedisCache;
@@ -10,12 +12,6 @@ import com.geekmall.modules.product.mapper.ProductMapper;
 import com.geekmall.support.AbstractIntegrationTest;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.cache.Cache;
-import org.springframework.cache.CacheManager;
-
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -28,9 +24,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assumptions.assumeThat;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
+import tools.jackson.databind.JsonNode;
 
 /**
  * 缓存三防集成测试：真实 Redis + 真实 MySQL + 真实 Spring 缓存切面。
@@ -95,7 +94,8 @@ class CacheGovernanceIntegrationTest extends AbstractIntegrationTest {
     }
 
     private double rebuildCount() {
-        Counter counter = meterRegistry.find("mall_cache_rebuild_total")
+        Counter counter = meterRegistry
+                .find("mall_cache_rebuild_total")
                 .tag("cache", CacheNames.PRODUCT_DETAIL)
                 .counter();
         return counter == null ? 0d : counter.count();
@@ -261,9 +261,7 @@ class CacheGovernanceIntegrationTest extends AbstractIntegrationTest {
             observedTtls.add(writeAndReadTtl(product.getId()));
         }
 
-        assertThat(observedTtls)
-                .as("多次写入若得到完全相同的 TTL，说明抖动没生效，key 会在同一秒集中失效")
-                .hasSizeGreaterThan(1);
+        assertThat(observedTtls).as("多次写入若得到完全相同的 TTL，说明抖动没生效，key 会在同一秒集中失效").hasSizeGreaterThan(1);
         assertThat(observedTtls)
                 .as("抖动幅度应受 mall.cache.jitter-ratio 约束（productDetail 基准 180s ± 20%）")
                 .allSatisfy(ttl -> assertThat(ttl).isBetween(140L, 220L));

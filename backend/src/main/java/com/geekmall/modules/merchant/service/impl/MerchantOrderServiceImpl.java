@@ -2,7 +2,6 @@ package com.geekmall.modules.merchant.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.geekmall.common.enums.OrderStatus;
 import com.geekmall.common.exception.BizException;
 import com.geekmall.common.result.ResultCode;
@@ -41,6 +40,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 商家端订单管理服务实现。

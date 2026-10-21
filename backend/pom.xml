@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.3.13</version>
+        <version>4.1.1</version>
         <relativePath/>
     </parent>
 
@@ -19,33 +19,28 @@
 
     <properties>
         <java.version>21</java.version>
-        <mybatis-plus.version>3.5.7</mybatis-plus.version>
+        <mybatis-plus.version>3.5.17</mybatis-plus.version>
         <jjwt.version>0.12.6</jjwt.version>
-        <springdoc.version>2.6.0</springdoc.version>
+        <springdoc.version>3.1.1</springdoc.version>
         <shedlock.version>7.10.1</shedlock.version>
-        <!-- Elasticsearch Java 客户端：8.15.x 与 ES 8.x 服务端兼容 -->
+        <!-- Elasticsearch Java 客户端：8.15.x 与 ES 8.x 服务端兼容。
+             刻意保持 8.15.3，不用 Boot 4 BOM 管理的 9.x：客户端 9 要求从
+             org.elasticsearch.client.RestClient 迁到 Rest5Client（Apache HttpClient 5），
+             属于独立的 ES 大版本升级，与 Boot 升级不混做。 -->
         <elasticsearch-java.version>8.15.3</elasticsearch-java.version>
         <archunit.version>1.4.0</archunit.version>
         <!--
-          结构化日志（JSON）。8.0 对应 logback 1.5.x，与 Spring Boot 3.3.x 自带的
+          结构化日志（JSON）。8.0 对应 logback 1.5.x，与 Spring Boot 4.1.x 自带的
           logback 版本对齐；用 7.x 会在 logback 1.5 上引入兼容性风险。
         -->
         <logstash-encoder.version>8.0</logstash-encoder.version>
-        <!--
-          覆盖 Spring Boot 3.3.x 默认的 Testcontainers 1.19.8。
-          1.19.8 携带的 docker-java 使用过旧的 Docker API 版本（1.32），
-          而较新的 Docker Engine / Docker Desktop 已不再支持 < 1.44 的接口，
-          表现为「Could not find a valid Docker environment ... Status 400」，
-          集成测试完全无法启动。1.21.4 会做 API 版本协商，兼容较新 daemon。
-        -->
-        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <dependencies>
         <!-- Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -53,7 +48,7 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-aop</artifactId>
+            <artifactId>spring-boot-starter-aspectj</artifactId>
         </dependency>
 
         <!-- 安全：Spring Security + JWT -->
@@ -82,7 +77,12 @@
         <!-- 持久层：MyBatis-Plus + MySQL + Flyway -->
         <dependency>
             <groupId>com.baomidou</groupId>
-            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+            <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
+            <version>${mybatis-plus.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
             <version>${mybatis-plus.version}</version>
         </dependency>
         <dependency>
@@ -91,8 +91,8 @@
             <scope>runtime</scope>
         </dependency>
         <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-flyway</artifactId>
         </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>
@@ -194,20 +194,25 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>junit-jupiter</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>mysql</artifactId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-mysql</artifactId>
             <scope>test</scope>
         </dependency>
         <!-- 搜索契约测试需要真实 ES：三方案（LIKE / FULLTEXT / ES）必须能跑同一组断言。
              只有继承 AbstractSearchIntegrationTest 的测试才会启动该容器。 -->
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>elasticsearch</artifactId>
+            <artifactId>testcontainers-elasticsearch</artifactId>
             <scope>test</scope>
         </dependency>
         <!-- 商品搜索：Elasticsearch Java 客户端。
@@ -217,10 +222,6 @@
             <groupId>co.elastic.clients</groupId>
             <artifactId>elasticsearch-java</artifactId>
             <version>${elasticsearch-java.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
         </dependency>
     </dependencies>
 
@@ -289,7 +290,7 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.12</version>
+                <version>0.8.15</version>
                 <!--
                     规则放在插件级而非 execution 级：execution 级配置只有绑定的 phase
                     才会加载，CI 里单独执行 `mvn jacoco:check` 时会失效（静默跳过校验）。

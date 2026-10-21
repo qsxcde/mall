@@ -3,16 +3,14 @@ package com.geekmall.support;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.geekmall.common.constant.RedisKeys;
 import com.geekmall.common.constant.SecurityConstants;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -21,8 +19,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.MySQLContainer;
+import org.testcontainers.mysql.MySQLContainer;
 import org.testcontainers.utility.DockerImageName;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 集成测试基类：真实 MySQL + Redis（Testcontainers），真实 Flyway 迁移，真实过滤器链。
@@ -47,11 +47,11 @@ import org.testcontainers.utility.DockerImageName;
 @ActiveProfiles("test")
 public abstract class AbstractIntegrationTest {
 
-    protected static final MySQLContainer<?> MYSQL;
+    protected static final MySQLContainer MYSQL;
     protected static final GenericContainer<?> REDIS;
 
     static {
-        MYSQL = new MySQLContainer<>(DockerImageName.parse("mysql:8.0"))
+        MYSQL = new MySQLContainer(DockerImageName.parse("mysql:8.0"))
                 .withDatabaseName("geek_mall")
                 .withUsername("mall")
                 .withPassword("mall123456")

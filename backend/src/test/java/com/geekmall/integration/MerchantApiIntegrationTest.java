@@ -1,20 +1,19 @@
 package com.geekmall.integration;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.geekmall.common.result.ResultCode;
 import com.geekmall.modules.product.entity.Product;
 import com.geekmall.modules.product.mapper.ProductMapper;
 import com.geekmall.support.AbstractIntegrationTest;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
-
-import java.util.List;
-import java.util.Map;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import tools.jackson.databind.JsonNode;
 
 /**
  * 商家端接口集成测试。
@@ -50,34 +49,35 @@ class MerchantApiIntegrationTest extends AbstractIntegrationTest {
     @Test
     @DisplayName("商家登录失败：密码错误返回业务错误码")
     void shouldRejectWrongMerchantPassword() {
-        JsonNode response = post("/api/v1/merchant/auth/login",
-                Map.of("account", DEMO_MERCHANT, "password", "wrong"), null);
+        JsonNode response =
+                post("/api/v1/merchant/auth/login", Map.of("account", DEMO_MERCHANT, "password", "wrong"), null);
 
         assertThat(response.get("code").asInt()).isNotZero();
     }
 
     @ParameterizedTest(name = "商家端读接口 {0} 可用")
-    @ValueSource(strings = {
-            "/api/v1/merchant/nav/badges",
-            "/api/v1/merchant/overview",
-            "/api/v1/merchant/analytics",
-            "/api/v1/merchant/analytics/daily?days=7",
-            "/api/v1/merchant/product/stock-alerts",
-            "/api/v1/merchant/product/page",
-            "/api/v1/merchant/product/filters",
-            "/api/v1/merchant/order/page",
-            "/api/v1/merchant/shipment/page",
-            "/api/v1/merchant/shipment/filters",
-            "/api/v1/merchant/aftersale/page",
-            "/api/v1/merchant/review/page",
-            "/api/v1/merchant/review/summary",
-            "/api/v1/merchant/promotion/page",
-            "/api/v1/merchant/promotion/channels",
-            "/api/v1/merchant/coupon/list",
-            "/api/v1/merchant/fund/summary",
-            "/api/v1/merchant/settlement/page",
-            "/api/v1/merchant/fund/flow"
-    })
+    @ValueSource(
+            strings = {
+                "/api/v1/merchant/nav/badges",
+                "/api/v1/merchant/overview",
+                "/api/v1/merchant/analytics",
+                "/api/v1/merchant/analytics/daily?days=7",
+                "/api/v1/merchant/product/stock-alerts",
+                "/api/v1/merchant/product/page",
+                "/api/v1/merchant/product/filters",
+                "/api/v1/merchant/order/page",
+                "/api/v1/merchant/shipment/page",
+                "/api/v1/merchant/shipment/filters",
+                "/api/v1/merchant/aftersale/page",
+                "/api/v1/merchant/review/page",
+                "/api/v1/merchant/review/summary",
+                "/api/v1/merchant/promotion/page",
+                "/api/v1/merchant/promotion/channels",
+                "/api/v1/merchant/coupon/list",
+                "/api/v1/merchant/fund/summary",
+                "/api/v1/merchant/settlement/page",
+                "/api/v1/merchant/fund/flow"
+            })
     @DisplayName("商家域全部读接口在真实数据源下均返回成功")
     void merchantReadEndpointsShouldSucceed(String url) {
         String token = loginMerchant(DEMO_MERCHANT, DEMO_PASSWORD);
@@ -120,17 +120,30 @@ class MerchantApiIntegrationTest extends AbstractIntegrationTest {
     void createdProductShouldBelongToTokenShop() {
         String token = loginMerchant(DEMO_MERCHANT, DEMO_PASSWORD);
 
-        JsonNode id = assertSuccess(post("/api/v1/merchant/product/save", Map.of(
-                "name", "集成测试商品 · 商家域",
-                "cat", "数码配件",
-                "brand", "极客严选",
-                "price", 199.00,
-                "listPrice", 259.00,
-                "cost", 120.00,
-                "stock", 50,
-                "safeStock", 10,
-                "status", "on",
-                "tag", "测试"), token));
+        JsonNode id = assertSuccess(post(
+                "/api/v1/merchant/product/save",
+                Map.of(
+                        "name",
+                        "集成测试商品 · 商家域",
+                        "cat",
+                        "数码配件",
+                        "brand",
+                        "极客严选",
+                        "price",
+                        199.00,
+                        "listPrice",
+                        259.00,
+                        "cost",
+                        120.00,
+                        "stock",
+                        50,
+                        "safeStock",
+                        10,
+                        "status",
+                        "on",
+                        "tag",
+                        "测试"),
+                token));
 
         Product product = productMapper.selectById(id.asLong());
         assertThat(product).isNotNull();
@@ -146,17 +159,21 @@ class MerchantApiIntegrationTest extends AbstractIntegrationTest {
     void shouldUpdateProductStatus() {
         String token = loginMerchant(DEMO_MERCHANT, DEMO_PASSWORD);
 
-        long productId = assertSuccess(post("/api/v1/merchant/product/save", Map.of(
-                "name", "状态变更测试商品",
-                "cat", "数码配件",
-                "brand", "极客严选",
-                "price", 99.00,
-                "stock", 20,
-                "safeStock", 5,
-                "status", "on"), token)).asLong();
+        long productId = assertSuccess(post(
+                        "/api/v1/merchant/product/save",
+                        Map.of(
+                                "name", "状态变更测试商品",
+                                "cat", "数码配件",
+                                "brand", "极客严选",
+                                "price", 99.00,
+                                "stock", 20,
+                                "safeStock", 5,
+                                "status", "on"),
+                        token))
+                .asLong();
 
-        assertSuccess(post("/api/v1/merchant/product/status",
-                Map.of("ids", List.of(productId), "status", "off"), token));
+        assertSuccess(
+                post("/api/v1/merchant/product/status", Map.of("ids", List.of(productId), "status", "off"), token));
 
         assertThat(productMapper.selectById(productId).getMerchantStatus()).isEqualTo("off");
     }
@@ -166,8 +183,7 @@ class MerchantApiIntegrationTest extends AbstractIntegrationTest {
     void shouldRejectInvalidProductPayload() {
         String token = loginMerchant(DEMO_MERCHANT, DEMO_PASSWORD);
 
-        JsonNode response = post("/api/v1/merchant/product/save",
-                Map.of("price", 10.00), token);
+        JsonNode response = post("/api/v1/merchant/product/save", Map.of("price", 10.00), token);
 
         assertThat(response.get("code").asInt()).isNotZero();
     }
@@ -191,9 +207,7 @@ class MerchantApiIntegrationTest extends AbstractIntegrationTest {
         // 此前靠各商家 service 内部调 MerchantSecurityUtils.getShopId() 抛 401 兜底，
         // 会被误报成「未登录」；现已由 SecurityConfig 的路径规则 + 商家控制器的
         // @PreAuthorize("hasRole('MERCHANT')") 在进入业务前拦住。
-        assertThat(response.get("code").asInt())
-                .as("买家令牌已认证但无商家身份，应返回 403")
-                .isEqualTo(ResultCode.FORBIDDEN.getCode());
+        assertThat(response.get("code").asInt()).as("买家令牌已认证但无商家身份，应返回 403").isEqualTo(ResultCode.FORBIDDEN.getCode());
     }
 
     @Test
@@ -203,9 +217,7 @@ class MerchantApiIntegrationTest extends AbstractIntegrationTest {
 
         JsonNode response = get("/api/v1/user/profile", merchantToken);
 
-        assertThat(response.get("code").asInt())
-                .as("商家令牌进入买家域必须被判为未登录")
-                .isEqualTo(ResultCode.UNAUTHORIZED.getCode());
+        assertThat(response.get("code").asInt()).as("商家令牌进入买家域必须被判为未登录").isEqualTo(ResultCode.UNAUTHORIZED.getCode());
     }
 
     @Test
@@ -215,9 +227,11 @@ class MerchantApiIntegrationTest extends AbstractIntegrationTest {
         String merchantToken = loginMerchant(DEMO_MERCHANT, DEMO_PASSWORD);
 
         assertThat(get("/api/v1/user/profile", buyerToken).get("code").asInt()).isZero();
-        assertThat(get("/api/v1/merchant/auth/shop", merchantToken).get("code").asInt()).isZero();
+        assertThat(get("/api/v1/merchant/auth/shop", merchantToken).get("code").asInt())
+                .isZero();
         assertThat(get("/api/v1/cart/items", buyerToken).get("code").asInt()).isZero();
-        assertThat(get("/api/v1/merchant/nav/badges", merchantToken).get("code").asInt()).isZero();
+        assertThat(get("/api/v1/merchant/nav/badges", merchantToken).get("code").asInt())
+                .isZero();
     }
 
     @Test
@@ -225,6 +239,7 @@ class MerchantApiIntegrationTest extends AbstractIntegrationTest {
     void merchantLogoutShouldSucceed() {
         String token = loginMerchant(DEMO_MERCHANT, DEMO_PASSWORD);
 
-        assertThat(post("/api/v1/merchant/auth/logout", null, token).get("code").asInt()).isZero();
+        assertThat(post("/api/v1/merchant/auth/logout", null, token).get("code").asInt())
+                .isZero();
     }
 }

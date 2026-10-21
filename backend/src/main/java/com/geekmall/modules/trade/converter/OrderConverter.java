@@ -1,7 +1,5 @@
 package com.geekmall.modules.trade.converter;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.geekmall.common.enums.OrderStatus;
 import com.geekmall.modules.trade.entity.Order;
 import com.geekmall.modules.trade.entity.OrderItem;
@@ -9,12 +7,13 @@ import com.geekmall.modules.trade.entity.OrderStatusLog;
 import com.geekmall.modules.trade.vo.OrderItemVO;
 import com.geekmall.modules.trade.vo.OrderTimelineVO;
 import com.geekmall.modules.trade.vo.OrderVO;
-import lombok.extern.slf4j.Slf4j;
-
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * 订单对象转换。
@@ -24,8 +23,7 @@ public final class OrderConverter {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private OrderConverter() {
-    }
+    private OrderConverter() {}
 
     public static OrderItemVO toItemVO(OrderItem item) {
         if (item == null) {
@@ -39,8 +37,10 @@ public final class OrderConverter {
         vo.setPrice(item.getPrice());
         vo.setQty(item.getQty());
         int qty = item.getQty() == null ? 0 : item.getQty();
-        vo.setAmount(item.getPrice() == null ? BigDecimal.ZERO
-                : item.getPrice().multiply(BigDecimal.valueOf(qty)).setScale(2, RoundingMode.HALF_UP));
+        vo.setAmount(
+                item.getPrice() == null
+                        ? BigDecimal.ZERO
+                        : item.getPrice().multiply(BigDecimal.valueOf(qty)).setScale(2, RoundingMode.HALF_UP));
         return vo;
     }
 
@@ -62,7 +62,9 @@ public final class OrderConverter {
 
         List<OrderItem> safeItems = items == null ? List.of() : items;
         vo.setItems(safeItems.stream().map(OrderConverter::toItemVO).toList());
-        vo.setTotalQty(safeItems.stream().mapToInt(i -> i.getQty() == null ? 0 : i.getQty()).sum());
+        vo.setTotalQty(safeItems.stream()
+                .mapToInt(i -> i.getQty() == null ? 0 : i.getQty())
+                .sum());
 
         // 首件商品扁平字段，便于列表页直接渲染
         if (!safeItems.isEmpty()) {
@@ -104,8 +106,7 @@ public final class OrderConverter {
             return Map.of();
         }
         try {
-            return MAPPER.readValue(json, new TypeReference<Map<String, String>>() {
-            });
+            return MAPPER.readValue(json, new TypeReference<Map<String, String>>() {});
         } catch (Exception e) {
             log.warn("地址快照反序列化失败：{}", json);
             return Map.of();
