@@ -9,6 +9,8 @@ import com.geekmall.common.cache.RedisBloomFilter;
 import com.geekmall.common.cache.ResilientRedisCacheManager;
 import com.geekmall.common.constant.RedisKeys;
 import com.geekmall.common.resilience.ResilienceGuard;
+import java.util.HashMap;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
@@ -25,9 +27,6 @@ import tools.jackson.databind.DefaultTyping;
 import tools.jackson.databind.cfg.DateTimeFeature;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
-
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * 业务缓存配置：接入具备「穿透 / 击穿 / 雪崩」三防能力的缓存管理器。
@@ -52,10 +51,11 @@ public class CacheConfig {
     private final JitterTtlFunctionFactory ttlFunctionFactory;
 
     @Bean
-    public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory,
-                                          StringRedisTemplate stringRedisTemplate,
-                                          CacheGovernanceMetrics metrics,
-                                          ResilienceGuard resilienceGuard) {
+    public RedisCacheManager cacheManager(
+            RedisConnectionFactory connectionFactory,
+            StringRedisTemplate stringRedisTemplate,
+            CacheGovernanceMetrics metrics,
+            ResilienceGuard resilienceGuard) {
         // 注意：这里刻意不调用 disableCachingNullValues()。
         // RedisCacheConfiguration 默认允许缓存 null，这正是「空值缓存」的基础；
         // 空值的过期时间由 JitterTtlFunctionFactory 压到 mall.cache.null-ttl（默认 60s），
@@ -63,10 +63,9 @@ public class CacheConfig {
         RedisCacheConfiguration base = RedisCacheConfiguration.defaultCacheConfig()
                 .entryTtl(ttlFunctionFactory.create(DEFAULT_CACHE_KEY))
                 .prefixCacheNameWith("mall:cache:")
-                .serializeKeysWith(RedisSerializationContext.SerializationPair
-                        .fromSerializer(new StringRedisSerializer()))
-                .serializeValuesWith(RedisSerializationContext.SerializationPair
-                        .fromSerializer(jsonSerializer()));
+                .serializeKeysWith(
+                        RedisSerializationContext.SerializationPair.fromSerializer(new StringRedisSerializer()))
+                .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(jsonSerializer()));
 
         Map<String, RedisCacheConfiguration> perCache = new HashMap<>();
         for (String name : CacheNames.ALL) {
@@ -75,8 +74,8 @@ public class CacheConfig {
         }
 
         RedisCacheWriter cacheWriter = RedisCacheWriter.nonLockingRedisCacheWriter(connectionFactory);
-        return new ResilientRedisCacheManager(cacheWriter, base, perCache,
-                properties, stringRedisTemplate, metrics, resilienceGuard);
+        return new ResilientRedisCacheManager(
+                cacheWriter, base, perCache, properties, stringRedisTemplate, metrics, resilienceGuard);
     }
 
     /**
@@ -87,11 +86,8 @@ public class CacheConfig {
      */
     @Bean
     public RedisBloomFilter productBloomFilter(StringRedisTemplate redisTemplate) {
-        return new RedisBloomFilter(redisTemplate,
-                RedisKeys.BLOOM_PRODUCT,
-                RedisKeys.BLOOM_PRODUCT_READY,
-                100_000,
-                0.01);
+        return new RedisBloomFilter(
+                redisTemplate, RedisKeys.BLOOM_PRODUCT, RedisKeys.BLOOM_PRODUCT_READY, 100_000, 0.01);
     }
 
     /**
