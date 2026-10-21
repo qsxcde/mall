@@ -6,6 +6,7 @@ import tradeApi from '@/api/trade'
 import { useCartStore } from '@/stores/cart'
 import { useCouponStore } from '@/stores/coupon'
 import { fmtMoney } from '@/utils/format'
+import { clearCheckoutRequestId, getOrCreateCheckoutRequestId } from '@/utils/checkoutRequestId'
 
 const router = useRouter()
 const cart = useCartStore()
@@ -24,6 +25,8 @@ const couponId = ref(couponStore.selected || '')
 
 const loading = ref(false)
 const submitting = ref(false)
+// 结算会话级幂等键：网络超时后再次点击必须复用同一个 requestId
+const submitRequestId = getOrCreateCheckoutRequestId()
 
 const goodsAmount = computed(() => pre.value?.goodsAmount ?? 0)
 const shippingFee = computed(() => pre.value?.shippingFee ?? 0)
@@ -79,6 +82,7 @@ watch(couponId, (value) => {
 })
 
 const submit = async () => {
+  if (submitting.value) return
   if (!addressId.value) return ElMessage.warning('请选择收货地址')
   if (!list.value.length) return ElMessage.info('没有可结算的商品')
   submitting.value = true
@@ -88,9 +92,10 @@ const submit = async () => {
       shippingType: shipping.value,
       couponId: couponId.value || undefined,
       payMethod: payment.value,
-      // 幂等键：同一次提交重试不会重复下单
-      requestId: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+      // 幂等键：同一结算会话内重试不会重复下单
+      requestId: submitRequestId
     })
+    clearCheckoutRequestId()
     await cart.load().catch(() => {})
     ElMessage.success('订单已提交，前往支付')
     router.push({ name: 'payment', query: { orderNo } })
