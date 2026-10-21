@@ -1,29 +1,32 @@
 package com.geekmall.modules.content.service.impl;
 
-import com.geekmall.common.exception.BizException;
-import com.geekmall.common.resilience.ResilienceGuard;
-import com.geekmall.common.resilience.ResilienceMetrics;
-import com.geekmall.common.resilience.ResilienceProperties;
-import com.geekmall.common.result.ResultCode;
-import com.geekmall.config.MinioProperties;
-import com.geekmall.modules.content.vo.UploadResultVO;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import io.minio.MinioClient;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.springframework.mock.web.MockMultipartFile;
-
-import java.nio.file.Path;
-import java.time.Duration;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+
+import com.geekmall.common.exception.BizException;
+import com.geekmall.common.resilience.ResilienceGuard;
+import com.geekmall.common.resilience.ResilienceMetrics;
+import com.geekmall.common.resilience.ResilienceProperties;
+import com.geekmall.common.result.ResultCode;
+import com.geekmall.config.MinioProperties;
+import com.geekmall.modules.content.support.LocalFileAccessSigner;
+import com.geekmall.modules.content.vo.UploadResultVO;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.minio.MinioClient;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.nio.file.Path;
+import java.time.Duration;
+import javax.imageio.ImageIO;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.mock.web.MockMultipartFile;
 
 /**
  * 对象存储上传的熔断降级测试。
@@ -63,16 +66,25 @@ class MinioFileServiceImplTest {
         config.setWaitDurationInOpen(Duration.ofSeconds(30));
         resilienceProperties.setDefaults(config);
 
-        ResilienceGuard guard = new ResilienceGuard(resilienceProperties,
-                new ResilienceMetrics(new SimpleMeterRegistry()));
-        LocalDiskFileStore localDiskFileStore =
-                new LocalDiskFileStore(tempDir.toString(), "http://localhost:8080");
+        ResilienceGuard guard =
+                new ResilienceGuard(resilienceProperties, new ResilienceMetrics(new SimpleMeterRegistry()));
+        LocalDiskFileStore localDiskFileStore = new LocalDiskFileStore(
+                tempDir.toString(),
+                "http://localhost:8080",
+                new LocalFileAccessSigner("test-secret", "http://localhost:8080"));
 
         service = new MinioFileServiceImpl(minioClient, properties, guard, localDiskFileStore);
     }
 
     private MockMultipartFile pngFile() {
-        return new MockMultipartFile("file", "avatar.png", "image/png", "fake-image-bytes".getBytes());
+        try {
+            BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            ImageIO.write(image, "png", output);
+            return new MockMultipartFile("file", "avatar.png", "image/png", output.toByteArray());
+        } catch (Exception e) {
+            throw new IllegalStateException("构造测试图片失败", e);
+        }
     }
 
     /** 让对象存储「不可用」：建桶探测即抛异常。 */
@@ -87,9 +99,7 @@ class MinioFileServiceImplTest {
 
         UploadResultVO result = service.upload(pngFile(), "avatar");
 
-        assertThat(result.getDegraded())
-                .as("降级必须可识别，否则用户以为文件进了对象存储")
-                .isTrue();
+        assertThat(result.getDegraded()).as("降级必须可识别，否则用户以为文件进了对象存储").isTrue();
         assertThat(result.getUrl()).startsWith("http://localhost:8080/uploads/avatar/");
         assertThat(result.getObjectName()).startsWith("avatar/");
     }
@@ -107,13 +117,11 @@ class MinioFileServiceImplTest {
     @Test
     @DisplayName("参数校验在熔断保护之外：非法文件直接拒绝，不碰下游也不触发降级")
     void invalidFileShouldBeRejectedBeforeResilience() {
-        MockMultipartFile exe = new MockMultipartFile("file", "evil.exe",
-                "application/octet-stream", "x".getBytes());
+        MockMultipartFile exe = new MockMultipartFile("file", "evil.exe", "application/octet-stream", "x".getBytes());
 
         assertThatThrownBy(() -> service.upload(exe, "avatar"))
                 .isInstanceOf(BizException.class)
-                .satisfies(ex -> assertThat(((BizException) ex).getCode())
-                        .isEqualTo(ResultCode.PARAM_ERROR.getCode()));
+                .satisfies(ex -> assertThat(((BizException) ex).getCode()).isEqualTo(ResultCode.PARAM_ERROR.getCode()));
         verifyNoInteractions(minioClient);
     }
 }

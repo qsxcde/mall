@@ -3,18 +3,18 @@ package com.geekmall.modules.content.service.impl;
 import com.geekmall.common.exception.BizException;
 import com.geekmall.common.result.ResultCode;
 import com.geekmall.modules.content.support.FileValidator;
+import com.geekmall.modules.content.support.LocalFileAccessSigner;
 import com.geekmall.modules.content.vo.UploadResultVO;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
-import org.springframework.web.multipart.MultipartFile;
-
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 本地磁盘写入组件。
@@ -34,17 +34,20 @@ public class LocalDiskFileStore {
 
     private final String localDir;
     private final String publicBaseUrl;
+    private final LocalFileAccessSigner signer;
 
-    public LocalDiskFileStore(@Value("${mall.storage.local-dir:./uploads}") String localDir,
-                              @Value("${mall.storage.local-public-base-url:http://localhost:8080}") String publicBaseUrl) {
+    public LocalDiskFileStore(
+            @Value("${mall.storage.local-dir:./uploads}") String localDir,
+            @Value("${mall.storage.local-public-base-url:http://localhost:8080}") String publicBaseUrl,
+            LocalFileAccessSigner signer) {
         this.localDir = localDir;
         this.publicBaseUrl = publicBaseUrl;
+        this.signer = signer;
     }
 
     /** 完整流程：校验 → 生成对象名 → 落盘。供 local 存储实现使用。 */
     public UploadResultVO store(MultipartFile file, String biz) {
-        FileValidator.validate(file);
-        String contentType = FileValidator.contentTypeOf(file);
+        String contentType = FileValidator.validateAndDetect(file);
         String relativePath = FileValidator.buildObjectName(biz, contentType);
         return storeValidated(file, contentType, relativePath, false);
     }
@@ -57,8 +60,8 @@ public class LocalDiskFileStore {
      *
      * @param degraded 是否为降级写入（会打 WARN 日志并在响应里标记）
      */
-    public UploadResultVO storeValidated(MultipartFile file, String contentType,
-                                         String relativePath, boolean degraded) {
+    public UploadResultVO storeValidated(
+            MultipartFile file, String contentType, String relativePath, boolean degraded) {
         Path basePath = Paths.get(localDir).toAbsolutePath().normalize();
         Path target = basePath.resolve(relativePath).normalize();
         // 双保险：即使相对路径被污染也不允许写出根目录
@@ -84,8 +87,7 @@ public class LocalDiskFileStore {
                 .build();
 
         if (degraded) {
-            log.warn("[降级] 对象存储不可用，文件已改存本地磁盘：{}"
-                    + "（多实例部署时该文件对其它节点不可见，需人工核对是否需要补传）", relativePath);
+            log.warn("[降级] 对象存储不可用，文件已改存本地磁盘：{}" + "（多实例部署时该文件对其它节点不可见，需人工核对是否需要补传）", relativePath);
         } else {
             log.info("文件已写入本地：{}（{} bytes）", target, file.getSize());
         }
@@ -93,6 +95,10 @@ public class LocalDiskFileStore {
     }
 
     private String publicUrl(String relativePath) {
+        // 售后凭证等敏感附件不能直接走 /uploads/** 公开访问
+        if (relativePath.startsWith("aftersale/")) {
+            return signer.signedUrl(relativePath);
+        }
         String base = StringUtils.hasText(publicBaseUrl) ? publicBaseUrl : "";
         if (base.endsWith("/")) {
             base = base.substring(0, base.length() - 1);
