@@ -1,6 +1,7 @@
 package com.geekmall.modules.aftersale.service;
 
 import com.geekmall.modules.aftersale.dto.ApplyAfterSaleDTO;
+import com.geekmall.modules.aftersale.dto.MarkReturnedDTO;
 import com.geekmall.modules.aftersale.vo.AfterSaleVO;
 import java.util.List;
 
@@ -26,13 +27,15 @@ public interface AfterSaleService {
     void cancel(Long userId, Long id);
 
     /**
-     * 买家已寄回商品（退货退款专用）。
+     * 买家已寄回商品（退货退款 / 换货 / 维修共用，凡「商家同意后需买家寄回」的类型都走这一步）。
      *
      * <p>没有这一步，商家侧的「确认收货」（wait_receive → done）就是<b>永远走不到的死路径</b>：
      * 同意退货后状态停在 wait_return，而没有任何接口能把它推进到 wait_receive，
      * 退货退款的钱就永远退不出去。</p>
+     *
+     * @param dto 退货物流信息（快递公司 / 运单号，均选填），供商家确认收货时核对
      */
-    void markReturned(Long userId, Long id);
+    void markReturned(Long userId, Long id, MarkReturnedDTO dto);
 
     /**
      * 售后审批通过后触发退款（供商家域在事务提交后调用）。

@@ -71,9 +71,9 @@ public final class MerchantAftersaleConverter {
         vo.setRejectReason(item.getRejectReason());
         vo.setImages(countImages(item.getImages()));
         vo.setPhone(item.getPhone());
-        // 寄回物流信息当前未落库，先返回空字符串占位
-        vo.setReturnExpress("");
-        vo.setReturnWaybill("");
+        // 退货物流：买家登记「我已寄回」时填写（选填），历史数据为空串
+        vo.setReturnExpress(item.getReturnExpress() == null ? "" : item.getReturnExpress());
+        vo.setReturnWaybill(item.getReturnWaybill() == null ? "" : item.getReturnWaybill());
         if (order != null) {
             vo.setOrderAmount(order.getPayAmount());
         }

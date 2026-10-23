@@ -53,6 +53,16 @@ export const useAfterSaleStore = defineStore('aftersale', {
       await this.load()
     },
 
+    /**
+     * 登记已寄回（退货退款 / 换货 / 维修共用）：待寄回 → 待商家收货。
+     *
+     * 成功后重新拉一次列表：售后列表页的「处理中」分组会随之把该单挪到「待收货」。
+     */
+    async markReturned(id, payload) {
+      await afterSaleApi.markReturned(id, payload)
+      await this.load()
+    },
+
     reset() {
       this.records = []
     }
