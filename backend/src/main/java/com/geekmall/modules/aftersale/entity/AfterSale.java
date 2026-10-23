@@ -6,11 +6,10 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
-
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import lombok.Data;
 
 /**
  * 售后申请 oms_aftersale。
@@ -54,6 +53,12 @@ public class AfterSale implements Serializable {
 
     /** 商家拒绝理由 */
     private String rejectReason;
+
+    /** 退货快递公司（买家登记「我已寄回」时填写，可空）。 */
+    private String returnExpress;
+
+    /** 退货物流单号（买家登记「我已寄回」时填写，可空），供商家确认收货时核对。 */
+    private String returnWaybill;
 
     @TableLogic
     private Integer deleted;

@@ -31,6 +31,21 @@ onMounted(load)
 // 商家已同意退货 / 已完成 / 已拒绝 / 已取消 都不允许撤销。
 const canCancel = computed(() => record.value?.canCancel === true)
 const isRejected = computed(() => record.value?.status === 'rejected')
+// 待寄回是唯一需要买家动手的中间态（退货退款 / 换货 / 维修共用）：
+// 买家点「我已寄回」推进到待收货。之前缺这个入口，寄回后状态永远走不到
+// wait_receive，商家端「确认收货」是不可达路径。
+const canMarkReturned = computed(() => record.value?.status === 'waitReturn')
+
+// 弹窗提示按售后类型区分：只有退货退款会「原路退款」，换货 / 维修不产生资金流，
+// 不能对它们承诺退款。
+const markReturnTip = computed(() => {
+  const tips = {
+    return: '登记后商家将确认收货并原路退款',
+    exchange: '登记后商家将确认收货并寄出换货商品',
+    repair: '登记后商家将确认收货并安排维修寄回'
+  }
+  return tips[record.value?.type] || '登记后等待商家确认收货'
+})
 
 /** 窄屏下 el-descriptions 降为单列 */
 const narrow = useNarrow()
@@ -43,6 +58,32 @@ const cancel = () => {
       router.push({ name: 'user', query: { tab: 'aftersale' } })
     })
     .catch(() => {})
+}
+
+/** 「我已寄回」登记弹窗：顺带采集退货物流（均选填），供商家确认收货时核对 */
+const returnDialog = ref(false)
+const marking = ref(false)
+const returnForm = ref({ returnExpress: '', returnWaybill: '' })
+
+const openReturnDialog = () => {
+  returnForm.value = { returnExpress: '', returnWaybill: '' }
+  returnDialog.value = true
+}
+
+const submitMarkReturned = async () => {
+  // 该操作不可撤销，请求在途时直接吞掉重复触发，避免后端 CAS 拦下后弹误导性错误
+  if (marking.value) {
+    return
+  }
+  marking.value = true
+  try {
+    await afterStore.markReturned(record.value.id, returnForm.value)
+    ElMessage.success('已登记寄回，等待商家确认收货')
+    returnDialog.value = false
+    await load()
+  } finally {
+    marking.value = false
+  }
 }
 const contact = () => ElMessage.info(`客服热线 ${SERVICE_HOTLINE}（${SERVICE_HOURS}）`)
 </script>
@@ -67,10 +108,41 @@ const contact = () => ElMessage.info(`客服热线 ${SERVICE_HOTLINE}（${SERVIC
         </div>
       </div>
       <div class="as-hero-ops">
+        <!-- 待寄回是唯一需要买家动手的中间态：按钮放在状态头，与「取消申请」并列 -->
+        <el-button v-if="canMarkReturned" type="primary" @click="openReturnDialog"
+          >我已寄回</el-button
+        >
         <el-button v-if="canCancel" @click="cancel">取消申请</el-button>
         <el-button @click="contact">联系客服</el-button>
       </div>
     </div>
+
+    <!-- 登记已寄回：文案按售后类型区分，顺带采集退货物流（选填） -->
+    <el-dialog v-model="returnDialog" title="登记已寄回" width="420px">
+      <p class="as-return-tip">确认已把商品寄回吗？{{ markReturnTip }}，且不可再撤销本次售后。</p>
+      <el-form label-width="80px" @submit.prevent>
+        <el-form-item label="快递公司">
+          <el-input
+            v-model="returnForm.returnExpress"
+            maxlength="64"
+            placeholder="选填，如顺丰速运"
+          />
+        </el-form-item>
+        <el-form-item label="运单号">
+          <el-input
+            v-model="returnForm.returnWaybill"
+            maxlength="64"
+            placeholder="选填，方便商家核对退货物流"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="returnDialog = false">取消</el-button>
+        <el-button type="primary" :loading="marking" @click="submitMarkReturned"
+          >确认已寄回</el-button
+        >
+      </template>
+    </el-dialog>
 
     <!-- 基本信息 -->
     <div class="co-card">
@@ -177,5 +249,11 @@ const contact = () => ElMessage.info(`客服热线 ${SERVICE_HOTLINE}（${SERVIC
   background: #fff;
   color: var(--primary);
   font-weight: 600;
+}
+.as-return-tip {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: #666;
+  line-height: 1.6;
 }
 </style>

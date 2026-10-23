@@ -2,11 +2,13 @@ package com.geekmall.modules.aftersale.controller;
 
 import com.geekmall.common.result.Result;
 import com.geekmall.modules.aftersale.dto.ApplyAfterSaleDTO;
+import com.geekmall.modules.aftersale.dto.MarkReturnedDTO;
 import com.geekmall.modules.aftersale.service.AfterSaleService;
 import com.geekmall.modules.aftersale.vo.AfterSaleVO;
 import com.geekmall.security.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
@@ -54,10 +56,10 @@ public class AfterSaleController {
         return Result.ok();
     }
 
-    @Operation(summary = "登记已寄回商品", description = "退货退款专用：待寄回 → 待商家收货")
+    @Operation(summary = "登记已寄回商品", description = "待寄回 → 待商家收货（退货退款 / 换货 / 维修共用），可顺带填写退货物流（均选填）")
     @PostMapping("/{id}/returned")
-    public Result<Void> markReturned(@PathVariable Long id) {
-        afterSaleService.markReturned(SecurityUtils.getUserId(), id);
+    public Result<Void> markReturned(@PathVariable Long id, @RequestBody(required = false) @Valid MarkReturnedDTO dto) {
+        afterSaleService.markReturned(SecurityUtils.getUserId(), id, dto);
         return Result.ok();
     }
 }

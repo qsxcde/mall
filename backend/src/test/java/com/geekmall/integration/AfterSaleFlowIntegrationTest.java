@@ -139,10 +139,15 @@ class AfterSaleFlowIntegrationTest extends AbstractIntegrationTest {
             assertThat(afterSaleMapper.selectById(afterSaleId).getMerchantStatus())
                     .isEqualTo("wait_return");
 
-            // 2) 买家登记已寄回 → wait_receive
-            assertSuccess(post("/api/v1/aftersales/" + afterSaleId + "/returned", null, s.token()));
-            assertThat(afterSaleMapper.selectById(afterSaleId).getMerchantStatus())
-                    .isEqualTo("wait_receive");
+            // 2) 买家登记已寄回（顺带填写退货物流）→ wait_receive
+            assertSuccess(post(
+                    "/api/v1/aftersales/" + afterSaleId + "/returned",
+                    Map.of("returnExpress", "顺丰速运", "returnWaybill", "SF1234567890"),
+                    s.token()));
+            AfterSale shipped = afterSaleMapper.selectById(afterSaleId);
+            assertThat(shipped.getMerchantStatus()).isEqualTo("wait_receive");
+            assertThat(shipped.getReturnExpress()).isEqualTo("顺丰速运");
+            assertThat(shipped.getReturnWaybill()).isEqualTo("SF1234567890");
             assertThat(refundCount(s.tradeNo())).as("还没确认收货，仍不退款").isZero();
 
             // 3) 商家确认收货 → 触发退款

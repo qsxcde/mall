@@ -5,6 +5,7 @@ import com.geekmall.common.enums.MerchantAftersaleStatus;
 import com.geekmall.common.exception.BizException;
 import com.geekmall.common.result.ResultCode;
 import com.geekmall.modules.aftersale.dto.ApplyAfterSaleDTO;
+import com.geekmall.modules.aftersale.dto.MarkReturnedDTO;
 import com.geekmall.modules.aftersale.entity.AfterSale;
 import com.geekmall.modules.aftersale.enums.BuyerAfterSaleStatus;
 import com.geekmall.modules.aftersale.mapper.AfterSaleMapper;
@@ -158,7 +159,7 @@ public class AfterSaleServiceImpl implements AfterSaleService {
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void markReturned(Long userId, Long id) {
+    public void markReturned(Long userId, Long id, MarkReturnedDTO dto) {
         AfterSale record = requireOwn(userId, id);
         BuyerAfterSaleStatus current = BuyerAfterSaleStatus.resolve(record);
         if (current != BuyerAfterSaleStatus.WAIT_RETURN) {
@@ -169,7 +170,30 @@ public class AfterSaleServiceImpl implements AfterSaleService {
         if (rows == 0) {
             throw new BizException(ResultCode.BIZ_ERROR, "工单状态已变更，请刷新后重试");
         }
+        saveReturnShipping(id, dto);
         log.info("用户 {} 登记售后 {} 已寄回，等待商家确认收货", userId, id);
+    }
+
+    /** 退货物流随「已寄回」在同一事务落库；两项均选填，都为空时不写库。 */
+    private void saveReturnShipping(Long id, MarkReturnedDTO dto) {
+        String express = dto == null || dto.getReturnExpress() == null
+                ? ""
+                : dto.getReturnExpress().trim();
+        String waybill = dto == null || dto.getReturnWaybill() == null
+                ? ""
+                : dto.getReturnWaybill().trim();
+        if (express.isEmpty() && waybill.isEmpty()) {
+            return;
+        }
+        AfterSale update = new AfterSale();
+        update.setId(id);
+        if (!express.isEmpty()) {
+            update.setReturnExpress(express);
+        }
+        if (!waybill.isEmpty()) {
+            update.setReturnWaybill(waybill);
+        }
+        afterSaleMapper.updateById(update);
     }
 
     /**
