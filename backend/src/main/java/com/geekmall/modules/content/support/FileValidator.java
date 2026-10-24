@@ -4,6 +4,8 @@ import com.geekmall.common.exception.BizException;
 import com.geekmall.common.result.ResultCode;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Iterator;
@@ -92,6 +94,50 @@ public final class FileValidator {
         String ext = EXT_BY_TYPE.getOrDefault(contentType == null ? "" : contentType, ".png");
         return safeBiz + "/" + LocalDate.now().format(DATE_PATH) + "/"
                 + UUID.randomUUID().toString().replace("-", "") + ext;
+    }
+
+    /**
+     * 从业务表里存的访问地址反解出对象名，识别不出返回 {@code null}。
+     *
+     * <p>入库的是「上传时生成的地址」，可能是三种形态：本地签名地址
+     * （{@code /api/v1/files/local?path=...}）、MinIO 预签名地址（对象名在 URL 路径里）、
+     * 或直接就是对象名。重新签发短时效地址时以对象名为准，因此需要统一反解。</p>
+     */
+    public static String extractObjectName(String url) {
+        if (!StringUtils.hasText(url)) {
+            return null;
+        }
+        // 本地签名地址：对象名在 path 参数里
+        int localIdx = url.indexOf(LocalFileAccessSigner.ACCESS_PATH + "?");
+        if (localIdx >= 0) {
+            String query = url.substring(localIdx + LocalFileAccessSigner.ACCESS_PATH.length() + 1);
+            for (String pair : query.split("&")) {
+                int eq = pair.indexOf('=');
+                if (eq > 0 && "path".equals(pair.substring(0, eq))) {
+                    return URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8);
+                }
+            }
+            return null;
+        }
+        // 直接就是对象名（{biz}/... 形态）
+        for (String biz : ALLOWED_BIZ) {
+            if (url.startsWith(biz + "/")) {
+                return stripQuery(url);
+            }
+        }
+        // MinIO 预签名等完整地址：对象名是路径里的 {biz}/... 段
+        for (String biz : ALLOWED_BIZ) {
+            int idx = url.indexOf("/" + biz + "/");
+            if (idx >= 0) {
+                return stripQuery(url.substring(idx + 1));
+            }
+        }
+        return null;
+    }
+
+    private static String stripQuery(String value) {
+        int cut = value.indexOf('?');
+        return cut >= 0 ? value.substring(0, cut) : value;
     }
 
     private static String detectByMagic(MultipartFile file) {

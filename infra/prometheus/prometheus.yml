@@ -12,6 +12,11 @@ rule_files:
 scrape_configs:
   - job_name: geek-mall-server
     metrics_path: /actuator/prometheus
+    # 指标端点要求观测账号 HTTP Basic（后端 mall.observability.scrape-password），
+    # 该密码须与后端的 MALL_OBS_PASSWORD 一致；本地编排使用 application.yml 的开发默认值。
+    basic_auth:
+      username: obs
+      password: dev-obs-password-change-me
     static_configs:
       # 后端跑在宿主机（IDEA / mvn spring-boot:run）时用 host.docker.internal
       # 若后端也跑在容器里，改成容器服务名，如 geek-mall-server:8080

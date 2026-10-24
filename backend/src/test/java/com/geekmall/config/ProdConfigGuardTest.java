@@ -22,6 +22,8 @@ class ProdConfigGuardTest {
 
     private static final String LEAKED_SECRET = "geek-mall-jwt-secret-key-please-change-in-production-2026";
     private static final String GOOD_SECRET = "a-very-long-random-production-secret-0123456789abcdef";
+    private static final String LEAKED_OBS_PASSWORD = "dev-obs-password-change-me";
+    private static final String GOOD_OBS_PASSWORD = "a-very-long-random-obs-password-0123456789abcdef";
 
     /** 构造一个「全部合规」的 prod 环境，再由各用例破坏其中一项。 */
     private ProdConfigGuard guard(
@@ -37,6 +39,7 @@ class ProdConfigGuardTest {
 
         ProdConfigGuard guard = new ProdConfigGuard(env);
         ReflectionTestUtils.setField(guard, "jwtSecret", secret);
+        ReflectionTestUtils.setField(guard, "obsScrapePassword", GOOD_OBS_PASSWORD);
         ReflectionTestUtils.setField(guard, "initDemoUser", demoUser);
         ReflectionTestUtils.setField(guard, "initDemoMerchant", demoMerchant);
         ReflectionTestUtils.setField(guard, "mockEnabled", mock);
@@ -95,6 +98,33 @@ class ProdConfigGuardTest {
             assertThatThrownBy(guard::validate)
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("mall.jwt.secret 未设置");
+        }
+    }
+
+    @Nested
+    @DisplayName("观测抓取凭证")
+    class ObsScrapePassword {
+
+        @Test
+        @DisplayName("使用源码里的公开默认口令 → 拒绝启动")
+        void leakedDefaultObsPasswordIsRejected() {
+            ProdConfigGuard guard = compliant();
+            ReflectionTestUtils.setField(guard, "obsScrapePassword", LEAKED_OBS_PASSWORD);
+
+            assertThatThrownBy(guard::validate)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("mall.observability.scrape-password 仍在使用");
+        }
+
+        @Test
+        @DisplayName("口令为空 → 拒绝启动（而不是放任指标匿名可读）")
+        void blankObsPasswordIsRejected() {
+            ProdConfigGuard guard = compliant();
+            ReflectionTestUtils.setField(guard, "obsScrapePassword", "");
+
+            assertThatThrownBy(guard::validate)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("mall.observability.scrape-password 未设置");
         }
     }
 

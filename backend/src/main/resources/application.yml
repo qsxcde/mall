@@ -46,6 +46,10 @@ mall:
   jwt:
     secret: ${MALL_JWT_SECRET:geek-mall-jwt-secret-key-please-change-in-production-2026}
     expire-minutes: 120
+  observability:
+    # 观测端点（/actuator/info、metrics、prometheus）的抓取凭证，供 Prometheus basic_auth 使用。
+    # 生产无兜底默认值（见 application-prod.yml），缺失即启动失败。
+    scrape-password: ${MALL_OBS_PASSWORD:dev-obs-password-change-me}
   merchant:
     # 平台费率：与结算单口径一致，改这里即可联动重算
     commission-rate: 0.05

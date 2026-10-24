@@ -6,6 +6,7 @@ import com.geekmall.common.result.ResultCode;
 import com.geekmall.config.MinioProperties;
 import com.geekmall.modules.content.service.FileService;
 import com.geekmall.modules.content.support.FileValidator;
+import com.geekmall.modules.content.support.LocalFileAccessSigner;
 import com.geekmall.modules.content.vo.UploadResultVO;
 import io.minio.BucketExistsArgs;
 import io.minio.GetPresignedObjectUrlArgs;
@@ -44,6 +45,7 @@ public class MinioFileServiceImpl implements FileService {
     private final MinioProperties properties;
     private final ResilienceGuard resilienceGuard;
     private final LocalDiskFileStore localDiskFileStore;
+    private final LocalFileAccessSigner localSigner;
 
     /** 桶初始化只做一次，避免每次上传都探测 */
     private volatile boolean bucketReady = false;
@@ -156,8 +158,9 @@ public class MinioFileServiceImpl implements FileService {
     /**
      * 敏感附件（售后凭证）走预签名 URL。
      *
-     * <p>当前返回 7 天有效期的地址；长期方案应改为「前端通过鉴权接口换取短时效地址」，
-     * 避免把带时效的 URL 长期落在业务表里。</p>
+     * <p>预签名地址是「不记名凭证」，因此只发<b>短时效</b>地址（默认 15 分钟）；
+     * 业务表里存的是上传时的地址，读取侧经 {@link #refreshUrl} 按次重新签发，
+     * 不会因为短时效而失效。</p>
      */
     private String presignedUrl(String objectName) {
         try {
@@ -165,11 +168,25 @@ public class MinioFileServiceImpl implements FileService {
                     .method(Method.GET)
                     .bucket(properties.getBucket())
                     .object(objectName)
-                    .expiry(7, TimeUnit.DAYS)
+                    .expiry(15, TimeUnit.MINUTES)
                     .build());
         } catch (Exception e) {
             log.error("生成预签名文件地址失败：{}", objectName, e);
             throw new BizException(ResultCode.SYSTEM_ERROR, "生成文件访问地址失败，请稍后重试");
         }
+    }
+
+    @Override
+    public String refreshUrl(String url) {
+        String objectName = FileValidator.extractObjectName(url);
+        if (objectName == null || !objectName.startsWith("aftersale/")) {
+            // 展示型附件是公开地址，长期有效，无需换发
+            return url;
+        }
+        // 历史数据 / 存储模式切换留下的本地签名地址，用本地签名器换发
+        if (url.contains(LocalFileAccessSigner.ACCESS_PATH)) {
+            return localSigner.signedUrl(objectName);
+        }
+        return presignedUrl(objectName);
     }
 }

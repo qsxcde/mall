@@ -38,12 +38,19 @@ public class ProdConfigGuard {
     private static final List<String> LEAKED_DEFAULTS =
             List.of("geek-mall-jwt-secret-key-please-change-in-production-2026");
 
+    /** 源码中公开的观测抓取默认口令：生产出现即视为配置错误。 */
+    private static final String LEAKED_OBS_PASSWORD = "dev-obs-password-change-me";
+
     private static final String PROD = "prod";
 
     private final Environment environment;
 
     @Value("${mall.jwt.secret:}")
     private String jwtSecret;
+
+    /** 观测端点（info/metrics/prometheus）抓取凭证：与 JWT 密钥同理，生产禁止公开默认值。 */
+    @Value("${mall.observability.scrape-password:}")
+    private String obsScrapePassword;
 
     @Value("${mall.init-demo-user:false}")
     private boolean initDemoUser;
@@ -99,6 +106,11 @@ public class ProdConfigGuard {
                     violations.append("\n  · mall.jwt.secret 仍在使用源码中的公开默认值，任何读过仓库的人都能伪造令牌");
                 }
             }
+        }
+        if (obsScrapePassword == null || obsScrapePassword.isBlank()) {
+            violations.append("\n  · mall.observability.scrape-password 未设置：请注入环境变量 MALL_OBS_PASSWORD（观测端点抓取凭证）");
+        } else if (LEAKED_OBS_PASSWORD.equals(obsScrapePassword)) {
+            violations.append("\n  · mall.observability.scrape-password 仍在使用源码中的公开默认值，任何读过仓库的人都能抓取业务指标");
         }
         if (initDemoUser) {
             violations.append("\n  · mall.init-demo-user=true：生产会创建口令为 123456 的演示买家账号");

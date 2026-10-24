@@ -35,7 +35,9 @@ public final class SecurityConstants {
         // 支付渠道异步回调不带登录态，必须在白名单内（靠签名与幂等保证安全）
         "/api/v1/pay/callback",
         "/api/v1/cms/**",
-        "/actuator/**",
+        // 健康检查匿名可达（Docker HEALTHCHECK / 探针 / 压测脚本不带凭证）；
+        // 其余管理端点（info/metrics/prometheus）必须持观测凭证，见 SecurityConfig 的 actuator 过滤链
+        "/actuator/health",
         // 本地磁盘存储模式下静态图片的访问路径（图片本身不含敏感信息）
         "/uploads/**",
         // 本地敏感文件的签名访问地址（签名 + 过期时间即凭证）

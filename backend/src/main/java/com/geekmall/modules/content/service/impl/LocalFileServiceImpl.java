@@ -1,6 +1,8 @@
 package com.geekmall.modules.content.service.impl;
 
 import com.geekmall.modules.content.service.FileService;
+import com.geekmall.modules.content.support.FileValidator;
+import com.geekmall.modules.content.support.LocalFileAccessSigner;
 import com.geekmall.modules.content.vo.UploadResultVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,9 +25,20 @@ import org.springframework.web.multipart.MultipartFile;
 public class LocalFileServiceImpl implements FileService {
 
     private final LocalDiskFileStore localDiskFileStore;
+    private final LocalFileAccessSigner localSigner;
 
     @Override
     public UploadResultVO upload(MultipartFile file, String biz) {
         return localDiskFileStore.store(file, biz);
+    }
+
+    @Override
+    public String refreshUrl(String url) {
+        String objectName = FileValidator.extractObjectName(url);
+        // 敏感文件按次重新签发短时效地址；展示型附件是公开地址，原样返回
+        if (objectName != null && objectName.startsWith("aftersale/")) {
+            return localSigner.signedUrl(objectName);
+        }
+        return url;
     }
 }

@@ -196,4 +196,41 @@ class FileValidatorTest {
             assertThat(first).isNotEqualTo(second);
         }
     }
+
+    @Nested
+    @DisplayName("对象名反解（读取时按次换发的前置）")
+    class ExtractObjectName {
+
+        @Test
+        @DisplayName("MinIO 预签名地址：对象名是路径段，查询串不带入")
+        void fromPresignedUrl() {
+            String url = "http://minio:9000/mall/aftersale/2026/10/21/abc.png"
+                    + "?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Signature=xx";
+            assertThat(FileValidator.extractObjectName(url)).isEqualTo("aftersale/2026/10/21/abc.png");
+        }
+
+        @Test
+        @DisplayName("本地签名地址：对象名在 path 参数里（URL 解码后返回）")
+        void fromLocalSignedUrl() {
+            String url = "http://localhost:8080/api/v1/files/local?path=aftersale%2F2026%2F10%2F21%2Fabc.png"
+                    + "&expires=1792000000&sig=xx";
+            assertThat(FileValidator.extractObjectName(url)).isEqualTo("aftersale/2026/10/21/abc.png");
+        }
+
+        @Test
+        @DisplayName("直接就是对象名时原样返回（去掉查询串）")
+        void fromRawObjectName() {
+            assertThat(FileValidator.extractObjectName("aftersale/2026/10/21/abc.png"))
+                    .isEqualTo("aftersale/2026/10/21/abc.png");
+        }
+
+        @Test
+        @DisplayName("识别不出对象名 → null（空白 / 外部地址）")
+        void unrecognizedReturnsNull() {
+            assertThat(FileValidator.extractObjectName(null)).isNull();
+            assertThat(FileValidator.extractObjectName(" ")).isNull();
+            assertThat(FileValidator.extractObjectName("https://example.com/other/2026/x.png"))
+                    .isNull();
+        }
+    }
 }
