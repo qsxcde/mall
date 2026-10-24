@@ -501,6 +501,115 @@ def v6f(n):
     return report("V6f", checks)
 
 
+# ------------------------------------- V6g 深积压：孤儿数远超 batch-size
+
+
+def v6g(n):
+    """reclaimStale 每次最多回收 maxCount(=batch-size) 条，深积压必须能持续排干。"""
+    global _current_prefix
+    print(f"\n=== V6g 深积压回收：孤儿数 {n} >> batch-size ===")
+    item_id, user_id, address_id = pick_fixtures()
+    prepare_item(item_id)
+    prefix = "V6g"
+    _current_prefix = prefix
+    reset(prefix, item_id)
+
+    fake = "seckill-dead-faker"
+    apps_pause()
+    try:
+        redis("XGROUP", "CREATE", STREAM, GROUP, "0", "MKSTREAM")
+        inject(prefix, n, item_id, user_id, address_id)
+        redis("XREADGROUP", "GROUP", GROUP, fake, "COUNT", str(n), "STREAMS", STREAM, ">")
+        before = pending_count()
+    finally:
+        apps_unpause()
+
+    ok, elapsed = wait_drain(n, timeout=180)
+    orders, pending = count_orders(prefix), pending_count()
+    print(f"  孤儿 {before} 条 → 建单 {orders}/{n}   耗时 {elapsed:.1f}s   pending={pending}")
+    checks = [
+        ("深积压也能排干（不丢单）", orders == n, f"{orders} vs {n}"),
+        ("pending 归零", pending == 0, f"pending={pending}"),
+    ]
+    return report("V6g", checks)
+
+
+# ------------------------------------------ V6h 重复回补预扣不越补越多
+
+
+def v6h(n):
+    """补偿被重复调用时，Redis 库存只能回补一次（RELEASE_SCRIPT 的 SREM 守卫）。"""
+    global _current_prefix
+    print("\n=== V6h 重复回补幂等：同用户两次补偿只应归还一份库存 ===")
+    item_id, user_id, address_id = pick_fixtures()
+    prepare_item(item_id, stock=1000)
+    prefix = "V6h"
+    _current_prefix = prefix
+    reset(prefix, item_id)
+
+    stock_key = f"mall:seckill:stock:{item_id}"
+    bought_key = f"mall:seckill:bought:{item_id}"
+    redis("SET", stock_key, "100")
+    redis("SADD", bought_key, str(user_id))   # 模拟「已预扣」：库存已减、人已记上
+
+    # 造两条同用户、且两条路径都注定失败的消息：DB 活动库存置 0，
+    # 批量路径 stockDeductor 与逐条路径 grabInTx 的 deductStock 都会 OUT_OF_STOCK。
+    # （不能用 not_start —— 逐条路径不校验它，消息会直接建单成功，反而测不到回补）
+    mysql(f"UPDATE mkt_seckill_item SET stock=0, not_start=0 WHERE id={item_id};")
+    apps_pause()
+    try:
+        redis("XGROUP", "CREATE", STREAM, GROUP, "0", "MKSTREAM")
+        for i in range(2):
+            redis("XADD", STREAM, "*",
+                  "requestId", f"{prefix}-{i:04d}",
+                  "userId", str(user_id), "itemId", str(item_id),
+                  "addressId", str(address_id), "traceId", f"v6-{i}")
+    finally:
+        apps_unpause()
+
+    time.sleep(8)
+    after = redis("GET", stock_key).strip()
+    created = count_orders(prefix)
+    print(f"  两次补偿后 {stock_key} = {after}（初始 100），建单 {created}")
+    checks = [
+        ("两条都按预期失败（未建单）", created == 0, f"建单={created}"),
+        ("只回补一次（100 → 101）", after == "101", f"实际={after}"),
+        ("两次都回补则会是 102 —— 越补越多", after != "102", f"实际={after}"),
+    ]
+    return report("V6h", checks)
+
+
+# --------------------------------------------------- V6i 毒消息不阻塞队列
+
+
+def v6i(n):
+    global _current_prefix
+    print("\n=== V6i 毒消息：字段损坏的消息被丢弃，不阻塞后续消息 ===")
+    item_id, user_id, address_id = pick_fixtures()
+    prepare_item(item_id)
+    prefix = "V6i"
+    _current_prefix = prefix
+    reset(prefix, item_id)
+
+    apps_pause()
+    try:
+        redis("XGROUP", "CREATE", STREAM, GROUP, "0", "MKSTREAM")
+        # 缺 requestId / userId 等必填字段 → fromFields 抛异常，属于毒消息
+        redis("XADD", STREAM, "*", "garbage", "oops", "traceId", "v6-poison")
+        inject(prefix, n, item_id, user_id, address_id)
+    finally:
+        apps_unpause()
+
+    ok, elapsed = wait_drain(n, timeout=90)
+    orders, pending = count_orders(prefix), pending_count()
+    print(f"  毒消息 1 条 + 正常 {n} 条 → 建单 {orders}/{n}   耗时 {elapsed:.1f}s   pending={pending}")
+    checks = [
+        ("毒消息不阻塞后续消息", orders == n, f"{orders} vs {n}"),
+        ("毒消息被丢弃并 ack（pending 归零）", pending == 0, f"pending={pending}"),
+    ]
+    return report("V6i", checks)
+
+
 # ------------------------------------------------------------------ 汇总
 
 
@@ -522,7 +631,8 @@ def main():
                     help="应用日志文件；不给则从 3 个 app 容器的 docker logs 里取（多实例默认）")
     ap.add_argument("--no-v6a", action="store_true")
     ap.add_argument("--no-v6d", action="store_true")
-    ap.add_argument("--only", choices=["v6a", "v6b", "v6c", "v6d", "v6e", "v6f"],
+    ap.add_argument("--only", choices=["v6a", "v6b", "v6c", "v6d", "v6e", "v6f",
+                                       "v6g", "v6h", "v6i"],
                     help="只跑指定用例")
     args = ap.parse_args()
 
@@ -551,6 +661,12 @@ def main():
         total += v6e(args.n)
     if want("v6f"):
         total += v6f(args.n)
+    if want("v6g"):
+        total += v6g(max(args.n, 300))     # 深积压：孤儿数必须远超 batch-size
+    if want("v6h"):
+        total += v6h(2)
+    if want("v6i"):
+        total += v6i(args.n)
 
     print(f"\n===== V6 消费组验证：{'全部通过' if total == 0 else f'{total} 项失败'} =====")
     sys.exit(1 if total else 0)
