@@ -23,7 +23,7 @@ npm run preview  # 预览构建产物
 ## 代码规范
 
 ```bash
-npm run lint          # ESLint 9（flat config + eslint-plugin-vue）
+npm run lint          # ESLint 10（flat config + eslint-plugin-vue）
 npm run lint:fix      # 自动修可修的问题
 npm run format        # Prettier 格式化 src 下的 js / vue / css
 npm run format:check  # 只检查不修改

@@ -19,7 +19,7 @@ npm run preview  # 预览构建产物
 ## 代码规范
 
 ```bash
-npm run lint          # ESLint 9（flat config + eslint-plugin-vue）
+npm run lint          # ESLint 10（flat config + eslint-plugin-vue，与买家端同一版本）
 npm run lint:fix      # 自动修可修的问题
 npm run format        # Prettier 格式化 src 下的 js / vue / css
 npm run format:check  # 只检查不修改
@@ -46,7 +46,7 @@ npm run format:check  # 只检查不修改
 | UI 库 | Element Plus 2.9 | zh-cn 语言包，图标全局注册 |
 | 状态 | Pinia 2.3 | 仅一个 store，承载店铺/用户/角标/通知 |
 | 路由 | Vue Router 4.5 | 全部懒加载，`meta.title` 驱动标题与面包屑 |
-| 构建 | Vite 6 | `@` 别名指向 `src` |
+| 构建 | Vite 7 | `@` 别名指向 `src` |
 | HTTP | axios 1.20 | 统一 `{ code, msg, data }` 解包 |
 | 样式 | 原生 CSS + CSS 变量 | 不引入预处理器；EP 主题通过覆写 CSS 变量实现 |
 | 图表 | **自研 SVG** | 折线/柱状/环形/迷你走势，不引入 ECharts（见下文说明） |

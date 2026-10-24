@@ -26,6 +26,15 @@
   `UserService` 补齐认证域所需的账户读写方法
 - 造数与压测脚本：`gen_mock_products.py`（1 万~100 万条，自动刷新布隆过滤器）、
   `es_sync_products.py`（全量同步到 ES）、`bench_search.py`（三方案统一口径基准）
+- **搜索索引的在线增量写路径**（原先只有离线全量脚本）：商品新增/编辑/上下架/改价后，
+  `ProductStockService` 发布 `ProductChangedEvent` → `ProductIndexSyncListener`
+  （`AFTER_COMMIT` + `@Async`）→ `ElasticProductSearchIndexer` 按 id 重读商品并写入或删除文档。
+  仅 `mall.search.engine=elasticsearch` 时装配；索引缺失时按显式 mapping 自动创建；
+  写入失败只降级为告警日志，不影响商家请求。字段口径由 `ProductIndexDocument` 单点定义
+  （绝不写入 `cost`），`ProductIndexDocumentTest` + `ProductIndexSyncIntegrationTest` 双重锁定
+- 售后「登记已寄回」前端入口：`afterSaleApi.markReturned` / store action / 详情页「我已寄回」按钮
+  （`status === 'waitReturn'` 时出现）。此前该后端接口无任何前端调用方，
+  退货退款链路永远停在「待寄回」，商家端「确认收货」是不可达路径
 
 ### 变更
 
@@ -43,9 +52,19 @@
   迁到 `Rest5ClientTransport`（HttpClient 5），JSON 映射改用 `Jackson3JsonpMapper`；
   测试容器镜像同步为 9.4.5（客户端 9.x 只保证与同大版本服务端兼容）
 - 多实例 Compose 强制 `MALL_JWT_SECRET` / `REDIS_PASSWORD`，Redis 开启认证
+- 前端 ESLint 版本统一：商家端 9.39.5 → 10.12.0（与买家端一致），消除「同一份 `.vue`
+  在两端一边过、一边挂」的 flat config 行为差异
+- ES 客户端构建抽到 `EsClientFactory`（搜索与增量索引共用同一份超时参数），
+  并容忍 `ES_URIS` 漏写协议前缀（原先报 `NullPointerException: Host name`，不提协议问题）
 
 ### 修复
 
+- **库存分桶「合并」在合并 2 个以上桶时必然失败**：`MERGE_IN` 原本每个来源桶各写一条流水，
+  而 `inv_bucket_log.uk_biz_idempotent(biz_type, biz_id, bucket_id)` 只允许同一目标桶在
+  同一合并单下有一条记录，于是稳定抛 `Duplicate entry`（此前只有「目标桶就是其中一个来源桶」
+  这一种情况可用）。改为按目标桶汇总写一条 `MERGE_IN`，并在合并前记录起始余量
+- 售后「待寄回」提示文案承诺了并不存在的「填写运单号」字段：改为「请在详情页点击『我已寄回』」，
+  与 `POST /aftersales/{id}/returned` 的实际行为一致
 - 布隆过滤器预热在 80 万在售商品时 OOM 导致启动失败：`addAllRaw` 改为分批写入（每批 5000）
 - ES 客户端未读取配置的连接/读取超时（默认 30s 会挂住 Tomcat 线程）：已生效为 2s/5s
 - ES 搜索的排序语义：有关键词时 `_score` 曾抢占主排序键，导致 `sort=price_asc` 实际不按价格排
@@ -61,9 +80,14 @@
 
 ### 文档
 
-- `docs/` 新增 2 份搜索实测报告（累计 24 份），并更新分类索引
+- `docs/` 新增 2 份搜索实测报告（累计 23 份），并更新分类索引
 - `code-wiki` 同步结构变更：搜索引擎抽象、跨域查询服务、看板拆分、ArchUnit 规则，
-  并修正测试数（629 → 668）、迁移数（13 → 14）、文档数（21 → 23）
+  并修正测试数（629 → 737）、迁移数（13 → 15）、文档数（21 → 23）
+- 全仓数字复核：README / `docs/governance/项目完整度指标报告` / code-wiki 统一到
+  65 个测试类、737 个后端用例 + 73 个前端用例、迁移 15（V1–V15）、端点 134、行覆盖 76.20%；
+  同时修正 `vite@6` → `vite@7`、`Node 18 亦可` → `^20.19 / >=22.12`、`ESLint 9` → `ESLint 10`，
+  以及 `.github/dependabot.yml` 中已失效的 Spring Boot 3.3.x 与 mybatis-plus-boot3 忽略理由
+- 补文档：搜索索引「在线增量 + 离线全量」两条路径的分工与取舍（README、`es_sync_products.py` 文档串）
 
 ## [1.0.0] - 2026-10-17
 
