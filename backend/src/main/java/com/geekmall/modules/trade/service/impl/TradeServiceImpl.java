@@ -16,6 +16,8 @@ import com.geekmall.modules.marketing.vo.UserCouponVO;
 import com.geekmall.modules.payment.service.PaymentRefundService;
 import com.geekmall.modules.product.entity.Product;
 import com.geekmall.modules.product.service.ProductStockService;
+import com.geekmall.modules.trade.dto.FixedPriceOrderCommand;
+import com.geekmall.modules.trade.dto.OrderRequestPair;
 import com.geekmall.modules.trade.dto.PreOrderDTO;
 import com.geekmall.modules.trade.dto.SubmitOrderDTO;
 import com.geekmall.modules.trade.entity.Order;
@@ -476,6 +478,26 @@ public class TradeServiceImpl implements TradeService {
     @Override
     public String findOrderNoByRequestId(Long userId, String requestId) {
         return persistSupport.findOrderNoByRequestId(userId, requestId);
+    }
+
+    @Override
+    public Map<String, String> findExistingSeckillOrders(List<OrderRequestPair> pairs) {
+        if (pairs == null || pairs.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> result = new LinkedHashMap<>();
+        for (Order order : orderMapper.selectByUserRequestPairs(pairs)) {
+            if (order.getRequestId() != null) {
+                result.put(order.getRequestId(), order.getOrderNo());
+            }
+        }
+        return result;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class, timeout = 15)
+    public Map<String, String> createSeckillOrdersBatch(List<FixedPriceOrderCommand> commands) {
+        return persistSupport.persistSeckillOrdersBatch(commands);
     }
 
     private void sleepQuietly(long millis) {

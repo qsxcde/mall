@@ -1,14 +1,13 @@
 package com.geekmall.modules.marketing.mapper;
 
 import com.geekmall.modules.marketing.entity.SeckillBucket;
+import java.util.Collection;
+import java.util.List;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
-
-import java.util.Collection;
-import java.util.List;
 
 /**
  * 秒杀库存桶 Mapper。
@@ -31,6 +30,13 @@ public interface SeckillBucketMapper {
     @Update("UPDATE mkt_seckill_bucket SET stock = stock - 1 "
             + "WHERE item_id = #{itemId} AND bucket_no = #{bucketNo} AND stock > 0")
     int deductStock(@Param("itemId") Long itemId, @Param("bucketNo") int bucketNo);
+
+    /**
+     * 按数量批量归并扣减：同一批次内落到同一桶的 N 单合并为一次 CAS。
+     */
+    @Update("UPDATE mkt_seckill_bucket SET stock = stock - #{qty} "
+            + "WHERE item_id = #{itemId} AND bucket_no = #{bucketNo} AND stock >= #{qty}")
+    int deductStockByQty(@Param("itemId") Long itemId, @Param("bucketNo") int bucketNo, @Param("qty") int qty);
 
     /** 某活动商品的全部桶，按桶号升序。 */
     @Select("SELECT * FROM mkt_seckill_bucket WHERE item_id = #{itemId} ORDER BY bucket_no")

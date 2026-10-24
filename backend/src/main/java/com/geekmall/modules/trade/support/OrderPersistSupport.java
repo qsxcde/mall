@@ -9,6 +9,7 @@ import com.geekmall.modules.inventory.service.InventoryBucketService;
 import com.geekmall.modules.product.entity.Product;
 import com.geekmall.modules.product.service.ProductStockService;
 import com.geekmall.modules.trade.converter.OrderConverter;
+import com.geekmall.modules.trade.dto.FixedPriceOrderCommand;
 import com.geekmall.modules.trade.entity.Order;
 import com.geekmall.modules.trade.entity.OrderItem;
 import com.geekmall.modules.trade.entity.OrderStatusLog;
@@ -22,9 +23,12 @@ import com.geekmall.modules.user.vo.AddressVO;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
@@ -91,13 +95,162 @@ public class OrderPersistSupport {
                 .setScale(2, RoundingMode.HALF_UP);
 
         String orderNo = orderNoGenerator.next();
+        Order order = buildOrder(
+                orderNo,
+                userId,
+                address,
+                goodsAmount,
+                safeShipping,
+                safeDiscount,
+                payAmount,
+                couponId,
+                payMethod,
+                remark,
+                requestId);
+        orderMapper.insert(order);
+
+        // P2-4：明细由循环单条 insert 改为一条多值 INSERT
+        List<OrderItem> orderItems = drafts.stream()
+                .map(draft -> buildOrderItem(order, draft.product(), draft.spec(), draft.qty(), draft.price()))
+                .toList();
+        orderItemMapper.batchInsert(orderItems);
+
+        orderStatusLogMapper.insert(buildInitialStatusLog(orderNo));
+        return orderNo;
+    }
+
+    /**
+     * 批量落库秒杀订单：订单 / 明细 / 状态日志批量插入，商品库存按批归并扣减。
+     *
+     * <p>调用方必须已开启事务：本方法只负责「写」，事务边界留在交易门面
+     * {@code createSeckillOrdersBatch} 上。语句顺序与单条下单一致 ——
+     * 先完成全部插入，库存扣减放到最后，缩短商品行锁持有时间。</p>
+     *
+     * @return {@code requestId -> orderNo}
+     */
+    public Map<String, String> persistSeckillOrdersBatch(List<FixedPriceOrderCommand> commands) {
+        List<FixedPriceOrderCommand> unique = dedupe(commands);
+        if (unique.isEmpty()) {
+            return Map.of();
+        }
+
+        Set<Long> productIds = new HashSet<>();
+        for (FixedPriceOrderCommand command : unique) {
+            productIds.add(command.productId());
+        }
+        Map<Long, Product> products = productStockService.findByIds(productIds);
+
+        List<Order> orders = new ArrayList<>(unique.size());
+        Map<String, FixedPriceOrderCommand> commandByOrderNo = new LinkedHashMap<>();
+        Map<String, Product> productByOrderNo = new LinkedHashMap<>();
+        Map<String, String> orderNoByRequestId = new LinkedHashMap<>();
+
+        for (FixedPriceOrderCommand command : unique) {
+            Product product = products.get(command.productId());
+            if (product == null || product.getStatus() == null || product.getStatus() != 1) {
+                throw new BizException(ResultCode.NOT_FOUND, "商品不存在或已下架");
+            }
+            AddressVO address = userService.getAddress(command.userId(), command.addressId());
+            BigDecimal goodsAmount = command.unitPrice()
+                    .multiply(BigDecimal.valueOf(command.qty()))
+                    .setScale(2, RoundingMode.HALF_UP);
+            String orderNo = orderNoGenerator.next();
+            Order order = buildOrder(
+                    orderNo,
+                    command.userId(),
+                    address,
+                    goodsAmount,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    goodsAmount,
+                    null,
+                    null,
+                    command.remark(),
+                    command.requestId());
+            orders.add(order);
+            commandByOrderNo.put(orderNo, command);
+            productByOrderNo.put(orderNo, product);
+            orderNoByRequestId.put(command.requestId(), orderNo);
+        }
+
+        orderMapper.batchInsert(orders);
+
+        Map<String, Long> idByOrderNo = new LinkedHashMap<>();
+        for (Order row : orderMapper.selectByOrderNos(commandByOrderNo.keySet())) {
+            idByOrderNo.put(row.getOrderNo(), row.getId());
+        }
+
+        List<OrderItem> items = new ArrayList<>(orders.size());
+        List<OrderStatusLog> logs = new ArrayList<>(orders.size());
+        for (Order order : orders) {
+            Long id = idByOrderNo.get(order.getOrderNo());
+            if (id == null) {
+                throw new IllegalStateException("批量插入订单后回查 ID 失败：" + order.getOrderNo());
+            }
+            order.setId(id);
+            FixedPriceOrderCommand command = commandByOrderNo.get(order.getOrderNo());
+            Product product = productByOrderNo.get(order.getOrderNo());
+            items.add(buildOrderItem(order, product, product.getSpec(), command.qty(), command.unitPrice()));
+            logs.add(buildInitialStatusLog(order.getOrderNo()));
+        }
+        orderItemMapper.batchInsert(items);
+        orderStatusLogMapper.batchInsert(logs);
+
+        // 商品库存扣减放事务末尾，缩短商品行锁持有时间。
+        // 逐单调用现有出库原语（分桶商品走桶级 CAS、未分桶走单行 CAS），
+        // 按商品/桶归并成一次 CAS 的批量版本在后续提交里替换这里。
+        for (Order order : orders) {
+            FixedPriceOrderCommand command = commandByOrderNo.get(order.getOrderNo());
+            Product product = productByOrderNo.get(order.getOrderNo());
+            deductProductStock(command.productId(), command.qty(), product.getTitle(), order.getOrderNo());
+        }
+        return orderNoByRequestId;
+    }
+
+    private List<FixedPriceOrderCommand> dedupe(List<FixedPriceOrderCommand> commands) {
+        Map<String, FixedPriceOrderCommand> unique = new LinkedHashMap<>();
+        if (commands != null) {
+            for (FixedPriceOrderCommand command : commands) {
+                validate(command);
+                unique.putIfAbsent(command.requestId(), command);
+            }
+        }
+        return new ArrayList<>(unique.values());
+    }
+
+    private void validate(FixedPriceOrderCommand command) {
+        if (command == null
+                || !StringUtils.hasText(command.requestId())
+                || command.userId() == null
+                || command.addressId() == null
+                || command.productId() == null
+                || command.unitPrice() == null
+                || command.unitPrice().signum() < 0
+                || command.qty() <= 0) {
+            throw new BizException(ResultCode.PARAM_ERROR, "订单参数不合法");
+        }
+    }
+
+    /** 订单主表构造（单条 / 批量共用，字段与旧实现逐项对齐）。 */
+    Order buildOrder(
+            String orderNo,
+            Long userId,
+            AddressVO address,
+            BigDecimal goodsAmount,
+            BigDecimal shippingFee,
+            BigDecimal discount,
+            BigDecimal payAmount,
+            Long couponId,
+            String payMethod,
+            String remark,
+            String requestId) {
         Order order = new Order();
         order.setOrderNo(orderNo);
         order.setUserId(userId);
         order.setStatus(OrderStatus.PENDING_PAY.getCode());
         order.setGoodsAmount(goodsAmount);
-        order.setShippingFee(safeShipping);
-        order.setDiscount(safeDiscount);
+        order.setShippingFee(shippingFee);
+        order.setDiscount(discount);
         order.setPayAmount(payAmount);
         order.setCouponId(couponId);
         order.setRequestId(StringUtils.hasText(requestId) ? requestId : null);
@@ -105,33 +258,32 @@ public class OrderPersistSupport {
         order.setRemark(remark);
         order.setPayMethod(payMethod);
         order.setExpireTime(LocalDateTime.now().plusMinutes(ORDER_EXPIRE_MINUTES));
-        orderMapper.insert(order);
+        return order;
+    }
 
-        // P2-4：明细由循环单条 insert 改为一条多值 INSERT
-        List<OrderItem> orderItems = drafts.stream()
-                .map(draft -> {
-                    OrderItem orderItem = new OrderItem();
-                    orderItem.setOrderId(order.getId());
-                    orderItem.setOrderNo(orderNo);
-                    orderItem.setProductId(draft.product().getId());
-                    orderItem.setTitle(draft.product().getTitle());
-                    orderItem.setCover(draft.product().getCover());
-                    orderItem.setSpec(draft.spec());
-                    orderItem.setPrice(draft.price());
-                    orderItem.setQty(draft.qty());
-                    return orderItem;
-                })
-                .toList();
-        orderItemMapper.batchInsert(orderItems);
+    /** 订单明细构造（单条 / 批量共用）。 */
+    OrderItem buildOrderItem(Order order, Product product, String spec, int qty, BigDecimal price) {
+        OrderItem orderItem = new OrderItem();
+        orderItem.setOrderId(order.getId());
+        orderItem.setOrderNo(order.getOrderNo());
+        orderItem.setProductId(product.getId());
+        orderItem.setTitle(product.getTitle());
+        orderItem.setCover(product.getCover());
+        orderItem.setSpec(spec);
+        orderItem.setPrice(price);
+        orderItem.setQty(qty);
+        return orderItem;
+    }
 
+    /** 订单创建时的初始状态日志（from = to = 待付款）。 */
+    OrderStatusLog buildInitialStatusLog(String orderNo) {
         OrderStatusLog statusLog = new OrderStatusLog();
         statusLog.setOrderNo(orderNo);
         statusLog.setFromStatus(OrderStatus.PENDING_PAY.getCode());
         statusLog.setToStatus(OrderStatus.PENDING_PAY.getCode());
         statusLog.setOperator(OrderStateMachine.OPERATOR_USER);
         statusLog.setRemark("订单创建成功");
-        orderStatusLogMapper.insert(statusLog);
-        return orderNo;
+        return statusLog;
     }
 
     /**
