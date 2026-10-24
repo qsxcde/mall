@@ -263,10 +263,16 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
      * 且只能重启进程恢复。这里在 NOGROUP 面时把标记撤销，自愈闭环才完整。</p>
      */
     private void invalidateGroupIfGone(RuntimeException ex) {
-        String message = ex.getMessage() == null ? "" : ex.getMessage();
-        if (message.contains("NOGROUP")) {
-            groupReady = false;
-            log.warn("秒杀消费组已丢失（可能被删除 / 淘汰 / 故障转移），下次调用将重建：{}", message);
+        // 必须走 cause 链：Lettuce 抛的是 RedisCommandExecutionException(NOGROUP ...)，
+        // 但 Spring 会再包一层（UncategorizedRedisException 等），顶层 message 里
+        // 往往只有「Error in execution」而没有 NOGROUP 字样，只看顶层会永远不触发
+        for (Throwable t = ex; t != null; t = t.getCause()) {
+            String message = t.getMessage() == null ? "" : t.getMessage();
+            if (message.contains("NOGROUP")) {
+                groupReady = false;
+                log.warn("秒杀消费组已丢失（可能被删除 / 淘汰 / 故障转移），下次调用将重建：{}", message);
+                return;
+            }
         }
     }
 
