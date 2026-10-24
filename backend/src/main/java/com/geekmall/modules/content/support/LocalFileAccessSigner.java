@@ -23,8 +23,19 @@ import org.springframework.stereotype.Component;
 @Component
 public class LocalFileAccessSigner {
 
+    /** 敏感文件签名访问端点的路径（也是「本地签名 URL」形态的识别特征）。 */
+    public static final String ACCESS_PATH = "/api/v1/files/local";
+
     private static final String HMAC_ALGORITHM = "HmacSHA256";
-    private static final Duration DEFAULT_TTL = Duration.ofDays(7);
+
+    /**
+     * 签名有效期：分钟级短时效。
+     *
+     * <p>签名 URL 相当于「不记名凭证」，泄露后在有效期内任何人都能下载；
+     * 因此不再使用早期的 7 天长效，改为短时效 + 读取时按次重新签发
+     * （见 {@code FileService.refreshUrl}）。</p>
+     */
+    private static final Duration DEFAULT_TTL = Duration.ofMinutes(15);
 
     private final String secret;
     private final String baseUrl;
@@ -36,11 +47,11 @@ public class LocalFileAccessSigner {
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     }
 
-    /** 生成敏感文件的签名访问地址（默认 7 天有效）。 */
+    /** 生成敏感文件的签名访问地址（默认 15 分钟有效，读取时按次重新签发）。 */
     public String signedUrl(String relativePath) {
         long expires = Instant.now().plus(DEFAULT_TTL).getEpochSecond();
         String signature = sign(relativePath, expires);
-        return baseUrl + "/api/v1/files/local?path="
+        return baseUrl + ACCESS_PATH + "?path="
                 + URLEncoder.encode(relativePath, StandardCharsets.UTF_8)
                 + "&expires=" + expires + "&sig=" + signature;
     }

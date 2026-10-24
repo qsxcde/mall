@@ -12,6 +12,7 @@ import com.geekmall.modules.aftersale.mapper.AfterSaleMapper;
 import com.geekmall.modules.aftersale.service.AfterSaleService;
 import com.geekmall.modules.aftersale.vo.AfterSaleStepVO;
 import com.geekmall.modules.aftersale.vo.AfterSaleVO;
+import com.geekmall.modules.content.service.FileService;
 import com.geekmall.modules.payment.service.PaymentRefundService;
 import com.geekmall.modules.trade.service.OrderService;
 import com.geekmall.modules.trade.vo.OrderVO;
@@ -65,6 +66,7 @@ public class AfterSaleServiceImpl implements AfterSaleService {
     private final AfterSaleMapper afterSaleMapper;
     private final OrderService orderService;
     private final PaymentRefundService paymentRefundService;
+    private final FileService fileService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -253,7 +255,10 @@ public class AfterSaleServiceImpl implements AfterSaleService {
                         : record.getTypeName());
         vo.setReason(record.getReason());
         vo.setContent(record.getContent());
-        vo.setImages(splitImages(record.getImages()));
+        // 凭证地址是短时效签名地址（不记名凭证），读取时按次换发，避免入库地址过期后打不开
+        vo.setImages(splitImages(record.getImages()).stream()
+                .map(fileService::refreshUrl)
+                .toList());
         vo.setPhone(record.getPhone());
         vo.setAmount(record.getAmount());
         vo.setStatus(record.getStatus());

@@ -19,8 +19,12 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.minio.MinioClient;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.stream.Collectors;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -68,12 +72,11 @@ class MinioFileServiceImplTest {
 
         ResilienceGuard guard =
                 new ResilienceGuard(resilienceProperties, new ResilienceMetrics(new SimpleMeterRegistry()));
-        LocalDiskFileStore localDiskFileStore = new LocalDiskFileStore(
-                tempDir.toString(),
-                "http://localhost:8080",
-                new LocalFileAccessSigner("test-secret", "http://localhost:8080"));
+        LocalFileAccessSigner localSigner = new LocalFileAccessSigner("test-secret", "http://localhost:8080");
+        LocalDiskFileStore localDiskFileStore =
+                new LocalDiskFileStore(tempDir.toString(), "http://localhost:8080", localSigner);
 
-        service = new MinioFileServiceImpl(minioClient, properties, guard, localDiskFileStore);
+        service = new MinioFileServiceImpl(minioClient, properties, guard, localDiskFileStore, localSigner);
     }
 
     private MockMultipartFile pngFile() {
@@ -123,5 +126,44 @@ class MinioFileServiceImplTest {
                 .isInstanceOf(BizException.class)
                 .satisfies(ex -> assertThat(((BizException) ex).getCode()).isEqualTo(ResultCode.PARAM_ERROR.getCode()));
         verifyNoInteractions(minioClient);
+    }
+
+    /* ------------------------------ 读取时按次换发 ------------------------------ */
+
+    @Test
+    @DisplayName("展示型附件地址原样返回：公开地址长期有效，无需换发")
+    void refreshKeepsPublicUrls() {
+        String publicUrl = "http://minio:9000/mall/review/2026/10/21/a.png";
+        assertThat(service.refreshUrl(publicUrl)).isEqualTo(publicUrl);
+        verifyNoInteractions(minioClient);
+    }
+
+    @Test
+    @DisplayName("敏感附件（售后凭证）读取时重新预签名：旧地址不复用")
+    void refreshReissuesPresignedUrl() throws Exception {
+        when(minioClient.getPresignedObjectUrl(any()))
+                .thenReturn("http://minio:9000/mall/aftersale/2026/10/21/a.png?fresh-sig");
+
+        String stale = "http://minio:9000/mall/aftersale/2026/10/21/a.png?X-Amz-Signature=stale";
+        assertThat(service.refreshUrl(stale)).isEqualTo("http://minio:9000/mall/aftersale/2026/10/21/a.png?fresh-sig");
+    }
+
+    @Test
+    @DisplayName("历史本地签名地址用本地签名器换发：过期的入库地址不会失效")
+    void refreshReissuesLocalSignedUrl() {
+        LocalFileAccessSigner signer = new LocalFileAccessSigner("test-secret", "http://localhost:8080");
+
+        String refreshed = service.refreshUrl("http://localhost:8080/api/v1/files/local"
+                + "?path=aftersale%2F2026%2F10%2F21%2Fa.png&expires=1&sig=old");
+
+        assertThat(refreshed)
+                .startsWith("http://localhost:8080/api/v1/files/local?path=aftersale%2F2026%2F10%2F21%2Fa.png");
+        // 换发出的地址必须能被签名器校验通过（即真的可访问）
+        Map<String, String> query = Arrays.stream(
+                        URI.create(refreshed).getRawQuery().split("&"))
+                .map(pair -> pair.split("=", 2))
+                .collect(Collectors.toMap(p -> p[0], p -> p[1]));
+        assertThat(signer.verify("aftersale/2026/10/21/a.png", Long.parseLong(query.get("expires")), query.get("sig")))
+                .isTrue();
     }
 }

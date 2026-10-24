@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -47,5 +48,14 @@ class LocalFileAccessSignerTest {
                 .isFalse();
         assertThat(signer.verify(path, 1L, signature)).isFalse();
         assertThat(signer.verify(path, expires, signature + "x")).isFalse();
+    }
+
+    @Test
+    @DisplayName("签名有效期是分钟级短时效（默认 15 分钟），泄露窗口有限")
+    void ttlIsShortLived() {
+        Map<String, String> query = queryOf(signer.signedUrl("aftersale/2026/10/21/evidence.png"));
+        long ttl = Long.parseLong(query.get("expires")) - Instant.now().getEpochSecond();
+
+        assertThat(ttl).isBetween(14 * 60L, 16 * 60L);
     }
 }

@@ -51,6 +51,10 @@ mall:
     # 未设置 MALL_JWT_SECRET 时启动直接失败，而不是静默用公开密钥签发令牌。
     secret: ${MALL_JWT_SECRET}
     expire-minutes: ${MALL_JWT_EXPIRE_MINUTES:120}
+  observability:
+    # 【安全】观测端点抓取凭证同样不提供兜底默认值（与 JWT 密钥同理），
+    # 未设置 MALL_OBS_PASSWORD 时启动直接失败，而不是用源码里公开的默认口令。
+    scrape-password: ${MALL_OBS_PASSWORD}
 
   # ---------------- 以下开关在 prod 必须显式关闭 ----------------
   # 不写也能「碰巧不生效」（注解要求 havingValue=true，缺省即不注册），
