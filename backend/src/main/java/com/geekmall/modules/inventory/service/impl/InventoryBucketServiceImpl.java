@@ -25,6 +25,7 @@ import com.geekmall.modules.inventory.mapper.InvBucketOperationMapper;
 import com.geekmall.modules.inventory.mapper.InvBucketRuleMapper;
 import com.geekmall.modules.inventory.service.InventoryBucketService;
 import com.geekmall.modules.inventory.support.BucketAllocator;
+import com.geekmall.modules.inventory.support.BucketStockBatchDeductor;
 import com.geekmall.modules.inventory.support.BucketStockDeductor;
 import com.geekmall.modules.inventory.support.BucketStockMover;
 import com.geekmall.modules.inventory.support.BucketStore;
@@ -78,6 +79,7 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
     private final BucketAllocator allocator;
     private final BucketStockMover mover;
     private final BucketStockDeductor deductor;
+    private final BucketStockBatchDeductor batchDeductor;
 
     /* ============================== 分桶规则 ============================== */
 
@@ -268,6 +270,12 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
     @Transactional(rollbackFor = Exception.class)
     public BucketDeductResultVO deduct(BucketDeductDTO dto) {
         return deductor.deduct(dto);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deductBatch(List<BucketDeductDTO> deductions) {
+        batchDeductor.deductBatch(deductions);
     }
 
     @Override

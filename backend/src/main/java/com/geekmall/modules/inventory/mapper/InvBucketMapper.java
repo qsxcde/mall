@@ -2,13 +2,13 @@ package com.geekmall.modules.inventory.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.geekmall.modules.inventory.entity.InvBucket;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
-
-import java.util.List;
-import java.util.Map;
 
 /**
  * 库存桶 Mapper。
@@ -44,6 +44,20 @@ public interface InvBucketMapper extends BaseMapper<InvBucket> {
     @Select("SELECT * FROM inv_bucket WHERE product_id = #{productId} "
             + "AND stock > 0 AND status = 1 AND deleted = 0")
     List<InvBucket> selectDeductCandidates(@Param("productId") Long productId);
+
+    /**
+     * 批量读取多个商品的桶，供批量出库一次预加载，避免逐单 N 次 SELECT。
+     */
+    @Select(
+            """
+            <script>
+            SELECT * FROM inv_bucket
+            WHERE deleted = 0 AND product_id IN
+            <foreach collection="productIds" item="pid" open="(" separator="," close=")">#{pid}</foreach>
+            ORDER BY product_id, id
+            </script>
+            """)
+    List<InvBucket> selectByProductIds(@Param("productIds") Collection<Long> productIds);
 
     /** 商品按维度汇总的余量与桶数，用于分桶报告。 */
     @Select("SELECT dimension, COALESCE(SUM(stock), 0) AS stock, COUNT(1) AS bucketCount "
