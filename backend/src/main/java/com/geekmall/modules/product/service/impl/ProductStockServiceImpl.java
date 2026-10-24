@@ -3,6 +3,7 @@ package com.geekmall.modules.product.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.geekmall.common.event.ProductChangedEvent;
 import com.geekmall.modules.product.entity.Product;
 import com.geekmall.modules.product.mapper.ProductMapper;
 import com.geekmall.modules.product.service.ProductStockService;
@@ -12,6 +13,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 /**
@@ -19,12 +21,18 @@ import org.springframework.stereotype.Service;
  *
  * <p>扣减/回滚直接落到 {@code ProductMapper} 的条件更新语句上，
  * 把「影响行数为 0 即库存不足」的判读收敛到这里 —— 这是防超卖的唯一口径。</p>
+ *
+ * <p>商品维护类写入（新增 / 乐观锁更新 / 批量维护更新）成功后发布
+ * {@link ProductChangedEvent}：搜索索引这类派生数据统一从这里扇出，
+ * 而不是让每个调用方各发一次 —— 调用方会变多，扇出点必须只有一个。</p>
  */
 @Service
 @RequiredArgsConstructor
 public class ProductStockServiceImpl implements ProductStockService {
 
     private final ProductMapper productMapper;
+
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     public boolean deductStock(Long productId, int qty) {
@@ -106,16 +114,38 @@ public class ProductStockServiceImpl implements ProductStockService {
     @Override
     public Long insertProduct(Product product) {
         productMapper.insert(product);
+        publishChanged(product.getId(), "insert");
         return product.getId();
     }
 
     @Override
     public boolean updateWithVersion(Product product) {
-        return productMapper.updateById(product) > 0;
+        boolean updated = productMapper.updateById(product) > 0;
+        if (updated) {
+            publishChanged(product.getId(), "update");
+        }
+        return updated;
     }
 
     @Override
     public int updateProduct(Product product) {
-        return productMapper.updateById(product);
+        int rows = productMapper.updateById(product);
+        if (rows > 0) {
+            publishChanged(product.getId(), "maintain");
+        }
+        return rows;
+    }
+
+    /**
+     * 发布商品变更事件。
+     *
+     * <p>只在<b>写入成功后</b>发布：乐观锁冲突（影响行数 0）时商品并没有变化，
+     * 发事件只会让索引多做一次无意义的回表。事件本身不携带字段快照，
+     * 消费方按 id 重新读库，因此这里不需要也不应该等待任何返回值。</p>
+     */
+    private void publishChanged(Long productId, String reason) {
+        if (productId != null) {
+            eventPublisher.publishEvent(ProductChangedEvent.of(productId, reason));
+        }
     }
 }
