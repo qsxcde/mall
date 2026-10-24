@@ -1,8 +1,12 @@
 package com.geekmall.modules.trade.service;
 
+import com.geekmall.modules.trade.dto.FixedPriceOrderCommand;
+import com.geekmall.modules.trade.dto.OrderRequestPair;
 import com.geekmall.modules.trade.dto.PreOrderDTO;
 import com.geekmall.modules.trade.dto.SubmitOrderDTO;
 import com.geekmall.modules.trade.vo.PreOrderVO;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 交易服务：结算试算、下单、订单操作、超时关闭。
@@ -97,6 +101,23 @@ public interface TradeService {
      * 会让库存被多扣一次（调用方的事务不会回滚，因为唯一键冲突在交易域内部就被消化了）。</p>
      */
     String findOrderNoByRequestId(Long userId, String requestId);
+
+    /**
+     * 批量查已建订单：{@code requestId -> orderNo}。
+     *
+     * <p>批量落库在扣减库存之前一次性预查一批消息，避免逐条 SELECT。</p>
+     */
+    Map<String, String> findExistingSeckillOrders(List<OrderRequestPair> pairs);
+
+    /**
+     * 批量按指定单价建单（供秒杀异步批量落库使用）。
+     *
+     * <p>事务边界由调用方（营销域批量落库编排）开启，本方法加入同一事务；
+     * 订单 / 明细 / 状态日志一次批量写入，商品库存按批归并扣减。</p>
+     *
+     * @return {@code requestId -> orderNo}
+     */
+    Map<String, String> createSeckillOrdersBatch(List<FixedPriceOrderCommand> commands);
 
     /** 评价完成：待评价 → 已完成。供评价域调用。 */
     void markReviewed(Long userId, String orderNo);
