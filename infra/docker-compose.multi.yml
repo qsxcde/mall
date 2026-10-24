@@ -30,6 +30,11 @@
 #   MYSQL_POOL_SIZE=50                 单实例连接池；须满足 实例数 × 本值 ≤ max_connections
 #   RATE_LIMIT_ENABLED=true            限流总开关（验证限流时必须为 true）
 #   SECKILL_ASYNC_ENABLED=false        秒杀削峰开关
+#   SECKILL_BATCH_ENABLED=false        消费端批量落库开关（仅 async=true 时生效）
+#   SECKILL_RECLAIM_MIN_IDLE=1m        未确认消息闲置多久可被回收重投。
+#                                      验证 kill -9 孤儿回收时**必须调到秒级**（如 2s），
+#                                      否则每个用例都要等满默认的 1 分钟
+#   SECKILL_RECLAIM_INTERVAL=30s       回收扫描间隔（验证时同样建议 1s）
 # ============================================================
 name: geek-mall
 
@@ -52,6 +57,9 @@ x-app-env: &app-env
   REDIS_PORT: "6379"
   # prod profile 必填：缺任意一个都会让容器启动失败，而不是带着公开默认值运行
   MALL_JWT_SECRET: "${MALL_JWT_SECRET:?请在 infra/.env 设置 MALL_JWT_SECRET（至少 32 字节）}"
+  # Actuator 抓取口令（prod 必填，见 mall.observability.scrape-password）：
+  # 缺失会让实例启动期直接抛 PlaceholderResolutionException，而不是带着空口令运行
+  MALL_OBS_PASSWORD: "${MALL_OBS_PASSWORD:?请在 infra/.env 设置 MALL_OBS_PASSWORD}"
   REDIS_PASSWORD: "${REDIS_PASSWORD:?请在 infra/.env 设置 REDIS_PASSWORD}"
   # 压测/验证实例不依赖 MinIO（未起该容器时走本地磁盘，避免启动期连不上对象存储）
   STORAGE_TYPE: local
@@ -72,6 +80,9 @@ x-app-env: &app-env
     -Dmall.cluster.instance-count=${APP_REPLICAS:-3}
     -Dmall.rate-limit.enabled=${RATE_LIMIT_ENABLED:-true}
     -Dmall.seckill.async.enabled=${SECKILL_ASYNC_ENABLED:-false}
+    -Dmall.seckill.async.batch-enabled=${SECKILL_BATCH_ENABLED:-false}
+    -Dmall.seckill.async.reclaim-min-idle=${SECKILL_RECLAIM_MIN_IDLE:-1m}
+    -Dmall.seckill.async.reclaim-interval=${SECKILL_RECLAIM_INTERVAL:-30s}
     -Dmall.payment.allow-local-in-prod=${ALLOW_LOCAL_PAYMENT_IN_PROD:-true}
 
 x-app: &app
