@@ -286,6 +286,22 @@ def apps_unpause():
         sh(["docker", "unpause", name])
 
 
+def container_do(action, name):
+    sh(["docker", action, name])
+    time.sleep(3)
+
+
+def consumer_name_of(container):
+    """取某个实例的第 0 号消费线程名（seckill-<容器主机名>-8080-0）。
+
+    「分组前缀=」只在启动日志里打一次，用 --tail 300 会漏掉它，
+    必须把整个日志拉回来找。
+    """
+    out = sh(["docker", "logs", container])
+    m = re.search(r"分组前缀=(seckill-[A-Za-z0-9]+-\d+)", out)
+    return f"{m.group(1)}-0" if m else None
+
+
 # ------------------------------------------------------------------ V6a
 
 
@@ -372,6 +388,119 @@ def v6d(n):
     return report("V6d", checks)
 
 
+# ------------------------------------------------------- V6b / V6c 上下线
+
+
+def v6bc(n, join):
+    global _current_prefix
+    name = "V6b 消费者加入" if join else "V6c 消费者退出"
+    print(f"\n=== {name}：不破坏不重不漏 ===")
+    item_id, user_id, address_id = pick_fixtures()
+    prepare_item(item_id)
+    prefix = "V6b" if join else "V6c"
+    _current_prefix = prefix
+    reset(prefix, item_id)
+
+    victim = APP_CONTAINERS[2]
+    container_do("stop" if join else "kill", victim)
+    inject(prefix, n, item_id, user_id, address_id)
+    if join:
+        time.sleep(2)                      # 让剩下两个实例先吃掉一部分
+        container_do("start", victim)      # 中途加入第三个
+    else:
+        pass                               # 中途退出，剩下两个接手
+
+    ok, elapsed = wait_drain(n, timeout=120)
+    orders, dups, pending = count_orders(prefix), duplicated_request_ids(prefix), pending_count()
+    print(f"  建单 {orders}/{n}   耗时 {elapsed:.1f}s   pending={pending}")
+
+    checks = [
+        ("不丢单（总量不变）", orders == n, f"{orders} vs {n}"),
+        ("不重单", not dups, f"重复={dups or '无'}"),
+        ("pending 归零（剩余实例接手干净）", pending == 0, f"pending={pending}"),
+    ]
+    container_do("start", victim)          # 收尾，别影响后续用例
+    return report(prefix, checks)
+
+
+# ------------------------------------------------------------- V6e kill -9
+
+
+def v6e(n):
+    global _current_prefix
+    print("\n=== V6e 真实 kill -9：实例被 SIGKILL，其 pending 必须被回收 ===")
+    item_id, user_id, address_id = pick_fixtures()
+    prepare_item(item_id)
+    prefix = "V6e"
+    _current_prefix = prefix
+    reset(prefix, item_id)
+
+    victim = APP_CONTAINERS[1]
+    victim_consumer = consumer_name_of(victim)
+    if not victim_consumer:
+        print(f"  ⚠️ 取不到 {victim} 的消费者名，改用 V6d 同款假消费者")
+        victim_consumer = "seckill-dead-faker"
+
+    # 冻结实例 → 注入 → 用「将被 kill 的那个实例」的消费者名把消息读走但不 ACK
+    apps_pause()
+    try:
+        redis("XGROUP", "CREATE", STREAM, GROUP, "0", "MKSTREAM")
+        ids = inject(prefix, n, item_id, user_id, address_id)
+        redis("XREADGROUP", "GROUP", GROUP, victim_consumer,
+              "COUNT", str(n), "STREAMS", STREAM, ">")
+        before = pending_count()
+    finally:
+        apps_unpause()
+
+    container_do("kill", victim)           # SIGKILL，不给优雅停机机会
+    print(f"  {victim}（consumer={victim_consumer}）被 kill -9，其名下 pending={before}")
+
+    ok, elapsed = wait_drain(n, timeout=120)
+    orders, dups, pending = count_orders(prefix), duplicated_request_ids(prefix), pending_count()
+    print(f"  建单 {orders}/{n}   耗时 {elapsed:.1f}s   pending={pending}")
+
+    checks = [
+        ("kill -9 不丢单", orders == n, f"{orders} vs {n}"),
+        ("重复投递不重复建单", not dups, f"重复={dups or '无'}"),
+        ("pending 归零（孤儿被其余实例回收）", pending == 0, f"pending={pending}"),
+    ]
+    container_do("start", victim)
+    return report("V6e", checks)
+
+
+# ------------------------------------------- V6f 组自愈 / 重启无僵尸消费者
+
+
+def v6f(n):
+    global _current_prefix
+    print("\n=== V6f 消费组自愈 + 重启不累积僵尸消费者 ===")
+    item_id, user_id, address_id = pick_fixtures()
+    prepare_item(item_id)
+    prefix = "V6f"
+    _current_prefix = prefix
+    reset(prefix, item_id)
+
+    before_names = consumer_snapshot()
+    for _ in range(3):
+        container_do("restart", APP_CONTAINERS[0])
+    time.sleep(12)
+    after_names = consumer_snapshot()
+
+    # 消费组被外部删掉后必须能自愈（此前 groupReady 永久短路，会消息只进不出）
+    redis("XGROUP", "DESTROY", STREAM, GROUP)
+    inject(prefix, n, item_id, user_id, address_id)
+    ok, elapsed = wait_drain(n, timeout=90)
+    orders, pending = count_orders(prefix), pending_count()
+
+    checks = [
+        ("重启不累积僵尸消费者", len(after_names) <= len(before_names) + 4,
+         f"重启前 {len(before_names)} → 后 {len(after_names)}"),
+        ("消费组被删后自愈重建", orders == n, f"建单 {orders}/{n}"),
+        ("自愈后 pending 归零", pending == 0, f"pending={pending}"),
+    ]
+    return report("V6f", checks)
+
+
 # ------------------------------------------------------------------ 汇总
 
 
@@ -393,6 +522,8 @@ def main():
                     help="应用日志文件；不给则从 3 个 app 容器的 docker logs 里取（多实例默认）")
     ap.add_argument("--no-v6a", action="store_true")
     ap.add_argument("--no-v6d", action="store_true")
+    ap.add_argument("--only", choices=["v6a", "v6b", "v6c", "v6d", "v6e", "v6f"],
+                    help="只跑指定用例")
     args = ap.parse_args()
 
     global LOG_FILE
@@ -407,10 +538,19 @@ def main():
         )
 
     total = 0
-    if not args.no_v6a:
+    want = lambda k: args.only in (None, k)
+    if want("v6a") and not args.no_v6a:
         total += v6a(args.n)
-    if not args.no_v6d:
+    if want("v6d") and not args.no_v6d:
         total += v6d(args.n)
+    if want("v6b"):
+        total += v6bc(args.n, join=True)
+    if want("v6c"):
+        total += v6bc(args.n, join=False)
+    if want("v6e"):
+        total += v6e(args.n)
+    if want("v6f"):
+        total += v6f(args.n)
 
     print(f"\n===== V6 消费组验证：{'全部通过' if total == 0 else f'{total} 项失败'} =====")
     sys.exit(1 if total else 0)
