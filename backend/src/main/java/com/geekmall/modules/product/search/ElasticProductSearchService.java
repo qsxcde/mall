@@ -5,21 +5,15 @@ import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
-import co.elastic.clients.json.jackson.Jackson3JsonpMapper;
-import co.elastic.clients.transport.rest5_client.Rest5ClientTransport;
-import co.elastic.clients.transport.rest5_client.low_level.Rest5Client;
 import com.geekmall.common.result.PageResult;
 import com.geekmall.modules.product.converter.ProductConverter;
 import com.geekmall.modules.product.dto.ProductQueryDTO;
 import com.geekmall.modules.product.entity.Product;
 import com.geekmall.modules.product.mapper.ProductMapper;
 import com.geekmall.modules.product.vo.ProductCardVO;
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.hc.core5.http.HttpHost;
-import org.apache.hc.core5.util.Timeout;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -67,35 +61,9 @@ public class ElasticProductSearchService implements ProductSearchService {
         this.mysqlFallback = LikeProductSearchService.forFallback(productMapper);
         this.index = index;
         this.degradeToMysql = degradeToMysql;
-        this.client = buildClient(uris, connectTimeoutMs, socketTimeoutMs);
-    }
-
-    /**
-     * 构建 ES 客户端。
-     *
-     * <p><b>超时必须显式设置</b>：客户端的默认 socket 超时是 30s，
-     * 与整个搜索接口的目标延迟（毫秒级）严重不匹配 —— ES 一旦变慢而不是直接拒绝，
-     * 请求线程会被挂住几十秒，进而耗尽 Tomcat 线程池。这里的 2s/5s 是
-     * 「宁可判定失败并降级到 MySQL，也不要拖住调用方」。</p>
-     *
-     * <p>HttpClient 5 的语义比 4.x 更细：连接超时属于 {@code ConnectionConfig}，
-     * 而「等响应」用 {@code RequestConfig.responseTimeout}（4.x 的 socketTimeout 等价物）。</p>
-     */
-    private static ElasticsearchClient buildClient(String uris, int connectTimeoutMs, int socketTimeoutMs) {
-        List<HttpHost> hosts = new ArrayList<>();
-        for (String uri : uris.split(",")) {
-            String trimmed = uri.trim();
-            if (!trimmed.isEmpty()) {
-                hosts.add(HttpHost.create(URI.create(trimmed)));
-            }
-        }
-        Timeout connectTimeout = Timeout.ofMilliseconds(connectTimeoutMs);
-        Timeout responseTimeout = Timeout.ofMilliseconds(socketTimeoutMs);
-        Rest5Client restClient = Rest5Client.builder(hosts.toArray(new HttpHost[0]))
-                .setConnectionConfigCallback(config -> config.setConnectTimeout(connectTimeout))
-                .setRequestConfigCallback(config -> config.setResponseTimeout(responseTimeout))
-                .build();
-        return new ElasticsearchClient(new Rest5ClientTransport(restClient, new Jackson3JsonpMapper()));
+        // 客户端构建与超时语义收敛在 EsClientFactory：增量索引写入用的是同一份参数，
+        // 各写一遍迟早出现「搜索 2s 超时、写索引 30s 挂死」这类不一致
+        this.client = EsClientFactory.build(uris, connectTimeoutMs, socketTimeoutMs);
     }
 
     @Override

@@ -1,11 +1,25 @@
 #!/usr/bin/env python3
 """
-把 pms_product 的在售商品同步到 Elasticsearch（全量导入）。
+把 pms_product 的在售商品同步到 Elasticsearch（**全量**导入）。
+
+与在线增量的分工
+----------------
+索引维护有两条路径，缺一不可：
+
+* **在线增量**（应用内）：商家保存商品 / 上下架 / 改价后，`ProductStockService` 发布
+  `ProductChangedEvent`，`ProductIndexSyncListener` 在事务提交后异步调用
+  `ElasticProductSearchIndexer` 写入单条文档（下架则删除文档）。
+  正常运营期间的索引新鲜度靠它保证。
+* **离线全量**（本脚本）：首次灌数、索引重建、或需要把 `sales` 等高频字段对齐时使用。
+
+因此**日常不需要重跑本脚本**；改了字段口径（比如新增一个可检索字段）时，
+要同时改 `ProductIndexDocument`、本脚本的 `MAPPING`/`build_bulk_body` 以及应用内的建索引 mapping。
 
 设计取舍
 --------
 1. **只同步「买家侧可见且搜索需要的字段」**：`cost`（成本价）刻意不同步 ——
    它是商家端敏感字段，一旦进索引就有被搜索接口带出去的风险。
+   应用侧由 `ProductIndexDocumentTest` 守住这条约束。
 2. **只同步上架商品**：`status=1 AND deleted=0`，与买家端可见范围一致。
 3. **游标分页**：用 `id > cursor ORDER BY id` 而不是 `LIMIT offset`，
    后者在百万行下会越翻越慢（深分页问题）。
