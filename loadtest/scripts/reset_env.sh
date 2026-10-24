@@ -13,6 +13,9 @@
 #   RATE_LIMIT_ENABLED=false  压测口径默认关闭限流（否则批量登录/读链路会 429）
 #   SECKILL_ASYNC_ENABLED=false  秒杀削峰队列开关：true=用队列异步落库，false=同步落库
 #                                （同一台脚本跑两遍即可做「用/不用削峰」A/B 对比）
+#   SECKILL_BATCH_ENABLED=false  批量落库开关：true=消费端一次拉 N 条、一个事务批量写入，
+#                                false=逐条事务（仅在 SECKILL_ASYNC_ENABLED=true 时生效）。
+#                                用于 A/B 验证「批量归并扣减 + 多值 INSERT」对落库 TPS 的收益
 #   CONSUMER_THREADS=4        削峰消费者线程数 —— 做 MQ 对比时**必须显式指定**：
 #                             非MQ 侧是 seckillExecutor 的 64 线程并发落库，若异步侧只给 4 个
 #                             消费线程，比的是「配置」而不是「架构」，即文档里的缺陷 D1。
@@ -49,6 +52,8 @@ LOG_LEVEL="${LOG_LEVEL:-info}"
 STORAGE_TYPE="${STORAGE_TYPE:-local}"
 RATE_LIMIT_ENABLED="${RATE_LIMIT_ENABLED:-false}"
 SECKILL_ASYNC_ENABLED="${SECKILL_ASYNC_ENABLED:-false}"
+SECKILL_BATCH_ENABLED="${SECKILL_BATCH_ENABLED:-false}"
+SECKILL_BATCH_SIZE="${SECKILL_BATCH_SIZE:-16}"
 CONSUMER_THREADS="${CONSUMER_THREADS:-4}"
 SECKILL_PROFILE="${SECKILL_PROFILE:-single}"
 SECKILL_STOCK="${SECKILL_STOCK:-}"
@@ -212,6 +217,10 @@ ARGS=(
   "--mall.seckill.async.enabled=$SECKILL_ASYNC_ENABLED"
   # 消费线程数显式下发：做 MQ 对比时用来对齐两组的有效并行度（缺陷 D1）
   "--mall.seckill.async.consumer-threads=$CONSUMER_THREADS"
+  # 批量落库：消费端一次拉 N 条、一个事务批量写入；仅在削峰开启时生效
+  "--mall.seckill.async.batch-enabled=$SECKILL_BATCH_ENABLED"
+  # 单批条数：既决定 XREADGROUP 的 COUNT，也决定批量事务的大小
+  "--mall.seckill.async.batch-size=$SECKILL_BATCH_SIZE"
 )
 if [[ -n "$SPRING_PROFILES" ]]; then
   ARGS+=("--spring.profiles.active=$SPRING_PROFILES")
@@ -219,7 +228,7 @@ fi
 
 STORAGE_TYPE="$STORAGE_TYPE" nohup java -jar "$JAR" "${ARGS[@]}" > "$LOG_FILE" 2>&1 &
 NEW_PID=$!
-echo "      pid=$NEW_PID  端口=$PORT  限流=$RATE_LIMIT_ENABLED  秒杀削峰=$SECKILL_ASYNC_ENABLED  消费线程=$CONSUMER_THREADS  日志：$LOG_FILE"
+echo "      pid=$NEW_PID  端口=$PORT  限流=$RATE_LIMIT_ENABLED  秒杀削峰=$SECKILL_ASYNC_ENABLED  批量落库=$SECKILL_BATCH_ENABLED  消费线程=$CONSUMER_THREADS  日志：$LOG_FILE"
 
 echo "[5/5] 等待健康检查通过（并确认新进程真的接管了端口）..."
 for i in $(seq 1 "$HEALTH_TIMEOUT"); do
