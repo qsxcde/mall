@@ -49,7 +49,7 @@ jobs:
       - name: 运行测试
         run: mvn -B -ntp test
 
-      # 覆盖率门禁：下限 60%（当前实测 64.41%），规则配置在 pom 的 jacoco 插件级。
+      # 覆盖率门禁：下限 60%（全量 mvn test 实测 77.81%，2026-10-23），规则配置在 pom 的 jacoco 插件级。
       # 单独成步的原因同上 —— 让「测试挂了」和「覆盖率跌破下限」在 Actions 页面一眼可分。
       - name: 覆盖率门禁（JaCoCo · LINE ≥ 60%）
         run: mvn -B -ntp jacoco:check

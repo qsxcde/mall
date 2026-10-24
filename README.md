@@ -19,7 +19,7 @@
 | 后端 | `backend/` | Spring Boot 4.1.1 + JDK 21，134 个 REST 接口，统一前缀 `/api/v1` |
 | 基础设施 | `infra/` | Docker Compose 编排 MySQL / Redis / MinIO，可选开可观测性栈 |
 | 压测 | `loadtest/` | k6 为主、JMeter 为辅，含数据准备与结果校验脚本 |
-| 文档 | `docs/` | 24 份分析报告（现状、治理清单、限流策略、压测对比、多实例验证等） |
+| 文档 | `docs/` | 23 份分析报告（现状、治理清单、限流策略、压测对比、多实例验证等） |
 
 ### 1.2 技术栈
 
@@ -30,13 +30,13 @@
 | 运行时 | JDK 21 |
 | 框架 | Spring Boot 4.1.1（Spring Framework 7 + Jackson 3） |
 | 安全 | Spring Security 7 + JWT 无状态（Redis 保存会话，支持登出踢下线） |
-| 持久层 | MyBatis-Plus + MySQL 8 + Flyway（14 个版本化迁移，代码与库结构同源） |
+| 持久层 | MyBatis-Plus + MySQL 8 + Flyway（16 个版本化迁移 V1–V16，代码与库结构同源） |
 | 缓存 | Redis 7（分级 TTL + 本地 Caffeine L1） |
 | 分布式 | Redis Stream（秒杀削峰队列）、ShedLock（定时任务互斥） |
 | 可观测性 | Actuator + Micrometer/Prometheus + 结构化 JSON 日志 + TraceId 全链路（跨线程 / 跨队列） |
 | 接口文档 | springdoc-openapi（Swagger UI） |
 | 存储 | MinIO 对象存储，可切本地磁盘 |
-| 搜索 | 可切换三实现：MySQL `LIKE` / MySQL `FULLTEXT`(ngram) / Elasticsearch 9.4 |
+| 搜索 | 可切换三实现：MySQL `LIKE` / MySQL `FULLTEXT`(ngram) / Elasticsearch 9.4（含增量索引同步） |
 | 测试 | JUnit 5 + Testcontainers（真实 MySQL 8 / Redis 7 容器）+ ArchUnit（分层约束） |
 
 **前端**
@@ -79,8 +79,8 @@
 
 ### 1.5 质量与验证
 
-- **57 个测试类**（+2 基类，共 **668 个用例**），`mvn test` 一键运行全绿；集成测试用 Testcontainers 起**真实 MySQL 8 + Redis 7**，跑真实 Flyway 迁移与真实过滤器链；JaCoCo 行覆盖率 **71.17%**（门禁 ≥60%）
-- **代码风格有工具约束且已接入 CI**：后端 Spotless + palantir-java-format，前端 ESLint 9（flat config）+ Prettier 3。
+- **68 个测试类 / 775 个用例**（+2 基类），`mvn test` 一键运行全绿；集成测试用 Testcontainers 起**真实 MySQL 8 + Redis 7（+ 按需 Elasticsearch 9）**，跑真实 Flyway 迁移与真实过滤器链；JaCoCo 行覆盖率 **77.81%**（门禁 ≥60%）
+- **代码风格有工具约束且已接入 CI**：后端 Spotless + palantir-java-format，前端 ESLint 10（flat config，两端统一）+ Prettier 3。
   两边都用 **ratchet**（只约束「相对基线有改动的文件」）——因为全库重排会产生覆盖数百文件的 diff，
   而 ratchet 既能让 CI 立刻变绿，又能让此后每次改动自动收敛到统一风格
 - 并发正确性从「压测时观察」升级为「自动化断言」——改坏了会立刻红灯
@@ -114,7 +114,7 @@
 | --- | --- | --- |
 | JDK | 21 | 后端编译运行 |
 | Maven | 3.9+ | 构建；**仓库未提供 `mvnw`，需自行安装 Maven** |
-| Node.js | 20 / 22（18 亦可） | 前端构建；`vite@6` 要求 Node `^18` / `^20` / `>=22`，Node 18 已 EOL，建议 20/22 |
+| Node.js | 20.19+ / 22.12+ | 前端构建；`vite@7` 要求 Node `^20.19.0 || >=22.12.0`（Node 18 已 EOL） |
 | Docker | 任意较新版本 | 起中间件；**跑集成测试也需要它**；命令为 Compose V2 的 `docker compose`（非 `docker-compose`） |
 
 > **换一台电脑时，除上面 4 个运行时外无需额外配置**：后端 `dev` 所需的 MySQL / Redis / MinIO 连接信息全部有默认值（见 `application-dev.yml`），`infra/.env` 是可选的（`docker-compose.yml` 的兜底端口/账号与 `application-dev.yml` 的默认值一致，不建也能直接起）。
@@ -136,7 +136,7 @@ docker compose -f infra/docker-compose.yml --profile observability up -d
 docker compose -f infra/docker-compose.yml ps
 ```
 
-**表结构与演示数据不在这里初始化**，而是由后端启动时的 Flyway 自动执行（`V1__init.sql` ~ `V12__seckill_stock_bucketing.sql`），保证代码与库结构始终同源。
+**表结构与演示数据不在这里初始化**，而是由后端启动时的 Flyway 自动执行（`V1__init.sql` ~ `V15__payment_refund_retry.sql`），保证代码与库结构始终同源。
 
 > 若 MinIO 镜像因网络问题拉取失败：**不影响后端启动**，只是图片上传会提示失败。可让后端改用本地磁盘存储：`--mall.storage.type=local`，文件落在 `backend/uploads/`。
 
@@ -226,7 +226,7 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
 | 提示连接不上 MySQL/Redis | 中间件未启动：`docker compose -f infra/docker-compose.yml up -d` |
 | 宿主机 3307 / 6379 端口被占用 | 本机已装 MySQL / Redis 与容器冲突：停掉本地服务，或改 `.env` 里的 `MYSQL_PORT` / `REDIS_PORT` 并同步后端环境变量 |
 | 启动报 `Access denied for user 'root'@'localhost'` | 后端连到了**本机**的 MySQL 而不是容器（3306 被本地实例占用）：确认容器端口为 3307，且 `application-dev.yml` 的默认端口未被改回 3306 |
-| 前端 `npm run dev` 报 Node 版本不支持 | `vite@6` 要求 Node `^18` / `^20` / `>=22`，升级到 Node 20/22 |
+| 前端 `npm run dev` 报 Node 版本不支持 | `vite@7` 要求 Node `^20.19.0` / `>=22.12.0`，升级到 Node 20.19+ 或 22.12+ |
 | `mvn test` 失败且报容器相关错误 | Docker 未运行，或 Testcontainers 版本过低（项目已固定为 1.21.4） |
 | 图片上传失败 | MinIO 未就绪；改用 `--mall.storage.type=local` |
 | 压测大面积失败 | 大概率是压测账号 token 过期（见 2.7 提示） |
@@ -285,6 +285,11 @@ ES 是唯一延迟与命中数弱相关、且能横向扩展的方案。** 详�
 
 实测同时暴露并修复了一个真实缺陷：布隆过滤器预热在 80 万在售商品时一次性灌入 ~560 万条
 SETBIT 命令，**直接 OOM 导致应用启动失败**（`RedisBloomFilter.addAllRaw` 已改为分批写入）。
+
+索引维护分两条路径，缺一不可：**离线全量**（`loadtest/scripts/es_sync_products.py`，首次灌数与重建）
+与**在线增量**（商家保存/上下架/改价后经 `ProductChangedEvent` → `ProductIndexSyncListener`
+→ `ElasticProductSearchIndexer` 自动同步，事务提交后异步执行、失败只降级搜索新鲜度）。
+只有全量脚本时，商家改完价要等下一次人工重跑才生效；只有增量则无法重建索引。
 
 **⑤ 可观测性从「有配置」走到「有看板」** —— ✅ 已完成
 

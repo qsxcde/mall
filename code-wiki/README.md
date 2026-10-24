@@ -15,7 +15,7 @@
 | 后端 | Spring Boot 4.1.1 + JDK 21 + MyBatis-Plus + MySQL 8 + Redis 7，134 个 REST 接口，统一前缀 `/api/v1` |
 | 前端 | Vue 3 + Vite + Pinia + Element Plus，买家端（5173）与商家端（5174）两个独立工程 |
 | 基础设施 | Docker Compose 编排 MySQL / Redis / MinIO（可选 Elasticsearch），`observability` profile 额外起 Prometheus / Grafana / Loki / Promtail |
-| 质量保障 | 668 个测试用例（Testcontainers 真实容器集成测试 + ArchUnit 架构约束），JaCoCo 行覆盖率 71.17%（门禁 ≥60%）+ k6/JMeter 压测体系 + GitHub Actions CI |
+| 质量保障 | 775 个后端用例 + 73 个前端用例（Testcontainers 真实容器集成测试 + ArchUnit 架构约束），JaCoCo 行覆盖率 77.81%（门禁 ≥60%）+ k6/JMeter 压测体系 + GitHub Actions CI |
 | 核心能力 | 全站限流、缓存三防、秒杀削峰、幂等与状态机、库存分桶、分布式锁、全链路 TraceId、**可切换商品搜索（LIKE/FULLTEXT/ES）** |
 
 ## 二、文档导航
@@ -33,13 +33,13 @@
 
 ```
 .
-├── backend/             # Spring Boot 后端（含 Dockerfile、Flyway 迁移、668 个测试）
+├── backend/             # Spring Boot 后端（含 Dockerfile、Flyway 迁移、775 个用例）
 ├── frontend/            # 买家端（Vue 3，Vite 端口 5173）
 ├── frontendMerchant/    # 商家端（Vue 3，Vite 端口 5174）
 ├── infra/               # docker-compose 编排 + Prometheus/Grafana/Loki provisioning
 ├── loadtest/            # k6 / JMeter 压测脚本、数据准备、结果校验、实测结果
 ├── scripts/             # run-backend.sh、check-frontend-style.sh
-├── docs/                # 24 份分析报告（planning / concurrency / benchmark / spec / governance）
+├── docs/                # 23 份分析报告（planning / concurrency / benchmark / spec / governance）
 ├── .github/workflows/   # CI（后端 Spotless + mvn test；双前端 ESLint + build）
 └── code-wiki/           # 本文档
 ```
