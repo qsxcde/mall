@@ -35,7 +35,10 @@ import com.geekmall.modules.trade.mapper.OrderMapper;
 import com.geekmall.modules.trade.mapper.OrderStatusLogMapper;
 import com.geekmall.modules.trade.service.OrderStateMachine;
 import com.geekmall.modules.trade.service.TradeService;
+import com.geekmall.modules.trade.support.OrderCheckoutSupport;
+import com.geekmall.modules.trade.support.OrderIdempotentSupport;
 import com.geekmall.modules.trade.support.OrderNoGenerator;
+import com.geekmall.modules.trade.support.OrderPersistSupport;
 import com.geekmall.modules.trade.vo.PreOrderVO;
 import com.geekmall.modules.user.service.UserService;
 import com.geekmall.modules.user.vo.AddressVO;
@@ -119,22 +122,31 @@ class TradeServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        tradeService = new TradeServiceImpl(
-                cartService,
-                userService,
-                couponService,
-                productStockService,
-                inventoryBucketService,
+        // 拆分后协作类与门面共享同一批 Mock，验证语义不变
+        OrderCheckoutSupport checkoutSupport = new OrderCheckoutSupport(cartService, couponService, userService);
+        OrderPersistSupport persistSupport = new OrderPersistSupport(
                 orderMapper,
                 orderItemMapper,
                 orderStatusLogMapper,
                 rollbackLogMapper,
-                orderStateMachine,
                 orderNoGenerator,
+                productStockService,
+                inventoryBucketService,
+                userService);
+        OrderIdempotentSupport idempotentSupport = new OrderIdempotentSupport(redisTemplate);
+        tradeService = new TradeServiceImpl(
+                userService,
+                couponService,
+                productStockService,
+                orderMapper,
+                orderStateMachine,
                 redisTemplate,
                 eventPublisher,
                 selfProvider,
-                paymentRefundService);
+                paymentRefundService,
+                checkoutSupport,
+                persistSupport,
+                idempotentSupport);
         // cancel / closeExpiredOrders 经 selfProvider 调「本类的事务方法」；
         // 单测里让它指回自身实例，等价于代理自调用。
         // 用 lenient：多数用例并不触发自调用，严格模式会误报 UnnecessaryStubbing
