@@ -286,8 +286,10 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
   价格敏感的 `productDetail` 不在 L1 白名单里，改价后全局 **5~17ms** 即可见。
   **结论：白名单收窄足够，不加跨实例失效广播** —— 代价是「改价后其它实例最长约 3s 还看得到旧首页/分类」，
   这是聚合类数据的既定取舍。见 `docs/benchmark/L1缓存一致性实测-2026-10-25.md`。
-  ⚠️ 仍未钉死：`@CacheEvict` 相对**事务提交**的先后未显式固定（未用 `TransactionAwareCacheManagerProxy`），
-  约 1.7 万次并发读下未观测到「旧值被重新缓存并带长 TTL」，但属概率覆盖，留作独立加固项。
+  实测同时暴露一个隐患：`@CacheEvict` 相对**事务提交**的先后未显式固定，失效若早于提交，
+  并发读可能把「提交前的旧值」重新缓存并带长 TTL（3s 的窗口被放大到 5min/30min）。
+  **已修（2026-10-25）**：缓存写入/失效推迟到事务 `afterCommit`、回滚则丢弃，
+  由 `CacheTransactionOrderIntegrationTest` 三条确定性断言钉死。
 
 **③ 商品域进阶**
 
