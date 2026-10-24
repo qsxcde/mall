@@ -42,7 +42,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  *   </tr>
  *   <tr>
  *     <td>一致性</td>
- *     <td><b>失效晚于提交</b>：写入 / 失效挂在事务 {@code afterCommit}，回滚则丢弃</td>
+ *     <td><b>失效晚于提交</b>：{@code evict} / {@code clear} 挂在事务 {@code afterCommit}，回滚则丢弃</td>
  *     <td>—</td>
  *   </tr>
  * </table>
@@ -269,10 +269,18 @@ public class ResilientRedisCache extends RedisCache {
 
     /* ------------------------------ 写路径 ------------------------------ */
 
-    /** 写入缓存；在事务中时推迟到<b>提交之后</b>，见 {@link #afterCommit(Runnable)}。 */
+    /**
+     * 写入缓存，<b>立即执行</b>（不挂 afterCommit）。
+     *
+     * <p>这里刻意不延迟：它是 {@code @Cacheable} 回源后「重建 → 写缓存」的那一步，
+     * 延迟会让缓存在回源之后仍然空着，击穿防护随之失效 —— 并发未命中时每个线程都会
+     * 各自回源一次（实测即 {@code CacheGovernanceIntegrationTest} 的
+     * 「只允许一个节点回源重建」红灯）。而它写的是<b>本事务查询到的值</b>，
+     * 读路径本身不产生未提交数据，无需等到提交后。</p>
+     */
     @Override
     public void put(Object key, Object value) {
-        afterCommit(() -> doPut(key, value));
+        doPut(key, value);
     }
 
     /** 失效单个 key；在事务中时推迟到<b>提交之后</b>。 */
@@ -347,11 +355,10 @@ public class ResilientRedisCache extends RedisCache {
      * （{@link #isLocalCacheEnabled()} / {@link #localCacheSize()}）与既有集成测试断言。
      * 为一层装饰器拉进一个新依赖不划算，所以把时序保障放在缓存层内部 —— 与「三防」同一层。</p>
      *
-     * <p>覆盖范围：{@link #put} / {@link #evict} / {@link #clear}，也就是
-     * {@code @Cacheable} 回源写入与 {@code @CacheEvict} 的两种形态
-     * （{@code allEntries=true} 走 clear、按 key 走 evict）。Spring 7 新增的
-     * {@code Cache#invalidate()} / {@code evictIfPresent()} 是接口 default 方法，
-     * 会经多态间接调到这里的 {@link #clear} / {@link #evict}，一并被覆盖。</p>
+     * <p>覆盖范围：{@link #evict} / {@link #clear}，也就是 {@code @CacheEvict} 的两种形态
+     * （{@code allEntries=true} 走 clear、按 key 走 evict）。{@link #put} 刻意<b>不</b>延迟，
+     * 原因见它的注释。Spring 7 新增的 {@code Cache#invalidate()} / {@code evictIfPresent()}
+     * 是接口 default 方法，会经多态间接调到这里的 {@link #clear} / {@link #evict}，一并被覆盖。</p>
      */
     private void afterCommit(Runnable action) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
