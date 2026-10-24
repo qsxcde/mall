@@ -70,12 +70,18 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
     public List<Delivery> poll(String consumer, int maxCount, Duration block) {
         ensureGroup();
         // ">" 表示只读「尚未投递过」的新消息；已被回收（pending）的消息要靠 reclaimStale 取回
-        List<MapRecord<String, Object, Object>> records = redisTemplate
-                .opsForStream()
-                .read(
-                        Consumer.from(GROUP, consumer),
-                        StreamReadOptions.empty().count(maxCount).block(block),
-                        StreamOffset.create(RedisKeys.SECKILL_ORDER_STREAM, ReadOffset.lastConsumed()));
+        List<MapRecord<String, Object, Object>> records;
+        try {
+            records = redisTemplate
+                    .opsForStream()
+                    .read(
+                            Consumer.from(GROUP, consumer),
+                            StreamReadOptions.empty().count(maxCount).block(block),
+                            StreamOffset.create(RedisKeys.SECKILL_ORDER_STREAM, ReadOffset.lastConsumed()));
+        } catch (RuntimeException ex) {
+            invalidateGroupIfGone(ex);
+            throw ex;
+        }
         if (records == null || records.isEmpty()) {
             return List.of();
         }
@@ -118,9 +124,15 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
     @Override
     public List<Delivery> reclaimStale(String consumer, Duration minIdle, int maxCount) {
         ensureGroup();
-        PendingMessages pending = redisTemplate
-                .opsForStream()
-                .pending(RedisKeys.SECKILL_ORDER_STREAM, GROUP, Range.unbounded(), (long) maxCount);
+        PendingMessages pending;
+        try {
+            pending = redisTemplate
+                    .opsForStream()
+                    .pending(RedisKeys.SECKILL_ORDER_STREAM, GROUP, Range.unbounded(), (long) maxCount);
+        } catch (RuntimeException ex) {
+            invalidateGroupIfGone(ex);
+            throw ex;
+        }
         if (pending == null || pending.isEmpty()) {
             return List.of();
         }
@@ -240,6 +252,22 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
 
     private byte[] rawKey() {
         return RedisKeys.SECKILL_ORDER_STREAM.getBytes(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * 消费组被外部删除 / 淘汰后，撤销「已建组」标记，让下次调用重新建组。
+     *
+     * <p><b>只修「首次建组失败要重试」是不够的</b>：{@link #groupReady} 一旦置 true 就永久短路，
+     * 若之后消费组被 {@code XGROUP DESTROY}、Redis 淘汰或故障转移丢掉，所有
+     * {@code XREADGROUP} 会一直报 NOGROUP —— 消息只进不出，用户永远停在「排队中」，
+     * 且只能重启进程恢复。这里在 NOGROUP 面时把标记撤销，自愈闭环才完整。</p>
+     */
+    private void invalidateGroupIfGone(RuntimeException ex) {
+        String message = ex.getMessage() == null ? "" : ex.getMessage();
+        if (message.contains("NOGROUP")) {
+            groupReady = false;
+            log.warn("秒杀消费组已丢失（可能被删除 / 淘汰 / 故障转移），下次调用将重建：{}", message);
+        }
     }
 
     private Map<byte[], byte[]> rawFields(Map<String, String> fields) {
