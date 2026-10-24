@@ -3,7 +3,6 @@ package com.geekmall.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.geekmall.common.cache.CacheNames;
-import com.geekmall.common.cache.ResilientRedisCache;
 import com.geekmall.modules.merchant.dto.ProductBatchDTO;
 import com.geekmall.modules.merchant.service.MerchantProductService;
 import com.geekmall.modules.product.entity.Product;
@@ -88,43 +87,49 @@ class CacheTransactionOrderIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("失效只发生在提交之后：提交前缓存还在，提交后才消失")
     void shouldEvictOnlyAfterCommit() {
         Cache cache = cacheManager.getCache(CacheNames.HOME_FLOORS);
-        ResilientRedisCache resilient = (ResilientRedisCache) cache;
         cache.put(PROBE_KEY, "v1");
+        seedLocalOnly();
         long productId = createOnShelfProduct("事务顺序-提交");
         authenticateMerchant();
 
         TransactionTemplate tpl = new TransactionTemplate(transactionManager);
         tpl.execute(status -> {
             merchantProductService.batchUpdatePrice(batchDto(productId));
-            assertThat(resilient.localCacheSize())
+            assertThat(cache.get(PROBE_KEY))
                     .as("提交前缓存必须还在 —— 失效挂在 afterCommit，不能抢在提交之前")
-                    .isEqualTo(1L);
+                    .isNotNull();
             return null;
         });
 
-        assertThat(resilient.localCacheSize()).as("提交后缓存必须失效，否则延迟会变成「永不生效」").isZero();
+        assertThat(cache.get(PROBE_KEY)).as("提交后缓存必须失效，否则延迟会变成「永不生效」").isNull();
     }
 
     @Test
     @DisplayName("本地 L1 与 Redis 一起推迟：回滚后 L1 里的值还在，提交后一起清掉")
     void shouldDeferLocalCacheToo() {
         Cache cache = cacheManager.getCache(CacheNames.HOME_FLOORS);
-        ResilientRedisCache resilient = (ResilientRedisCache) cache;
         cache.put(PROBE_KEY, "v1");
+        seedLocalOnly();
         long productId = createOnShelfProduct("事务顺序-L1");
-        assertThat(resilient.localCacheSize()).as("探针应已进 L1").isEqualTo(1L);
 
         runInTransaction(true, productId);
 
-        assertThat(resilient.localCacheSize())
-                .as("回滚后 L1 不该被清（失效也挂在 afterCommit）")
-                .isEqualTo(1L);
-        assertThat(cache.get(PROBE_KEY)).isNotNull();
+        assertThat(cache.get(PROBE_KEY)).as("回滚后 L1 不该被清（失效也挂在 afterCommit）").isNotNull();
 
         runInTransaction(false, productId);
 
-        assertThat(resilient.localCacheSize()).as("提交后 L1 与 Redis 一起失效").isZero();
-        assertThat(cache.get(PROBE_KEY)).isNull();
+        assertThat(cache.get(PROBE_KEY)).as("提交后 L1 与 Redis 一起失效").isNull();
+    }
+
+    /**
+     * 删掉 Redis 里那份，只留本地 L1。
+     *
+     * <p>不这么做的话 {@code cache.get} 命中的是 L1 还是 Redis 无法区分，也就证明不了
+     * 「L1 是否被推迟清理」。也不用 {@code localCacheSize()} —— Caffeine 的
+     * {@code estimatedSize()} 是<b>近似值</b>，在 CI 上时序抖动下会红。</p>
+     */
+    private void seedLocalOnly() {
+        stringRedisTemplate.delete("mall:cache:" + CacheNames.HOME_FLOORS + "::" + PROBE_KEY);
     }
 
     /* ------------------------------ 辅助方法 ------------------------------ */
