@@ -196,14 +196,19 @@ public class OrderPersistSupport {
         orderItemMapper.batchInsert(items);
         orderStatusLogMapper.batchInsert(logs);
 
-        // 商品库存扣减放事务末尾，缩短商品行锁持有时间。
-        // 逐单调用现有出库原语（分桶商品走桶级 CAS、未分桶走单行 CAS），
-        // 按商品/桶归并成一次 CAS 的批量版本在后续提交里替换这里。
-        for (Order order : orders) {
-            FixedPriceOrderCommand command = commandByOrderNo.get(order.getOrderNo());
-            Product product = productByOrderNo.get(order.getOrderNo());
-            deductProductStock(command.productId(), command.qty(), product.getTitle(), order.getOrderNo());
+        List<BucketDeductDTO> deductions = new ArrayList<>(orders.size());
+        for (FixedPriceOrderCommand command : unique) {
+            BucketDeductDTO dto = new BucketDeductDTO();
+            dto.setProductId(command.productId());
+            dto.setQty(command.qty());
+            dto.setOrderNo(orderNoByRequestId.get(command.requestId()));
+            dto.setOperator("seckill-batch");
+            dto.setRemark("秒杀批量落库");
+            deductions.add(dto);
         }
+        // 商品库存按商品/桶归并成一次 CAS：同一批次落在同一桶的 N 单合并扣减，
+        // pms_product 总库存每批每商品只更新一次（而不是每单一次）
+        inventoryBucketService.deductBatch(deductions);
         return orderNoByRequestId;
     }
 

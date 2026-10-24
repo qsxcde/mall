@@ -16,7 +16,6 @@ import com.geekmall.modules.inventory.vo.BucketOperationVO;
 import com.geekmall.modules.inventory.vo.BucketReportVO;
 import com.geekmall.modules.inventory.vo.BucketRuleVO;
 import com.geekmall.modules.inventory.vo.BucketVO;
-
 import java.util.List;
 
 /**
@@ -68,6 +67,15 @@ public interface InventoryBucketService {
 
     /** 按优先级从各桶出库，并同步扣减商品总库存（orderNo + productId 幂等）。 */
     BucketDeductResultVO deduct(BucketDeductDTO dto);
+
+    /**
+     * 批量出库：把一批订单按商品 / 桶归并后扣减。
+     *
+     * <p>与 {@link #deduct} 语义一致（同样扣减商品总库存、写审计流水、按 orderNo 幂等），
+     * 区别是同一批次落在同一桶的订单只发一次 CAS。任意一条失败即抛异常，
+     * 由调用方的事务整体回滚后逐单重试。</p>
+     */
+    void deductBatch(List<BucketDeductDTO> deductions);
 
     /** 把某出库单的量还回**原来那一桶**（整单，跨商品；幂等）。 */
     BucketDeductResultVO rollback(String orderNo);

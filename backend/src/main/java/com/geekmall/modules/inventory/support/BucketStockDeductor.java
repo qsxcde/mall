@@ -276,7 +276,7 @@ public class BucketStockDeductor {
         return result;
     }
 
-    private void sortCandidates(List<InvBucket> candidates, DeductPolicy policy) {
+    static void sortCandidates(List<InvBucket> candidates, DeductPolicy policy) {
         Comparator<InvBucket> comparator =
                 switch (policy) {
                     case EXPIRY_FIRST -> Comparator.comparing(
@@ -309,7 +309,7 @@ public class BucketStockDeductor {
         }
     }
 
-    private DeductPolicy resolvePolicy(Long productId, Long shopId, String explicit) {
+    DeductPolicy resolvePolicy(Long productId, Long shopId, String explicit) {
         if (StringUtils.hasText(explicit)) {
             return store.parsePolicy(explicit);
         }
