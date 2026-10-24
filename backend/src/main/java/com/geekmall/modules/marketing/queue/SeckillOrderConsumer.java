@@ -147,7 +147,7 @@ public class SeckillOrderConsumer implements SmartLifecycle {
      * 与逐条路径共用同一段逻辑，避免两套补偿实现漂移。</p>
      */
     private void processBatch(String consumer, List<SeckillOrderQueue.Delivery> deliveries) {
-        SeckillBatchOrderHandler.BatchHandleResult result = batchOrderHandler.handle(deliveries);
+        SeckillBatchOrderHandler.BatchHandleResult result = batchOrderHandler.handle(consumer, deliveries);
         for (SeckillOrderQueue.Delivery delivery : result.deadLetters()) {
             if (!running.get()) {
                 return;
@@ -228,7 +228,14 @@ public class SeckillOrderConsumer implements SmartLifecycle {
                     message.userId(), message.itemId(), message.addressId(), requestId, message.bucketNo());
             resultStore.save(SeckillGrabResult.success(requestId, message.userId(), orderNo));
             queue.ack(delivery);
-            log.info("[秒杀削峰] 落库成功：requestId={}, 桶={}, 订单号={}", requestId, message.bucketNo(), orderNo);
+            // consumer 名是「分工」的唯一证据：没有它就只能事后从 XINFO 推断，
+            // 而无法回答「这条消息到底是哪个实例的哪个消费线程处理的」
+            log.info(
+                    "[秒杀削峰] 落库成功：requestId={}, 桶={}, 订单号={}, consumer={}",
+                    requestId,
+                    message.bucketNo(),
+                    orderNo,
+                    consumer);
         } catch (BizException ex) {
             // 业务性失败：重投也不会变好 → 回补预扣 + 写终态 + 丢弃
             seckillService.releaseReservation(message.itemId(), message.userId(), message.bucketNo());

@@ -42,7 +42,7 @@ public class SeckillBatchOrderHandler {
     /** 批量处理结果：死信由消费者处理，fallback 由消费者逐条重试。 */
     public record BatchHandleResult(List<Delivery> deadLetters, List<Delivery> fallback) {}
 
-    public BatchHandleResult handle(List<Delivery> deliveries) {
+    public BatchHandleResult handle(String consumer, List<Delivery> deliveries) {
         if (deliveries == null || deliveries.isEmpty()) {
             return new BatchHandleResult(List.of(), List.of());
         }
@@ -134,7 +134,7 @@ public class SeckillBatchOrderHandler {
         meterRegistry
                 .timer("mall_seckill_batch_duration_seconds")
                 .record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
-        log.info("[秒杀批量] 批量落库完成：成功={}, 业务失败={}, 回退={}", success, failed, fallback.size());
+        log.info("[秒杀批量] 批量落库完成：成功={}, 业务失败={}, 回退={}, consumer={}", success, failed, fallback.size(), consumer);
         return new BatchHandleResult(deadLetters, fallback);
     }
 

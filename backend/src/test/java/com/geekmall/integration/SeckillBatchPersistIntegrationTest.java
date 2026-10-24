@@ -328,7 +328,7 @@ class SeckillBatchPersistIntegrationTest extends AbstractIntegrationTest {
         double before = meterRegistry
                 .counter("mall_seckill_batch_commit_total", "result", "success")
                 .count();
-        SeckillBatchOrderHandler.BatchHandleResult result = batchOrderHandler.handle(deliveries);
+        SeckillBatchOrderHandler.BatchHandleResult result = batchOrderHandler.handle("test-consumer", deliveries);
 
         assertThat(result.fallback()).as("四条消息应一次性批量落库，不该退回逐条").isEmpty();
         assertThat(result.deadLetters()).isEmpty();
