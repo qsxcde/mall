@@ -35,6 +35,9 @@
 #                                      验证 kill -9 孤儿回收时**必须调到秒级**（如 2s），
 #                                      否则每个用例都要等满默认的 1 分钟
 #   SECKILL_RECLAIM_INTERVAL=30s       回收扫描间隔（验证时同样建议 1s）
+#   MALL_CACHE_LOCAL_TTL=3s            本地 L1 存活时长（mall.cache.local.ttl）。
+#                                      默认 3s = 现行为不变；做「L1 一致性窗口随 TTL 缩放」
+#                                      反证时改成 1s 等小值，再跑 loadtest/scripts/verify_cache_l1.py
 # ============================================================
 name: geek-mall
 
@@ -83,6 +86,7 @@ x-app-env: &app-env
     -Dmall.seckill.async.batch-enabled=${SECKILL_BATCH_ENABLED:-false}
     -Dmall.seckill.async.reclaim-min-idle=${SECKILL_RECLAIM_MIN_IDLE:-1m}
     -Dmall.seckill.async.reclaim-interval=${SECKILL_RECLAIM_INTERVAL:-30s}
+    -Dmall.cache.local.ttl=${MALL_CACHE_LOCAL_TTL:-3s}
     -Dmall.payment.allow-local-in-prod=${ALLOW_LOCAL_PAYMENT_IN_PROD:-true}
 
 x-app: &app
