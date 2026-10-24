@@ -20,19 +20,19 @@
     <properties>
         <java.version>21</java.version>
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
-        <jjwt.version>0.12.6</jjwt.version>
+        <jjwt.version>0.12.7</jjwt.version>
         <springdoc.version>3.1.1</springdoc.version>
         <shedlock.version>7.10.1</shedlock.version>
         <!-- Elasticsearch Java 客户端：9.4.5 与 Boot 4.1 的依赖管理对齐，
              使用 Rest5ClientTransport（Apache HttpClient 5）。客户端 9.x 只保证与
              同大版本服务端兼容，因此测试容器镜像同步为 9.4.5。 -->
-        <elasticsearch-java.version>9.4.5</elasticsearch-java.version>
-        <archunit.version>1.4.0</archunit.version>
+        <elasticsearch-java.version>9.5.5</elasticsearch-java.version>
+        <archunit.version>1.5.1</archunit.version>
         <!--
           结构化日志（JSON）。8.0 对应 logback 1.5.x，与 Spring Boot 4.1.x 自带的
           logback 版本对齐；用 7.x 会在 logback 1.5 上引入兼容性风险。
         -->
-        <logstash-encoder.version>8.0</logstash-encoder.version>
+        <logstash-encoder.version>8.1</logstash-encoder.version>
     </properties>
 
     <dependencies>
@@ -140,7 +140,7 @@
         <dependency>
             <groupId>io.minio</groupId>
             <artifactId>minio</artifactId>
-            <version>8.5.12</version>
+            <version>8.6.0</version>
         </dependency>
 
         <!-- 定时任务分布式互斥（多实例部署时防止任务重复执行） -->
