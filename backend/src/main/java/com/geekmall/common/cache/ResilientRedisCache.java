@@ -2,6 +2,9 @@ package com.geekmall.common.cache;
 
 import com.geekmall.common.constant.RedisKeys;
 import com.geekmall.common.resilience.CircuitBreaker;
+import java.time.Duration;
+import java.util.List;
+import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.Cache;
 import org.springframework.cache.support.NullValue;
@@ -13,16 +16,14 @@ import org.springframework.data.redis.cache.RedisCacheWriter;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.data.redis.serializer.SerializationException;
-
-import java.time.Duration;
-import java.util.List;
-import java.util.UUID;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * 「抗打」缓存：在 Spring Data Redis 的 {@link RedisCache} 之上补齐缓存三防。
  *
  * <table border="1">
- *   <caption>与本类相关的三防职责</caption>
+ *   <caption>与本类相关的职责</caption>
  *   <tr><th>问题</th><th>本类做的工作</th><th>配套</th></tr>
  *   <tr>
  *     <td>穿透</td>
@@ -39,6 +40,11 @@ import java.util.UUID;
  *     <td>本地 L1 承接瞬时流量；Redis 故障时熔断降级不排队</td>
  *     <td>{@link JitterTtlFunctionFactory} 打散 TTL</td>
  *   </tr>
+ *   <tr>
+ *     <td>一致性</td>
+ *     <td><b>失效晚于提交</b>：写入 / 失效挂在事务 {@code afterCommit}，回滚则丢弃</td>
+ *     <td>—</td>
+ *   </tr>
  * </table>
  *
  * <p><b>为什么必须自己实现击穿防护</b>：Spring Data Redis 的 {@code @Cacheable(sync = true)}
@@ -54,12 +60,14 @@ import java.util.UUID;
 public class ResilientRedisCache extends RedisCache {
 
     /** 释放锁必须校验持有者，避免误删他人锁（A 超时后 B 拿到锁，A 再删就会删掉 B 的）。 */
-    private static final RedisScript<Long> UNLOCK_SCRIPT = RedisScript.of("""
+    private static final RedisScript<Long> UNLOCK_SCRIPT = RedisScript.of(
+            """
             if redis.call('GET', KEYS[1]) == ARGV[1] then
                 return redis.call('DEL', KEYS[1])
             end
             return 0
-            """, Long.class);
+            """,
+            Long.class);
 
     private final CacheProperties properties;
     private final StringRedisTemplate redisTemplate;
@@ -70,13 +78,14 @@ public class ResilientRedisCache extends RedisCache {
     /** 本地一级缓存；未启用时为 {@code null}。 */
     private final com.github.benmanes.caffeine.cache.Cache<String, Object> localCache;
 
-    protected ResilientRedisCache(String name,
-                                  RedisCacheWriter cacheWriter,
-                                  RedisCacheConfiguration cacheConfiguration,
-                                  CacheProperties properties,
-                                  StringRedisTemplate redisTemplate,
-                                  CacheGovernanceMetrics metrics,
-                                  CircuitBreaker breaker) {
+    protected ResilientRedisCache(
+            String name,
+            RedisCacheWriter cacheWriter,
+            RedisCacheConfiguration cacheConfiguration,
+            CacheProperties properties,
+            StringRedisTemplate redisTemplate,
+            CacheGovernanceMetrics metrics,
+            CircuitBreaker breaker) {
         super(name, cacheWriter, cacheConfiguration);
         this.properties = properties;
         this.redisTemplate = redisTemplate;
@@ -171,8 +180,7 @@ public class ResilientRedisCache extends RedisCache {
             // 这属于「脏缓存」而不是「Redis 不可用」：按未命中处理让调用方回源并覆盖该键，
             // 不记为熔断失败（否则一份坏数据会一直把熔断器打不开），更不能把读缓存失败升级成 500。
             metrics.recordRedisError(getName(), ex);
-            log.warn("缓存值反序列化失败，本次按未命中处理（回源后会覆盖该键）：cache={}, error={}",
-                    getName(), ex.getMessage());
+            log.warn("缓存值反序列化失败，本次按未命中处理（回源后会覆盖该键）：cache={}, error={}", getName(), ex.getMessage());
             return null;
         }
     }
@@ -204,7 +212,8 @@ public class ResilientRedisCache extends RedisCache {
 
     private boolean tryLock(String lockKey, String token) {
         try {
-            return Boolean.TRUE.equals(redisTemplate.opsForValue()
+            return Boolean.TRUE.equals(redisTemplate
+                    .opsForValue()
                     .setIfAbsent(lockKey, token, properties.getLock().getTtl()));
         } catch (DataAccessException ex) {
             metrics.recordRedisError(getName(), ex);
@@ -229,8 +238,10 @@ public class ResilientRedisCache extends RedisCache {
      */
     @SuppressWarnings("unchecked")
     private <T> T waitForRebuild(Object key, java.util.concurrent.Callable<T> valueLoader) {
-        long deadline = System.nanoTime() + properties.getLock().getWaitTimeout().toNanos();
-        long intervalMillis = Math.max(1, properties.getLock().getRetryInterval().toMillis());
+        long deadline =
+                System.nanoTime() + properties.getLock().getWaitTimeout().toNanos();
+        long intervalMillis =
+                Math.max(1, properties.getLock().getRetryInterval().toMillis());
         while (System.nanoTime() < deadline) {
             sleep(intervalMillis);
             ValueWrapper local = localGet(key);
@@ -258,8 +269,37 @@ public class ResilientRedisCache extends RedisCache {
 
     /* ------------------------------ 写路径 ------------------------------ */
 
+    /** 写入缓存；在事务中时推迟到<b>提交之后</b>，见 {@link #afterCommit(Runnable)}。 */
     @Override
     public void put(Object key, Object value) {
+        afterCommit(() -> doPut(key, value));
+    }
+
+    /** 失效单个 key；在事务中时推迟到<b>提交之后</b>。 */
+    @Override
+    public void evict(Object key) {
+        afterCommit(() -> doEvict(key));
+    }
+
+    /**
+     * 清空缓存（{@code @CacheEvict(allEntries = true)} 走这里）。
+     *
+     * <p>注意：只能清掉<b>本实例</b>的 L1，其他实例的 L1 会继续服务至多
+     * {@code mall.cache.local.ttl}（默认 3s）。这正是把 L1 白名单限制在
+     * 「能容忍数秒陈旧」的聚合类数据上的原因。</p>
+     *
+     * <p>在事务中时同样推迟到<b>提交之后</b>：{@code @CacheEvict} 与 {@code @Transactional}
+     * 写在同一个方法上时，失效相对提交的先后取决于 advisor 顺序（两者 order 都是
+     * {@code LOWEST_PRECEDENCE}，未显式固定）。若失效早于提交，并发读可能在中间窗口
+     * 重建出<b>提交前的旧值</b>并写回缓存、还带上完整 TTL —— 陈旧窗口会从
+     * {@code mall.cache.local.ttl}（3s）被放大到 5min/30min。</p>
+     */
+    @Override
+    public void clear() {
+        afterCommit(this::doClear);
+    }
+
+    private void doPut(Object key, Object value) {
         try {
             super.put(key, value);
         } catch (DataAccessException ex) {
@@ -270,35 +310,60 @@ public class ResilientRedisCache extends RedisCache {
         writeLocal(key, value);
     }
 
-    @Override
-    public void evict(Object key) {
+    private void doEvict(Object key) {
         try {
             super.evict(key);
         } catch (DataAccessException ex) {
+            // 失效失败会留下陈旧值直到 TTL 过期，必须留下痕迹，不能只记指标
             metrics.recordRedisError(getName(), ex);
+            log.warn("失效缓存失败（陈旧值会留到 TTL 过期）：cache={}, error={}", getName(), ex.getMessage());
         }
         if (localCache != null) {
             localCache.invalidate(createCacheKey(key));
         }
     }
 
-    /**
-     * 清空缓存。
-     *
-     * <p>注意：只能清掉<b>本实例</b>的 L1，其他实例的 L1 会继续服务至多
-     * {@code mall.cache.local.ttl}（默认 3s）。这正是把 L1 白名单限制在
-     * 「能容忍数秒陈旧」的聚合类数据上的原因。</p>
-     */
-    @Override
-    public void clear() {
+    private void doClear() {
         try {
             super.clear();
         } catch (DataAccessException ex) {
             metrics.recordRedisError(getName(), ex);
+            log.warn("清空缓存失败（陈旧值会留到 TTL 过期）：cache={}, error={}", getName(), ex.getMessage());
         }
         if (localCache != null) {
             localCache.invalidateAll();
         }
+    }
+
+    /**
+     * 把「写缓存 / 失效缓存」推迟到事务<b>提交之后</b>；不在事务中则立即执行。
+     *
+     * <p>事务回滚时该操作直接丢弃 —— 数据没有变化，缓存也就不该动。这条语义正是
+     * 「失效必须晚于提交」的另一半：它保证了「缓存里出现过的东西，一定对应一次成功的提交」。</p>
+     *
+     * <p><b>为什么不用官方的 {@code TransactionAwareCacheManagerProxy}</b>：它在
+     * {@code spring-context-support} 里，本项目不依赖该模块；而且它会把
+     * {@code CacheManager#getCache} 的返回类型换成 decorator，破坏本类的运维诊断
+     * （{@link #isLocalCacheEnabled()} / {@link #localCacheSize()}）与既有集成测试断言。
+     * 为一层装饰器拉进一个新依赖不划算，所以把时序保障放在缓存层内部 —— 与「三防」同一层。</p>
+     *
+     * <p>覆盖范围：{@link #put} / {@link #evict} / {@link #clear}，也就是
+     * {@code @Cacheable} 回源写入与 {@code @CacheEvict} 的两种形态
+     * （{@code allEntries=true} 走 clear、按 key 走 evict）。Spring 7 新增的
+     * {@code Cache#invalidate()} / {@code evictIfPresent()} 是接口 default 方法，
+     * 会经多态间接调到这里的 {@link #clear} / {@link #evict}，一并被覆盖。</p>
+     */
+    private void afterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            action.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
     }
 
     /* ------------------------------ 本地 L1 ------------------------------ */

@@ -38,6 +38,17 @@ import tools.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
  *       且 {@code sync} 与 TTL 抖动都没做 —— 三防全部缺失；</li>
  *   <li>（当前）换成 {@link ResilientRedisCacheManager}，把三防收敛到缓存层统一实现。</li>
  * </ol>
+ *
+ * <p><b>缓存失效与事务提交的顺序</b>：{@code @CacheEvict} 常与 {@code @Transactional}
+ * 写在同一个方法上（如商家改价清买家侧缓存），失效相对提交的先后取决于 advisor 顺序 ——
+ * 而 cache 与 tx 的 order 都是 {@code LOWEST_PRECEDENCE}，没有显式固定。
+ * 一旦失效早于提交，并发读就可能在中间窗口重建出<b>提交前的旧值</b>并写回缓存、
+ * 还带上完整 TTL，把陈旧窗口从 {@code mall.cache.local.ttl}（3s）放大到 5min/30min。</p>
+ *
+ * <p>这里的固定方式是让缓存层把<b>写入与失效都挂到事务 {@code afterCommit}</b>
+ * （见 {@link ResilientRedisCache}），无论 advisor 顺序如何都安全；事务回滚则丢弃该操作。
+ * 不用官方的 {@code TransactionAwareCacheManagerProxy}，原因见 {@code ResilientRedisCache#afterCommit}。
+ * 行为由 {@code CacheTransactionOrderIntegrationTest} 守住，改坏了会红灯。</p>
  */
 @Configuration
 @EnableCaching
