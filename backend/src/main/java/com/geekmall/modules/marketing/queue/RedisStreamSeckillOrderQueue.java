@@ -2,6 +2,12 @@ package com.geekmall.modules.marketing.queue;
 
 import com.geekmall.common.constant.RedisKeys;
 import com.geekmall.modules.marketing.config.SeckillProperties;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Range;
@@ -20,13 +26,6 @@ import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
-
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
 
 /**
  * 基于 Redis Stream 的秒杀订单队列。
@@ -57,12 +56,12 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
     public void enqueue(SeckillOrderMessage message) {
         ensureGroup();
         long maxLength = properties.getAsync().getMaxStreamLength();
-        MapRecord<byte[], byte[], byte[]> record = StreamRecords
-                .rawBytes(rawFields(message.toFields()))
-                .withStreamKey(rawKey());
+        MapRecord<byte[], byte[], byte[]> record =
+                StreamRecords.rawBytes(rawFields(message.toFields())).withStreamKey(rawKey());
         // 用带 MAXLEN 的底层命令：已 ack 的消息不会自动清理，不裁剪会让 Redis 内存无限增长。
         // 近似裁剪（~）比精确裁剪便宜得多，队列场景完全可以接受。
-        redisTemplate.execute((RedisCallback<Object>) connection -> connection.streamCommands()
+        redisTemplate.execute((RedisCallback<Object>) connection -> connection
+                .streamCommands()
                 .xAdd(record, RedisStreamCommands.XAddOptions.maxlen(maxLength).approximateTrimming(true)));
         log.debug("秒杀请求已入队：requestId={}, itemId={}", message.requestId(), message.itemId());
     }
@@ -71,10 +70,12 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
     public List<Delivery> poll(String consumer, int maxCount, Duration block) {
         ensureGroup();
         // ">" 表示只读「尚未投递过」的新消息；已被回收（pending）的消息要靠 reclaimStale 取回
-        List<MapRecord<String, Object, Object>> records = redisTemplate.opsForStream().read(
-                Consumer.from(GROUP, consumer),
-                StreamReadOptions.empty().count(maxCount).block(block),
-                StreamOffset.create(RedisKeys.SECKILL_ORDER_STREAM, ReadOffset.lastConsumed()));
+        List<MapRecord<String, Object, Object>> records = redisTemplate
+                .opsForStream()
+                .read(
+                        Consumer.from(GROUP, consumer),
+                        StreamReadOptions.empty().count(maxCount).block(block),
+                        StreamOffset.create(RedisKeys.SECKILL_ORDER_STREAM, ReadOffset.lastConsumed()));
         if (records == null || records.isEmpty()) {
             return List.of();
         }
@@ -82,8 +83,8 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
         for (MapRecord<String, Object, Object> record : records) {
             try {
                 // 首次投递：次数记 1
-                deliveries.add(new Delivery(record.getId().getValue(),
-                        SeckillOrderMessage.fromFields(record.getValue()), 1L));
+                deliveries.add(
+                        new Delivery(record.getId().getValue(), SeckillOrderMessage.fromFields(record.getValue()), 1L));
             } catch (Exception ex) {
                 // 毒消息（字段损坏）：直接丢弃并记录，否则它会被反复重投、永远处理不完
                 log.error("秒杀消息解析失败，已丢弃：id={}, fields={}", record.getId(), record.getValue(), ex);
@@ -95,8 +96,17 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
 
     @Override
     public void ack(Delivery delivery) {
-        redisTemplate.opsForStream().acknowledge(RedisKeys.SECKILL_ORDER_STREAM, GROUP,
-                RecordId.of(delivery.handle()));
+        redisTemplate.opsForStream().acknowledge(RedisKeys.SECKILL_ORDER_STREAM, GROUP, RecordId.of(delivery.handle()));
+    }
+
+    @Override
+    public void ackAll(List<Delivery> deliveries) {
+        if (deliveries == null || deliveries.isEmpty()) {
+            return;
+        }
+        // 一次 XACK 传多个 id：批量落库后 N 条确认只发一条 Redis 命令
+        RecordId[] ids = deliveries.stream().map(d -> RecordId.of(d.handle())).toArray(RecordId[]::new);
+        redisTemplate.opsForStream().acknowledge(RedisKeys.SECKILL_ORDER_STREAM, GROUP, ids);
     }
 
     @Override
@@ -108,7 +118,8 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
     @Override
     public List<Delivery> reclaimStale(String consumer, Duration minIdle, int maxCount) {
         ensureGroup();
-        PendingMessages pending = redisTemplate.opsForStream()
+        PendingMessages pending = redisTemplate
+                .opsForStream()
                 .pending(RedisKeys.SECKILL_ORDER_STREAM, GROUP, Range.unbounded(), (long) maxCount);
         if (pending == null || pending.isEmpty()) {
             return List.of();
@@ -124,10 +135,11 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
         if (deliveredBefore.isEmpty()) {
             return List.of();
         }
-        List<RecordId> stale = deliveredBefore.keySet().stream().map(RecordId::of).toList();
-        List<MapRecord<String, Object, Object>> claimed = redisTemplate.opsForStream()
-                .claim(RedisKeys.SECKILL_ORDER_STREAM, GROUP, consumer, minIdle,
-                        stale.toArray(new RecordId[0]));
+        List<RecordId> stale =
+                deliveredBefore.keySet().stream().map(RecordId::of).toList();
+        List<MapRecord<String, Object, Object>> claimed = redisTemplate
+                .opsForStream()
+                .claim(RedisKeys.SECKILL_ORDER_STREAM, GROUP, consumer, minIdle, stale.toArray(new RecordId[0]));
         if (claimed == null || claimed.isEmpty()) {
             return List.of();
         }
@@ -141,8 +153,8 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
             }
             long attempts = deliveredBefore.getOrDefault(record.getId().getValue(), 0L) + 1;
             try {
-                deliveries.add(new Delivery(record.getId().getValue(),
-                        SeckillOrderMessage.fromFields(record.getValue()), attempts));
+                deliveries.add(new Delivery(
+                        record.getId().getValue(), SeckillOrderMessage.fromFields(record.getValue()), attempts));
             } catch (Exception ex) {
                 log.error("回收消息解析失败，已丢弃：id={}", record.getId(), ex);
                 redisTemplate.opsForStream().acknowledge(RedisKeys.SECKILL_ORDER_STREAM, GROUP, record.getId());
@@ -173,8 +185,7 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
                 pending = summary.getTotalPendingMessages();
             }
             long consumers = 0L;
-            StreamInfo.XInfoGroups groups =
-                    redisTemplate.opsForStream().groups(RedisKeys.SECKILL_ORDER_STREAM);
+            StreamInfo.XInfoGroups groups = redisTemplate.opsForStream().groups(RedisKeys.SECKILL_ORDER_STREAM);
             if (groups != null) {
                 for (StreamInfo.XInfoGroup group : groups) {
                     if (GROUP.equals(group.groupName())) {
@@ -209,8 +220,8 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
                 return;
             }
             try {
-                redisTemplate.execute((RedisCallback<String>) connection -> connection.streamCommands()
-                        .xGroupCreate(rawKey(), GROUP, ReadOffset.from("0"), true));
+                redisTemplate.execute((RedisCallback<String>) connection ->
+                        connection.streamCommands().xGroupCreate(rawKey(), GROUP, ReadOffset.from("0"), true));
                 log.info("已创建秒杀订单消费者组：{}", GROUP);
                 groupReady = true;
             } catch (Exception ex) {
@@ -233,8 +244,8 @@ public class RedisStreamSeckillOrderQueue implements SeckillOrderQueue {
 
     private Map<byte[], byte[]> rawFields(Map<String, String> fields) {
         Map<byte[], byte[]> raw = new LinkedHashMap<>();
-        fields.forEach((key, value) ->
-                raw.put(key.getBytes(StandardCharsets.UTF_8), value.getBytes(StandardCharsets.UTF_8)));
+        fields.forEach(
+                (key, value) -> raw.put(key.getBytes(StandardCharsets.UTF_8), value.getBytes(StandardCharsets.UTF_8)));
         return raw;
     }
 }

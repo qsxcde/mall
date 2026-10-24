@@ -4,13 +4,6 @@ import com.geekmall.common.exception.BizException;
 import com.geekmall.common.log.TraceContext;
 import com.geekmall.modules.marketing.config.SeckillProperties;
 import com.geekmall.modules.marketing.service.impl.SeckillServiceImpl;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.SmartLifecycle;
-import org.springframework.core.env.Environment;
-import org.springframework.stereotype.Component;
-
 import java.net.InetAddress;
 import java.time.Duration;
 import java.util.List;
@@ -21,6 +14,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.SmartLifecycle;
+import org.springframework.core.env.Environment;
+import org.springframework.stereotype.Component;
 
 /**
  * 秒杀订单落库消费者（削峰模式的执行端）。
@@ -60,6 +59,8 @@ public class SeckillOrderConsumer implements SmartLifecycle {
     private final SeckillProperties properties;
     /** 队列可观测指标（积压/消费者数/死信）。 */
     private final SeckillQueueMetrics queueMetrics;
+    /** 批量落库处理器；{@code batch-enabled=true} 且一次取到多条时才走它。 */
+    private final SeckillBatchOrderHandler batchOrderHandler;
     /** 用于取 {@code server.port} 参与消费者命名（同机多实例必须可区分）。 */
     private final Environment environment;
 
@@ -88,8 +89,7 @@ public class SeckillOrderConsumer implements SmartLifecycle {
             String consumer = consumerName() + "-" + i;
             workers.submit(() -> consumeLoop(consumer));
         }
-        log.info("[秒杀削峰] 消费者已启动：线程数={}, 分组前缀={}（削峰只摊平脉冲，不提升数据库吞吐）",
-                threads, consumerName());
+        log.info("[秒杀削峰] 消费者已启动：线程数={}, 分组前缀={}（削峰只摊平脉冲，不提升数据库吞吐）", threads, consumerName());
     }
 
     @Override
@@ -122,6 +122,10 @@ public class SeckillOrderConsumer implements SmartLifecycle {
             try {
                 reclaimIfDue(consumer);
                 List<SeckillOrderQueue.Delivery> deliveries = queue.poll(consumer, batchSize, block);
+                if (properties.getAsync().isBatchEnabled() && deliveries.size() > 1) {
+                    processBatch(consumer, deliveries);
+                    continue;
+                }
                 for (SeckillOrderQueue.Delivery delivery : deliveries) {
                     if (!running.get()) {
                         return;
@@ -137,6 +141,28 @@ public class SeckillOrderConsumer implements SmartLifecycle {
     }
 
     /**
+     * 批量落库：一次事务处理一批消息，失败则把整批交回逐条路径。
+     *
+     * <p>死信仍由消费者处理 —— 它要回补预扣、写 FAILED 终态、从 pending 摘除，
+     * 与逐条路径共用同一段逻辑，避免两套补偿实现漂移。</p>
+     */
+    private void processBatch(String consumer, List<SeckillOrderQueue.Delivery> deliveries) {
+        SeckillBatchOrderHandler.BatchHandleResult result = batchOrderHandler.handle(deliveries);
+        for (SeckillOrderQueue.Delivery delivery : result.deadLetters()) {
+            if (!running.get()) {
+                return;
+            }
+            deadLetter(delivery, delivery.message());
+        }
+        for (SeckillOrderQueue.Delivery delivery : result.fallback()) {
+            if (!running.get()) {
+                return;
+            }
+            handle(consumer, delivery);
+        }
+    }
+
+    /**
      * 周期性回收超时未确认的消息（消费者崩溃 / 处理超时的兜底）。
      *
      * <p>用 CAS 节流：多线程共享一个时间戳，只有抢到的那个线程执行扫描。</p>
@@ -148,8 +174,14 @@ public class SeckillOrderConsumer implements SmartLifecycle {
         if (now - last < interval || !lastReclaimAt.compareAndSet(last, now)) {
             return;
         }
-        List<SeckillOrderQueue.Delivery> reclaimed = queue.reclaimStale(consumer,
-                properties.getAsync().getReclaimMinIdle(), properties.getAsync().getBatchSize());
+        List<SeckillOrderQueue.Delivery> reclaimed = queue.reclaimStale(
+                consumer,
+                properties.getAsync().getReclaimMinIdle(),
+                properties.getAsync().getBatchSize());
+        if (properties.getAsync().isBatchEnabled() && reclaimed.size() > 1) {
+            processBatch(consumer, reclaimed);
+            return;
+        }
         for (SeckillOrderQueue.Delivery delivery : reclaimed) {
             if (!running.get()) {
                 return;
@@ -192,8 +224,8 @@ public class SeckillOrderConsumer implements SmartLifecycle {
 
         try {
             // bucketNo 必须原样传下去：分桶商品的落库对象是「预扣时选中的那一桶」
-            String orderNo = seckillService.grabInTx(message.userId(), message.itemId(),
-                    message.addressId(), requestId, message.bucketNo());
+            String orderNo = seckillService.grabInTx(
+                    message.userId(), message.itemId(), message.addressId(), requestId, message.bucketNo());
             resultStore.save(SeckillGrabResult.success(requestId, message.userId(), orderNo));
             queue.ack(delivery);
             log.info("[秒杀削峰] 落库成功：requestId={}, 桶={}, 订单号={}", requestId, message.bucketNo(), orderNo);
@@ -202,12 +234,15 @@ public class SeckillOrderConsumer implements SmartLifecycle {
             seckillService.releaseReservation(message.itemId(), message.userId(), message.bucketNo());
             resultStore.save(SeckillGrabResult.failed(requestId, message.userId(), ex.getMessage()));
             queue.discard(delivery);
-            log.warn("[秒杀削峰] 落库业务失败，已回补预扣：requestId={}, 桶={}, 原因={}",
-                    requestId, message.bucketNo(), ex.getMessage());
+            log.warn("[秒杀削峰] 落库业务失败，已回补预扣：requestId={}, 桶={}, 原因={}", requestId, message.bucketNo(), ex.getMessage());
         } catch (Exception ex) {
             // 系统性故障：不确认，留在 pending 等回收重投（用户会继续看到「排队中」）
-            log.error("[秒杀削峰] 落库异常，等待重投：requestId={}, itemId={}, 桶={}",
-                    requestId, message.itemId(), message.bucketNo(), ex);
+            log.error(
+                    "[秒杀削峰] 落库异常，等待重投：requestId={}, itemId={}, 桶={}",
+                    requestId,
+                    message.itemId(),
+                    message.bucketNo(),
+                    ex);
         }
     }
 
@@ -223,8 +258,12 @@ public class SeckillOrderConsumer implements SmartLifecycle {
      */
     private void deadLetter(SeckillOrderQueue.Delivery delivery, SeckillOrderMessage message) {
         String requestId = message.requestId();
-        log.error("[秒杀削峰] 消息重投 {} 次仍未成功，转入死信并终止重试：requestId={}, itemId={}, userId={}",
-                delivery.deliveries(), requestId, message.itemId(), message.userId());
+        log.error(
+                "[秒杀削峰] 消息重投 {} 次仍未成功，转入死信并终止重试：requestId={}, itemId={}, userId={}",
+                delivery.deliveries(),
+                requestId,
+                message.itemId(),
+                message.userId());
         // 计数：死信是「有单被放弃」的硬信号，必须能在看板/告警上看到（而不是只留在日志里）
         queueMetrics.recordDeadLetter();
 
@@ -232,8 +271,12 @@ public class SeckillOrderConsumer implements SmartLifecycle {
         try {
             seckillService.releaseReservation(message.itemId(), message.userId(), message.bucketNo());
         } catch (Exception ex) {
-            log.error("[秒杀削峰] 死信回补预扣失败，需人工核对库存：requestId={}, itemId={}, 桶={}",
-                    requestId, message.itemId(), message.bucketNo(), ex);
+            log.error(
+                    "[秒杀削峰] 死信回补预扣失败，需人工核对库存：requestId={}, itemId={}, 桶={}",
+                    requestId,
+                    message.itemId(),
+                    message.bucketNo(),
+                    ex);
         }
 
         // ② 写失败终态：用户轮询能拿到明确结论，而不是永远「排队中」

@@ -45,6 +45,16 @@ public interface SeckillOrderQueue {
     void ack(Delivery delivery);
 
     /**
+     * 批量确认。
+     *
+     * <p>批量落库一次提交 N 条订单，逐条 XACK 会产生 N 次 Redis 往返；
+     * 默认实现退化为逐条确认，具体实现可覆盖为一次 XACK。</p>
+     */
+    default void ackAll(List<Delivery> deliveries) {
+        deliveries.forEach(this::ack);
+    }
+
+    /**
      * 处理失败但**不应重试**（业务性失败，如库存已扣光、重复抢购、消息体损坏）。
      *
      * <p>与 {@link #ack} 的实际效果相同，单独一个方法只是为了在调用处显式表达
@@ -101,6 +111,5 @@ public interface SeckillOrderQueue {
      *                   消费端据此判断是否已达上限，从而转入死信而不是无限重投；
      *                   换成任何 MQ 都应能提供等价语义（重投计数 / redelivery flag）。
      */
-    record Delivery(String handle, SeckillOrderMessage message, long deliveries) {
-    }
+    record Delivery(String handle, SeckillOrderMessage message, long deliveries) {}
 }

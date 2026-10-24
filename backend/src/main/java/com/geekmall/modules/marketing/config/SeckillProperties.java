@@ -1,10 +1,9 @@
 package com.geekmall.modules.marketing.config;
 
+import java.time.Duration;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
-
-import java.time.Duration;
 
 /**
  * 秒杀配置（{@code mall.seckill.*}）。
@@ -30,6 +29,14 @@ public class SeckillProperties {
         private boolean enabled = false;
 
         /**
+         * 是否在消费端启用「一次拉取 N 条、一个事务批量落库」。
+         *
+         * <p>默认关闭：批量落库只改变消费端实现，不改接口契约，但仍需先小流量验证。
+         * 关闭时完全走原来的逐条事务路径，行为零变化。</p>
+         */
+        private boolean batchEnabled = false;
+
+        /**
          * 消费者线程数。
          *
          * <p>⚠️ <b>必须以数据库写能力为上限</b>。消费者开得远超 DB 承载，只是把雪崩点
@@ -37,7 +44,7 @@ public class SeckillProperties {
          */
         private int consumerThreads = 4;
 
-        /** 单次拉取条数。 */
+        /** 单次拉取条数；批量落库开启时也是单批订单数。 */
         private int batchSize = 16;
 
         /**

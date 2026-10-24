@@ -148,6 +148,23 @@ public class SeckillServiceImpl implements SeckillService {
     /** 一人一单标记的保留时长，按「每日一场」的运营节奏设置 */
     private static final Duration BOUGHT_TTL = Duration.ofHours(24);
 
+    /**
+     * 回补预扣脚本：只有「本次确实从一人一单集合移除了该用户」才归还库存。
+     *
+     * <p>补偿可能被重复调用（批量落库失败后逐条重试、死信与回收重投竞争），
+     * 若每次都对库存 key 做 {@code INCR}，会把库存越补越多。以 {@code SREM}
+     * 的返回值作为「是否真正回补过」的判据，天然幂等。</p>
+     */
+    private static final RedisScript<Long> RELEASE_SCRIPT = RedisScript.of(
+            """
+            local removed = redis.call('SREM', KEYS[1], ARGV[1])
+            if removed == 1 then
+                redis.call('INCR', KEYS[2])
+            end
+            return removed
+            """,
+            Long.class);
+
     /** 队列在熔断体系中的资源名（对应 mall.resilience.resources.seckill-queue）。 */
     static final String QUEUE_RESOURCE = "seckill-queue";
 
@@ -490,14 +507,18 @@ public class SeckillServiceImpl implements SeckillService {
 
     public void releaseReservation(Long itemId, Long userId, Integer bucketNo) {
         try {
-            redisTemplate.opsForSet().remove(RedisKeys.SECKILL_BOUGHT + itemId, String.valueOf(userId));
             // 分桶商品必须 +1 还回<b>原桶</b>：选桶是随机起点探测，不可复现，
             // 还到别的桶会让两个桶的余量同时失真，逐桶对账也就失去意义
             String stockKey = bucketNo == null
                     ? RedisKeys.SECKILL_STOCK + itemId
                     : RedisKeys.seckillBucketStock(itemId, bucketNo);
-            redisTemplate.opsForValue().increment(stockKey);
-            log.warn("秒杀预扣已回补：itemId={}, userId={}, 桶={}", itemId, userId, bucketNo);
+            Long removed = redisTemplate.execute(
+                    RELEASE_SCRIPT, List.of(RedisKeys.SECKILL_BOUGHT + itemId, stockKey), String.valueOf(userId));
+            if (removed != null && removed == 1) {
+                log.warn("秒杀预扣已回补：itemId={}, userId={}, 桶={}", itemId, userId, bucketNo);
+            } else {
+                log.debug("秒杀预扣重复回补已忽略：itemId={}, userId={}, 桶={}", itemId, userId, bucketNo);
+            }
         } catch (Exception ex) {
             log.error("秒杀预扣补偿失败，需人工核对 Redis 库存：itemId={}, userId={}, 桶={}", itemId, userId, bucketNo, ex);
         }
