@@ -51,34 +51,37 @@ public class BucketAllocator {
     }
 
     /**
-     * 按合并后的明细重新布局该商品的桶。
+     * 按合并后的明细重新布局该 SKU 的桶。
      *
      * <p>三步走：已有桶余量清零（留痕 ADJUST）→ 明细逐桶写入（ALLOCATE）→
-     * 余量落入「未分配」桶。</p>
+     * 余量落入「未分配」桶。布局只动 {@code skuId} 自己的桶，
+     * 保证 {@code SUM(桶 WHERE sku_id) == SKU 库存} 的 SKU 层守恒。</p>
      */
     public void relayout(
             Long productId,
+            Long skuId,
             Long shopId,
             Long ruleId,
             BucketDimension dimension,
             Map<String, BucketAllocateDTO.Item> merged,
-            int productStock,
+            int skuStock,
             String operator) {
         int placed = merged.values().stream()
                 .mapToInt(i -> i.getQty() == null ? 0 : i.getQty())
                 .sum();
-        if (placed > productStock) {
-            throw new BizException(ResultCode.PARAM_ERROR, "分配总量 " + placed + " 超过商品库存 " + productStock);
+        if (placed > skuStock) {
+            throw new BizException(ResultCode.PARAM_ERROR, "分配总量 " + placed + " 超过库存 " + skuStock);
         }
 
-        // 1) 重新布局：先把该商品已有桶的余量清零（留痕为 ADJUST），再把明细逐桶写入。
-        for (InvBucket exist : store.listBuckets(productId)) {
+        // 1) 重新布局：先把该 SKU 已有桶的余量清零（留痕为 ADJUST），再把明细逐桶写入。
+        for (InvBucket exist : store.listBuckets(productId, skuId)) {
             int before = exist.getStock() == null ? 0 : exist.getStock();
             if (before > 0) {
                 store.writeStock(exist, 0);
                 store.log(
                         exist.getId(),
                         productId,
+                        skuId,
                         shopId,
                         BucketBizType.ADJUST,
                         -before,
@@ -95,31 +98,33 @@ public class BucketAllocator {
         // 2) 写入显式分配的桶
         for (BucketAllocateDTO.Item item : merged.values()) {
             int qty = item.getQty() == null ? 0 : item.getQty();
-            upsertBucket(productId, shopId, ruleId, dimension, item, qty, operator);
+            upsertBucket(productId, skuId, shopId, ruleId, dimension, item, qty, operator);
         }
 
         // 3) 未被显式分配的余量落入「未分配」桶，保证守恒
-        int remainder = productStock - placed;
+        int remainder = skuStock - placed;
         if (remainder > 0) {
             BucketAllocateDTO.Item rest = new BucketAllocateDTO.Item();
             rest.setDimensionValue(BucketStore.UNALLOCATED);
-            upsertBucket(productId, shopId, ruleId, dimension, rest, remainder, operator);
+            upsertBucket(productId, skuId, shopId, ruleId, dimension, rest, remainder, operator);
         }
     }
 
     /** 写入 / 更新一个桶到指定数量（分配语义：stock 与 total 都置为 qty）。 */
     private void upsertBucket(
             Long productId,
+            Long skuId,
             Long shopId,
             Long ruleId,
             BucketDimension dimension,
             BucketAllocateDTO.Item item,
             int qty,
             String operator) {
-        InvBucket exist = store.findBucket(productId, dimension.name(), item.getDimensionValue());
+        InvBucket exist = store.findBucket(productId, skuId, dimension.name(), item.getDimensionValue());
         if (exist == null) {
             InvBucket bucket = new InvBucket();
             bucket.setProductId(productId);
+            bucket.setSkuId(skuId == null ? 0L : skuId);
             bucket.setShopId(shopId);
             bucket.setRuleId(ruleId);
             bucket.setDimension(dimension.name());
@@ -137,6 +142,7 @@ public class BucketAllocator {
             store.log(
                     bucket.getId(),
                     productId,
+                    skuId,
                     shopId,
                     BucketBizType.ALLOCATE,
                     qty,
@@ -166,6 +172,7 @@ public class BucketAllocator {
             store.log(
                     exist.getId(),
                     productId,
+                    skuId,
                     shopId,
                     BucketBizType.ALLOCATE,
                     qty - before,

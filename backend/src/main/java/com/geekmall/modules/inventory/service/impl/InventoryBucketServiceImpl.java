@@ -37,7 +37,9 @@ import com.geekmall.modules.inventory.vo.BucketReportVO;
 import com.geekmall.modules.inventory.vo.BucketRuleVO;
 import com.geekmall.modules.inventory.vo.BucketVO;
 import com.geekmall.modules.product.entity.Product;
+import com.geekmall.modules.product.entity.Sku;
 import com.geekmall.modules.product.service.ProductStockService;
+import com.geekmall.modules.product.service.SkuStockService;
 import com.geekmall.security.MerchantSecurityUtils;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -75,6 +77,7 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
     private final InvBucketOperationMapper operationMapper;
     private final InvBucketLogMapper logMapper;
     private final ProductStockService productStockService;
+    private final SkuStockService skuStockService;
     private final BucketStore store;
     private final BucketAllocator allocator;
     private final BucketStockMover mover;
@@ -162,10 +165,11 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
         BucketDimension dimension =
                 rule != null ? BucketDimension.of(rule.getDimension()) : store.parseDimension(dto.getDimension());
 
-        int productStock = product.getStock() == null ? 0 : product.getStock();
+        Long skuId = store.resolveSkuId(dto.getProductId(), dto.getSkuId());
+        int skuStock = skuStockOf(skuId, product);
         Map<String, BucketAllocateDTO.Item> merged = allocator.mergeItems(dto.getItems());
         allocator.relayout(
-                product.getId(), shopId, dto.getRuleId(), dimension, merged, productStock, dto.getOperator());
+                product.getId(), skuId, shopId, dto.getRuleId(), dimension, merged, skuStock, dto.getOperator());
         return balance(product.getId());
     }
 
@@ -178,13 +182,15 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
         if (dimensionValues == null || dimensionValues.isEmpty()) {
             throw new BizException(ResultCode.PARAM_ERROR, "维度值列表不能为空");
         }
-        int total = product.getStock() == null ? 0 : product.getStock();
+        Long skuId = store.resolveSkuId(productId, null);
+        int total = skuStockOf(skuId, product);
         int n = dimensionValues.size();
         int base = total / n;
         int remainder = total % n;
 
         BucketAllocateDTO dto = new BucketAllocateDTO();
         dto.setProductId(productId);
+        dto.setSkuId(skuId);
         dto.setRuleId(ruleId);
         dto.setOperator("autoSplit");
         List<BucketAllocateDTO.Item> items = new ArrayList<>(n);
@@ -286,18 +292,27 @@ public class InventoryBucketServiceImpl implements InventoryBucketService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public int rollbackProduct(String orderNo, Long productId) {
-        return deductor.rollbackProduct(orderNo, productId);
+    public int rollbackSku(String orderNo, Long skuId, Long productId) {
+        return deductor.rollbackSku(orderNo, skuId, productId);
     }
 
     @Override
-    public boolean isBucketed(Long productId) {
-        return deductor.isBucketed(productId);
+    public boolean isBucketed(Long productId, Long skuId) {
+        return deductor.isBucketed(productId, skuId);
     }
 
     @Override
-    public boolean hasOutbound(String orderNo, Long productId) {
-        return deductor.hasOutbound(orderNo, productId);
+    public boolean hasOutbound(String orderNo, Long skuId, Long productId) {
+        return deductor.hasOutbound(orderNo, skuId, productId);
+    }
+
+    /** 分配基数：{@code sku_id > 0} 取 SKU 库存，{@code sku_id = 0} 的历史商品取商品总库存。 */
+    private int skuStockOf(Long skuId, Product product) {
+        if (skuId == null || skuId <= 0) {
+            return product.getStock() == null ? 0 : product.getStock();
+        }
+        Sku sku = skuStockService.findByIds(List.of(skuId)).get(skuId);
+        return sku == null || sku.getStock() == null ? 0 : sku.getStock();
     }
 
     /* ============================== 报告 / 审计 ============================== */

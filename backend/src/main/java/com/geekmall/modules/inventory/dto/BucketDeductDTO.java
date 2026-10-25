@@ -3,9 +3,8 @@ package com.geekmall.modules.inventory.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
-import lombok.Data;
-
 import java.io.Serializable;
+import lombok.Data;
 
 /**
  * 出库扣减入参：按优先级从各桶扣减，并同步扣减商品总库存。
@@ -18,6 +17,9 @@ public class BucketDeductDTO implements Serializable {
 
     @NotNull(message = "商品 ID 不能为空")
     private Long productId;
+
+    @Schema(description = "规格 SKU ID；为空时取商品的默认 SKU（无规格商品按商品级处理）")
+    private Long skuId;
 
     @NotNull(message = "出库数量不能为空")
     @Min(value = 1, message = "出库数量至少为 1")

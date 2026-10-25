@@ -21,10 +21,12 @@ import java.util.List;
 /**
  * 库存分桶服务。
  *
- * <p><b>粒度：</b>一个桶 = {@code (商品 × 维度值)}；同一商品同一时刻只使用一种维度。</p>
- * <p><b>不变量：</b>{@code SUM(inv_bucket.stock) == pms_product.stock}。</p>
- * <p><b>交互边界：</b>{@code pms_product.stock} 是权威总量；本服务只在「分桶出库」时与之联动扣减，
- * 调拨 / 合并 / 分配都不改变它。</p>
+ * <p><b>粒度：</b>一个桶 = {@code (SKU × 维度值)}；同一 SKU 同一时刻只使用一种维度。
+ * {@code sku_id = 0} 表示无规格商品（历史数据），退化为商品级桶。</p>
+ * <p><b>不变量（三层守恒）：</b>{@code SUM(inv_bucket.stock WHERE sku_id=X) == pms_sku.stock}、
+ * {@code SUM(pms_sku.stock WHERE product_id=P) == pms_product.stock}。</p>
+ * <p><b>交互边界：</b>库存权威值在 {@code pms_sku.stock} / {@code pms_product.stock}；
+ * 本服务只在「分桶出库」时与之联动扣减，调拨 / 合并 / 分配都不改变它们。</p>
  */
 public interface InventoryBucketService {
 
@@ -41,10 +43,10 @@ public interface InventoryBucketService {
 
     /* ------------------------------ 库存分配 ------------------------------ */
 
-    /** 把商品现有库存按明细分配到各桶（不改商品总库存，差额自动落入「未分配」桶）。 */
+    /** 把 SKU 现有库存按明细分配到各桶（不改 SKU / 商品总库存，差额自动落入「未分配」桶）。 */
     BucketBalanceVO allocate(BucketAllocateDTO dto);
 
-    /** 按规则把商品现有库存均分到给定维度值上。 */
+    /** 按规则把 SKU 现有库存均分到给定维度值上。 */
     BucketBalanceVO autoSplit(Long productId, Long ruleId, List<String> dimensionValues);
 
     /* ------------------------------ 余量查询 ------------------------------ */
@@ -57,37 +59,42 @@ public interface InventoryBucketService {
 
     /* ------------------------------ 调拨 / 合并 ------------------------------ */
 
-    /** 跨桶调拨，返回操作单号。 */
+    /** 跨桶调拨，返回操作单号（同 SKU 内搬运）。 */
     String transfer(BucketTransferDTO dto);
 
-    /** 跨桶合并，返回操作单号。 */
+    /** 跨桶合并，返回操作单号（同 SKU 内合并）。 */
     String merge(BucketMergeDTO dto);
 
     /* ------------------------------ 出库 / 回滚 ------------------------------ */
 
-    /** 按优先级从各桶出库，并同步扣减商品总库存（orderNo + productId 幂等）。 */
+    /** 按优先级从各桶出库，并同步扣减 SKU 与商品两层库存（orderNo + skuId 幂等）。 */
     BucketDeductResultVO deduct(BucketDeductDTO dto);
 
     /**
-     * 批量出库：把一批订单按商品 / 桶归并后扣减。
+     * 批量出库：把一批订单按 SKU / 桶归并后扣减。
      *
-     * <p>与 {@link #deduct} 语义一致（同样扣减商品总库存、写审计流水、按 orderNo 幂等），
+     * <p>与 {@link #deduct} 语义一致（同样扣减两层库存、写审计流水、按 orderNo + skuId 幂等），
      * 区别是同一批次落在同一桶的订单只发一次 CAS。任意一条失败即抛异常，
      * 由调用方的事务整体回滚后逐单重试。</p>
      */
     void deductBatch(List<BucketDeductDTO> deductions);
 
-    /** 把某出库单的量还回**原来那一桶**（整单，跨商品；幂等）。 */
+    /** 把某出库单的量还回**原来那一桶**（整单，跨商品 / SKU；幂等）。 */
     BucketDeductResultVO rollback(String orderNo);
 
-    /** 把某出库单在**单个商品**上的量还回原桶（供交易域逐商品回滚调用，幂等）。 */
-    int rollbackProduct(String orderNo, Long productId);
+    /**
+     * 把某出库单在**单个 SKU** 上的量还回原桶（供交易域逐明细回滚调用，幂等）。
+     *
+     * <p>幂等键 = {@code (orderNo, skuId)}：同一订单的多个 SKU 各自回补一次，
+     * 不会互相吞掉。</p>
+     */
+    int rollbackSku(String orderNo, Long skuId, Long productId);
 
-    /** 商品是否已分桶（决定交易域走分桶出库还是旧的单行扣减）。 */
-    boolean isBucketed(Long productId);
+    /** 该 SKU 是否已分桶（决定交易域走分桶出库还是旧的单行扣减）。 */
+    boolean isBucketed(Long productId, Long skuId);
 
-    /** 某单号 + 商品是否存在桶级出库记录（决定回滚时需要走哪条路径）。 */
-    boolean hasOutbound(String orderNo, Long productId);
+    /** 某单号 + SKU 是否存在桶级出库记录（决定回滚时需要走哪条路径）。 */
+    boolean hasOutbound(String orderNo, Long skuId, Long productId);
 
     /* ------------------------------ 报告 / 审计 ------------------------------ */
 

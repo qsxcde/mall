@@ -6,14 +6,13 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
-
 import java.io.Serializable;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import lombok.Data;
 
 /**
- * 库存桶 inv_bucket：一个 (商品 × 维度值) 一行，是库存扣减/回加的最小并发单元。
+ * 库存桶 inv_bucket：一个 (SKU × 维度值) 一行，是库存扣减/回加的最小并发单元。
  *
  * <p>并发控制：所有余量变更都走 {@code UPDATE ... WHERE id=? AND stock >= qty} 的 CAS，
  * 不依赖乐观锁插件，也不在数据库之外持有锁。</p>
@@ -26,6 +25,9 @@ public class InvBucket implements Serializable {
     private Long id;
 
     private Long productId;
+
+    /** 规格 SKU ID；0 = 无规格商品 / 历史桶（商品级） */
+    private Long skuId;
 
     private Long shopId;
 

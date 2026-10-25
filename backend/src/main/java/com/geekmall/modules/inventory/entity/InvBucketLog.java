@@ -5,10 +5,9 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
-
 import java.io.Serializable;
 import java.time.LocalDateTime;
+import lombok.Data;
 
 /**
  * 库存桶审计流水 inv_bucket_log：append-only，任何桶余量变化都留痕。
@@ -26,6 +25,9 @@ public class InvBucketLog implements Serializable {
     private Long bucketId;
 
     private Long productId;
+
+    /** 规格 SKU ID；0 = 无规格商品 / 历史流水（商品级） */
+    private Long skuId;
 
     /** 所属店铺（数据隔离维度） */
     private Long shopId;
