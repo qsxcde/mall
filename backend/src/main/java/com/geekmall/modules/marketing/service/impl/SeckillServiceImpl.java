@@ -236,6 +236,16 @@ public class SeckillServiceImpl implements SeckillService {
                 .toList();
     }
 
+    @Override
+    public boolean isSeckillProduct(Long productId) {
+        if (productId == null) {
+            return false;
+        }
+        return seckillItemMapper.selectCount(
+                        new LambdaQueryWrapper<SeckillItem>().eq(SeckillItem::getProductId, productId))
+                > 0;
+    }
+
     /**
      * 同步抢购（默认模式，非事务）。
      *

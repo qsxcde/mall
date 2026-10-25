@@ -16,6 +16,7 @@ import com.geekmall.modules.product.mapper.CategoryMapper;
 import com.geekmall.modules.product.mapper.ProductMapper;
 import com.geekmall.modules.product.search.ProductSearchService;
 import com.geekmall.modules.product.service.ProductService;
+import com.geekmall.modules.product.service.SkuService;
 import com.geekmall.modules.product.vo.CategoryVO;
 import com.geekmall.modules.product.vo.HomeFloorVO;
 import com.geekmall.modules.product.vo.ProductCardVO;
@@ -46,6 +47,8 @@ public class ProductServiceImpl implements ProductService {
 
     private final ProductMapper productMapper;
     private final CategoryMapper categoryMapper;
+    /** 规格维度与 SKU 读取（详情页多规格选择器的数据源）。 */
+    private final SkuService skuService;
     /** 商品 ID 布隆过滤器：挡掉「一定不存在」的详情请求，防缓存穿透。 */
     private final RedisBloomFilter productBloomFilter;
     /**
@@ -151,7 +154,12 @@ public class ProductServiceImpl implements ProductService {
         if (product == null || (product.getStatus() != null && product.getStatus() != ON_SHELF)) {
             return null;
         }
-        return ProductConverter.toDetail(product);
+        ProductDetailVO vo = ProductConverter.toDetail(product);
+        // 多规格：维度（含值与图片）+ SKU 列表；无规格商品两者为空列表，前端降级为单规格展示
+        SkuService.SpecStructure spec = skuService.specStructureOf(id);
+        vo.setSpecDimensions(spec.dimensions());
+        vo.setSkus(spec.skus().stream().map(ProductConverter::toSku).toList());
+        return vo;
     }
 
     /**

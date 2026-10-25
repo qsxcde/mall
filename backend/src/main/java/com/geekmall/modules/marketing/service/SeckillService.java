@@ -3,7 +3,6 @@ package com.geekmall.modules.marketing.service;
 import com.geekmall.modules.marketing.queue.SeckillGrabResult;
 import com.geekmall.modules.marketing.vo.SeckillItemVO;
 import com.geekmall.modules.marketing.vo.SeckillSessionVO;
-
 import java.util.List;
 
 /**
@@ -16,6 +15,14 @@ public interface SeckillService {
 
     /** 某场次的秒杀商品。 */
     List<SeckillItemVO> items(Long sessionId);
+
+    /**
+     * 商品是否关联秒杀活动。
+     *
+     * <p>秒杀保持单规格（一套价格），商家给秒杀商品配多 SKU 时需拦截，
+     * 防止「秒杀价 + SKU 价」两套价格并存。</p>
+     */
+    boolean isSeckillProduct(Long productId);
 
     /**
      * 同步抢购（默认模式）。

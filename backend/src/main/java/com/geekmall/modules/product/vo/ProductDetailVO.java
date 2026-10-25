@@ -1,11 +1,10 @@
 package com.geekmall.modules.product.vo;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-
 import java.math.BigDecimal;
 import java.util.List;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
 
 /**
  * 商品详情出参，对应前端 ProductView。
@@ -40,4 +39,10 @@ public class ProductDetailVO extends ProductCardVO {
 
     @Schema(description = "详情页展示用的价格，便于前端直接渲染")
     private BigDecimal displayPrice;
+
+    @Schema(description = "规格维度（维度含取值与展示图），无规格商品为空列表")
+    private List<SpecDimensionVO> specDimensions;
+
+    @Schema(description = "SKU 列表（id / specDesc / price / stock），无规格商品为空列表")
+    private List<SkuVO> skus;
 }

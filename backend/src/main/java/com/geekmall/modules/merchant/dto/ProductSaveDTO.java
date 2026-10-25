@@ -1,16 +1,17 @@
 package com.geekmall.modules.merchant.dto;
 
+import com.geekmall.modules.product.dto.SkuSaveDTO;
+import com.geekmall.modules.product.dto.SpecDimensionSaveDTO;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import lombok.Data;
-
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Map;
+import lombok.Data;
 
 /**
  * 商品新增 / 编辑入参。
@@ -57,8 +58,15 @@ public class ProductSaveDTO implements Serializable {
 
     private String cover;
 
-    @Schema(description = "多规格（当前商品表未落库 SKU，仅接收不持久化）")
-    private List<Map<String, Object>> skus;
+    @Schema(description = "规格维度（维度 + 取值 + 展示图），与 skus 配套提供")
+    @Valid
+    private List<SpecDimensionSaveDTO> specDimensions;
+
+    @Schema(
+            description = "多规格 SKU：specValues 为「维度名 → 规格值」映射；"
+                    + "提供时售价 / 库存 / 规格文本以 SKU 汇总为准（MIN 价 / SUM 库存 / 默认 SKU 的 spec_desc）")
+    @Valid
+    private List<SkuSaveDTO> skus;
 
     /**
      * 乐观锁版本号。
