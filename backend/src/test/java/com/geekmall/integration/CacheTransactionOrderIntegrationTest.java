@@ -40,9 +40,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  *
  * <p><b>为什么用 {@code evict(key)} 而不是 {@code clear()} 观察</b>：两者走的是同一套
  * {@code afterCommit} 时序，但 {@code clear()}（即 {@code @CacheEvict(allEntries = true)} 的真实路径）
- * 当前<b>清不掉 Redis 里的 key</b> —— pattern 与 SCAN MATCH 都验证过能命中、也没有异常抛出，
- * 但 {@code RedisCacheWriter.clean} 之后 key 仍在；而 {@code evict(key)} 精确 DEL 是可靠的。
- * 这是独立于事务时序的既有缺陷（已单列，见本次提交说明），不能让它挡住时序的验证。</p>
+ * 走 {@code RedisCacheWriter} 的批量清理，命令由 Lettuce 异步驱动，<b>生效有毫秒级延迟</b>
+ * （实测调用后 6ms 还在、111ms 已消失），断言里没法「调完立刻看」；
+ * 而 {@code evict(key)} 的精确 DEL 在断言时序里是确定可见的。
+ * 注意这不是「clear 清不掉 key」—— 它最终会删掉，只是不保证在返回时已生效。</p>
  */
 @DisplayName("缓存失效与事务提交的顺序")
 class CacheTransactionOrderIntegrationTest extends AbstractIntegrationTest {
