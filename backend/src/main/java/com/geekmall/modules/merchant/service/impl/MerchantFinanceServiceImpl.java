@@ -319,6 +319,7 @@ public class MerchantFinanceServiceImpl implements MerchantFinanceService {
                     if (item != null) {
                         OrderProductVO product = new OrderProductVO();
                         product.setId(item.getProductId());
+                        product.setSkuId(item.getSkuId() == null ? 0L : item.getSkuId());
                         product.setName(item.getTitle());
                         product.setCover(item.getCover());
                         product.setSpec(item.getSpec());

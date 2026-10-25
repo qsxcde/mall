@@ -8,6 +8,7 @@ import com.geekmall.modules.inventory.dto.BucketDeductDTO;
 import com.geekmall.modules.inventory.service.InventoryBucketService;
 import com.geekmall.modules.product.entity.Product;
 import com.geekmall.modules.product.service.ProductStockService;
+import com.geekmall.modules.product.service.SkuStockService;
 import com.geekmall.modules.trade.converter.OrderConverter;
 import com.geekmall.modules.trade.dto.FixedPriceOrderCommand;
 import com.geekmall.modules.trade.entity.Order;
@@ -57,6 +58,8 @@ public class OrderPersistSupport {
     private final InventoryRollbackLogMapper rollbackLogMapper;
     private final OrderNoGenerator orderNoGenerator;
     private final ProductStockService productStockService;
+    /** SKU 库存：订单明细带 SKU 时按 SKU 扣减 / 回补（含商品层联动）。 */
+    private final SkuStockService skuStockService;
     /**
      * 库存分桶服务（P2-5）。
      *
@@ -111,7 +114,8 @@ public class OrderPersistSupport {
 
         // P2-4：明细由循环单条 insert 改为一条多值 INSERT
         List<OrderItem> orderItems = drafts.stream()
-                .map(draft -> buildOrderItem(order, draft.product(), draft.spec(), draft.qty(), draft.price()))
+                .map(draft ->
+                        buildOrderItem(order, draft.product(), draft.skuId(), draft.spec(), draft.qty(), draft.price()))
                 .toList();
         orderItemMapper.batchInsert(orderItems);
 
@@ -182,6 +186,8 @@ public class OrderPersistSupport {
 
         List<OrderItem> items = new ArrayList<>(orders.size());
         List<OrderStatusLog> logs = new ArrayList<>(orders.size());
+        // 秒杀商品被约束为单规格，规格归属取默认 SKU（无 SKU 的历史商品为 0）
+        Map<Long, Long> skuIdByProduct = new LinkedHashMap<>();
         for (Order order : orders) {
             Long id = idByOrderNo.get(order.getOrderNo());
             if (id == null) {
@@ -190,7 +196,8 @@ public class OrderPersistSupport {
             order.setId(id);
             FixedPriceOrderCommand command = commandByOrderNo.get(order.getOrderNo());
             Product product = productByOrderNo.get(order.getOrderNo());
-            items.add(buildOrderItem(order, product, product.getSpec(), command.qty(), command.unitPrice()));
+            Long skuId = skuIdByProduct.computeIfAbsent(product.getId(), this::defaultSkuId);
+            items.add(buildOrderItem(order, product, skuId, product.getSpec(), command.qty(), command.unitPrice()));
             logs.add(buildInitialStatusLog(order.getOrderNo()));
         }
         orderItemMapper.batchInsert(items);
@@ -200,6 +207,7 @@ public class OrderPersistSupport {
         for (FixedPriceOrderCommand command : unique) {
             BucketDeductDTO dto = new BucketDeductDTO();
             dto.setProductId(command.productId());
+            dto.setSkuId(skuIdByProduct.computeIfAbsent(command.productId(), this::defaultSkuId));
             dto.setQty(command.qty());
             dto.setOrderNo(orderNoByRequestId.get(command.requestId()));
             dto.setOperator("seckill-batch");
@@ -266,12 +274,13 @@ public class OrderPersistSupport {
         return order;
     }
 
-    /** 订单明细构造（单条 / 批量共用）。 */
-    OrderItem buildOrderItem(Order order, Product product, String spec, int qty, BigDecimal price) {
+    /** 订单明细构造（单条 / 批量共用）。{@code spec} 语义 = 该 SKU 的 spec_desc 快照。 */
+    OrderItem buildOrderItem(Order order, Product product, Long skuId, String spec, int qty, BigDecimal price) {
         OrderItem orderItem = new OrderItem();
         orderItem.setOrderId(order.getId());
         orderItem.setOrderNo(order.getOrderNo());
         orderItem.setProductId(product.getId());
+        orderItem.setSkuId(skuId == null ? 0L : skuId);
         orderItem.setTitle(product.getTitle());
         orderItem.setCover(product.getCover());
         orderItem.setSpec(spec);
@@ -292,15 +301,18 @@ public class OrderPersistSupport {
     }
 
     /**
-     * 扣减商品库存（P2-5 分桶适配）。
+     * 扣减库存（P2-5 分桶适配 + SKU 下沉）。
      *
-     * <p>商品已分桶时走「桶级 CAS + 商品总库存 CAS」，未分桶时保持原有单行扣减；
-     * 两条路径在库存不足时都抛 {@code OUT_OF_STOCK}，由外层事务统一回滚。</p>
+     * <p>该 SKU 已分桶时走「桶级 CAS + SKU/商品两层 CAS」，未分桶时保持单行扣减
+     * （{@code skuId > 0} 走 {@link SkuStockService}，无规格商品走商品级）；
+     * 各路径在库存不足时都抛 {@code OUT_OF_STOCK}，由外层事务统一回滚。</p>
      */
-    public void deductProductStock(Long productId, int qty, String title, String orderNo) {
-        if (inventoryBucketService.isBucketed(productId, null)) {
+    public void deductStock(Long skuId, Long productId, int qty, String title, String orderNo) {
+        Long effectiveSkuId = skuId == null ? 0L : skuId;
+        if (inventoryBucketService.isBucketed(productId, effectiveSkuId)) {
             BucketDeductDTO dto = new BucketDeductDTO();
             dto.setProductId(productId);
+            dto.setSkuId(effectiveSkuId);
             dto.setQty(qty);
             dto.setOrderNo(orderNo);
             dto.setOperator("trade");
@@ -314,39 +326,62 @@ public class OrderPersistSupport {
             }
             return;
         }
-        if (!productStockService.deductStock(productId, qty)) {
+        boolean ok = effectiveSkuId > 0
+                ? skuStockService.deductSkuStock(effectiveSkuId, qty)
+                : productStockService.deductStock(productId, qty);
+        if (!ok) {
             throw new BizException(ResultCode.OUT_OF_STOCK, "商品「" + title + "」库存不足");
         }
     }
 
     /**
-     * 回退库存（P0-4 / P2-5）。
+     * 回退库存（P0-4 / P2-5 + SKU 下沉）。
      *
-     * <p>回退路径按「该单该商品是否走过桶级出库」二选一：</p>
+     * <p>回退路径按「该单该 SKU 是否走过桶级出库」二选一：</p>
      * <ul>
-     *   <li><b>分桶商品</b>：交回 {@code InventoryBucketService}，把数量还回**原来那些桶**，
-     *       幂等由桶审计流水的 {@code (单号, 商品)} 判据保证；</li>
-     *   <li><b>未分桶商品</b>：先在 {@code inventory_rollback_log} 登记 {@code (orderNo, productId)}，
-     *       唯一索引保证每笔回退最多生效一次。</li>
+     *   <li><b>分桶 SKU</b>：交回 {@code InventoryBucketService}，把数量还回**原来那些桶**，
+     *       幂等由桶审计流水的 {@code (单号, SKU)} 判据保证 —— 同一订单的多个 SKU 各自回补一次；</li>
+     *   <li><b>未走桶级出库的明细</b>：先在 {@code inventory_rollback_log} 登记
+     *       {@code (orderNo, productId)}（唯一索引），再逐 SKU 回补。
+     *       该表按商品幂等，因此同一商品的多个 SKU <b>合并成一组</b>登记一次、整组回补 ——
+     *       逐条登记会让第二个 SKU 被唯一索引吞掉、库存退不回来。</li>
      * </ul>
      * <p>两条路径都保证「即便状态机出现意外，也不会把库存退回两次」。</p>
      */
     public void restoreStock(String orderNo) {
         List<OrderItem> items =
                 orderItemMapper.selectList(new LambdaQueryWrapper<OrderItem>().eq(OrderItem::getOrderNo, orderNo));
+        Map<Long, List<OrderItem>> byProduct = new LinkedHashMap<>();
         for (OrderItem item : items) {
-            int qty = item.getQty() == null ? 0 : item.getQty();
-            // 分桶商品：交回桶服务，把数量还回「原来那些桶」，幂等由桶审计流水保证
-            if (inventoryBucketService.hasOutbound(orderNo, null, item.getProductId())) {
-                inventoryBucketService.rollbackSku(orderNo, null, item.getProductId());
+            Long skuId = item.getSkuId() == null ? 0L : item.getSkuId();
+            // 分桶 SKU：交回桶服务，把数量还回「原来那些桶」，幂等由桶审计流水保证
+            if (inventoryBucketService.hasOutbound(orderNo, skuId, item.getProductId())) {
+                inventoryBucketService.rollbackSku(orderNo, skuId, item.getProductId());
                 continue;
             }
-            int firstTime = rollbackLogMapper.tryInsert(orderNo, item.getProductId(), qty);
+            byProduct
+                    .computeIfAbsent(item.getProductId(), k -> new ArrayList<>())
+                    .add(item);
+        }
+        for (Map.Entry<Long, List<OrderItem>> entry : byProduct.entrySet()) {
+            Long productId = entry.getKey();
+            int total = entry.getValue().stream()
+                    .mapToInt(item -> item.getQty() == null ? 0 : item.getQty())
+                    .sum();
+            int firstTime = rollbackLogMapper.tryInsert(orderNo, productId, total);
             if (firstTime == 0) {
-                log.warn("库存回退已执行过，跳过幂等回退：orderNo={}, productId={}", orderNo, item.getProductId());
+                log.warn("库存回退已执行过，跳过幂等回退：orderNo={}, productId={}", orderNo, productId);
                 continue;
             }
-            productStockService.restoreStock(item.getProductId(), qty);
+            for (OrderItem item : entry.getValue()) {
+                int qty = item.getQty() == null ? 0 : item.getQty();
+                Long skuId = item.getSkuId() == null ? 0L : item.getSkuId();
+                if (skuId > 0) {
+                    skuStockService.restoreSkuStock(skuId, qty);
+                } else {
+                    productStockService.restoreStock(item.getProductId(), qty);
+                }
+            }
         }
     }
 
@@ -375,7 +410,9 @@ public class OrderPersistSupport {
         if (product == null || product.getStatus() == null || product.getStatus() != 1) {
             throw new BizException(ResultCode.NOT_FOUND, "商品不存在或已下架");
         }
-        List<OrderItemDraft> drafts = List.of(new OrderItemDraft(product, product.getSpec(), qty, unitPrice));
+        // 秒杀商品被约束为单规格，规格归属取默认 SKU（无 SKU 的历史商品为 0）
+        Long skuId = defaultSkuId(productId);
+        List<OrderItemDraft> drafts = List.of(new OrderItemDraft(product, skuId, product.getSpec(), qty, unitPrice));
         // 与普通下单一致：先落订单，再在事务尾段扣库存
         String orderNo;
         try {
@@ -391,9 +428,15 @@ public class OrderPersistSupport {
             log.warn("特殊通道下单命中幂等：userId={}, requestId={}, 返回已有订单 {}", userId, requestId, existing);
             return existing;
         }
-        deductProductStock(productId, qty, product.getTitle(), orderNo);
+        deductStock(skuId, productId, qty, product.getTitle(), orderNo);
         log.info("用户 {} 通过特殊通道下单成功：{}，单价 ¥{}", userId, orderNo, unitPrice);
         return orderNo;
+    }
+
+    /** 商品的默认 SKU ID（秒杀商品被约束为单规格，解析无歧义）；无 SKU 返回 0。 */
+    private Long defaultSkuId(Long productId) {
+        Long skuId = skuStockService.resolveSkuId(productId);
+        return skuId == null ? 0L : skuId;
     }
 
     public Order requireOwnOrder(Long userId, String orderNo) {
@@ -426,6 +469,6 @@ public class OrderPersistSupport {
         return existing == null ? null : existing.getOrderNo();
     }
 
-    /** 下单明细草稿：以下单瞬间的商品数据为准。 */
-    public record OrderItemDraft(Product product, String spec, int qty, BigDecimal price) {}
+    /** 下单明细草稿：以下单瞬间的商品数据为准。{@code spec} 为该 SKU 的 spec_desc 快照。 */
+    public record OrderItemDraft(Product product, Long skuId, String spec, int qty, BigDecimal price) {}
 }

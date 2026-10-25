@@ -82,6 +82,7 @@ public final class MerchantAftersaleConverter {
         if (orderItem != null) {
             OrderProductVO product = new OrderProductVO();
             product.setId(orderItem.getProductId());
+            product.setSkuId(orderItem.getSkuId() == null ? 0L : orderItem.getSkuId());
             product.setName(orderItem.getTitle());
             product.setCover(orderItem.getCover());
             product.setSpec(orderItem.getSpec());

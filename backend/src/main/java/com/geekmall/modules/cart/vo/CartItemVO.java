@@ -1,10 +1,9 @@
 package com.geekmall.modules.cart.vo;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.Data;
-
 import java.io.Serializable;
 import java.math.BigDecimal;
+import lombok.Data;
 
 /**
  * 购物车项出参，对应前端 CartView。
@@ -16,6 +15,9 @@ public class CartItemVO implements Serializable {
     private Long id;
 
     private Long productId;
+
+    @Schema(description = "规格 SKU ID；0 = 无规格商品")
+    private Long skuId;
 
     private String title;
 

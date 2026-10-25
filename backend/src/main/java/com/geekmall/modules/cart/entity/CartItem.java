@@ -6,11 +6,10 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
-
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import lombok.Data;
 
 /**
  * 购物车项 oms_cart_item。
@@ -28,6 +27,9 @@ public class CartItem implements Serializable {
     private Long userId;
 
     private Long productId;
+
+    /** 规格 SKU ID；0 = 无规格商品 / 历史购物车行 */
+    private Long skuId;
 
     /** 商品标题快照 */
     private String title;

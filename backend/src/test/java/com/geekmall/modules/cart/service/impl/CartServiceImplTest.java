@@ -18,6 +18,7 @@ import com.geekmall.modules.cart.vo.CartItemVO;
 import com.geekmall.modules.cart.vo.CartSummaryVO;
 import com.geekmall.modules.product.entity.Product;
 import com.geekmall.modules.product.service.ProductStockService;
+import com.geekmall.modules.product.service.SkuStockService;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +47,9 @@ class CartServiceImplTest {
 
     @Mock
     private ProductStockService productStockService;
+
+    @Mock
+    private SkuStockService skuStockService;
 
     @InjectMocks
     private CartServiceImpl cartService;

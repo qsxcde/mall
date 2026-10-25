@@ -25,6 +25,7 @@ import com.geekmall.modules.marketing.service.CouponService;
 import com.geekmall.modules.marketing.vo.UserCouponVO;
 import com.geekmall.modules.payment.service.PaymentRefundService;
 import com.geekmall.modules.product.service.ProductStockService;
+import com.geekmall.modules.product.service.SkuStockService;
 import com.geekmall.modules.trade.dto.PreOrderDTO;
 import com.geekmall.modules.trade.dto.SubmitOrderDTO;
 import com.geekmall.modules.trade.entity.Order;
@@ -81,6 +82,9 @@ class TradeServiceImplTest {
 
     @Mock
     private ProductStockService productStockService;
+
+    @Mock
+    private SkuStockService skuStockService;
     /** 分桶服务：默认 isBucketed=false / hasOutbound=false，即走原有的单行扣减路径。 */
     @Mock
     private InventoryBucketService inventoryBucketService;
@@ -131,6 +135,7 @@ class TradeServiceImplTest {
                 rollbackLogMapper,
                 orderNoGenerator,
                 productStockService,
+                skuStockService,
                 inventoryBucketService,
                 userService);
         OrderIdempotentSupport idempotentSupport = new OrderIdempotentSupport(redisTemplate);
@@ -138,6 +143,7 @@ class TradeServiceImplTest {
                 userService,
                 couponService,
                 productStockService,
+                skuStockService,
                 orderMapper,
                 orderStateMachine,
                 redisTemplate,

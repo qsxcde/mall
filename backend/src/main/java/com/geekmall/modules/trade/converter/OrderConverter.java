@@ -31,6 +31,7 @@ public final class OrderConverter {
         }
         OrderItemVO vo = new OrderItemVO();
         vo.setProductId(item.getProductId());
+        vo.setSkuId(item.getSkuId() == null ? 0L : item.getSkuId());
         vo.setTitle(item.getTitle());
         vo.setCover(item.getCover());
         vo.setSpec(item.getSpec());
