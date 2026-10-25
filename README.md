@@ -30,7 +30,7 @@
 | 运行时 | JDK 21 |
 | 框架 | Spring Boot 4.1.1（Spring Framework 7 + Jackson 3） |
 | 安全 | Spring Security 7 + JWT 无状态（Redis 保存会话，支持登出踢下线） |
-| 持久层 | MyBatis-Plus + MySQL 8 + Flyway（16 个版本化迁移 V1–V16，代码与库结构同源） |
+| 持久层 | MyBatis-Plus + MySQL 8 + Flyway（17 个版本化迁移 V1–V17，代码与库结构同源） |
 | 缓存 | Redis 7（分级 TTL + 本地 Caffeine L1） |
 | 分布式 | Redis Stream（秒杀削峰队列）、ShedLock（定时任务互斥） |
 | 可观测性 | Actuator + Micrometer/Prometheus + 结构化 JSON 日志 + TraceId 全链路（跨线程 / 跨队列） |
@@ -80,7 +80,7 @@
 
 ### 1.5 质量与验证
 
-- **70 个测试类 / 783 个用例**（+2 基类），`mvn test` 一键运行全绿；集成测试用 Testcontainers 起**真实 MySQL 8 + Redis 7（+ 按需 Elasticsearch 9）**，跑真实 Flyway 迁移与真实过滤器链；JaCoCo 行覆盖率 **78.28%**（门禁 ≥60%）
+- **71 个测试类 / 788 个用例**（+2 基类），`mvn test` 一键运行全绿；集成测试用 Testcontainers 起**真实 MySQL 8 + Redis 7（+ 按需 Elasticsearch 9）**，跑真实 Flyway 迁移与真实过滤器链；JaCoCo 行覆盖率 **78.28%**（门禁 ≥60%）
 - **代码风格有工具约束且已接入 CI**：后端 Spotless + palantir-java-format，前端 ESLint 10（flat config，两端统一）+ Prettier 3。
   两边都用 **ratchet**（只约束「相对基线有改动的文件」）——因为全库重排会产生覆盖数百文件的 diff，
   而 ratchet 既能让 CI 立刻变绿，又能让此后每次改动自动收敛到统一风格
@@ -291,9 +291,24 @@ bash loadtest/scripts/run_tests.sh           # 全量：重置环境 → 造账�
   **已修（2026-10-25）**：缓存写入/失效推迟到事务 `afterCommit`、回滚则丢弃，
   由 `CacheTransactionOrderIntegrationTest` 三条确定性断言钉死。
 
-**③ 商品域进阶**
+**③ 商品域进阶** —— ✅ 多规格 SKU 已完成
 
-多规格 SKU（当前是单商品模式）、服务筛选。这是业务完整度上最明显的空白。
+- ✅ **多规格 SKU**（已完成，2026-10-25）：结构化规格维度（颜色×尺寸笛卡尔积生成 SKU）+ **SKU 独立库存**，
+  全链路走 `sku_id`（购物车合并键 / 下单计价 / 库存扣减回补 / 订单明细快照）。
+  商家端「维度 + 规格值 → 自动生成 SKU 矩阵」编辑，买家端维度联动选择器（无效组合置灰、0 库存售罄）。
+  存量数据统一迁移：每个商品生成 1 条默认 SKU 承接历史库存/订单/购物车引用，**历史订单 `spec` 文本一字不改**。
+
+  **三层守恒**（应用层强约束）：`SUM(inv_bucket.stock WHERE sku_id) == pms_sku.stock`、
+  `SUM(pms_sku.stock WHERE product_id) == pms_product.stock`、一次出库 = 桶 + SKU + 商品三处 CAS 同事务。
+  价格/库存由后端汇总回写商品表（`price = MIN(sku.price)`、`stock = SUM(sku.stock)`），
+  因此列表卡片零改动，仍显示起售价与总库存。
+
+  ⚠️ 实测暴露并修掉的最高风险点：库存幂等键原本是 `(orderNo, productId)`，
+  **同一订单买两个 SKU 会被吞成只扣一次 / 只回补一次**，已改为 `(orderNo, skuId, productId)`，
+  由 `SkuStockIntegrationTest` 专门用「同单两 SKU」用例守住。秒杀商品保持单规格（拦截多 SKU，防两套价格）。
+
+  词汇约定：`inv_bucket_rule.granularity` 的 `SKU` 值指的是**商品**（历史命名），规格 SKU 一律用 `sku_id` 表达。
+- ⏳ **服务筛选**：仍待补。
 
 **④ 搜索三方案实测：LIKE / FULLTEXT / Elasticsearch** —— ✅ 已完成
 
