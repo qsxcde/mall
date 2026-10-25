@@ -42,9 +42,14 @@ export const useCartStore = defineStore('cart', {
       this.items = []
     },
 
-    /** 加入购物车：后端对「同商品 + 同规格」会自动累加 */
+    /** 加入购物车：后端对「同商品 + 同 SKU」会自动累加；多规格商品经 extra.skuId 指定规格 */
     async add(product, qty = 1, extra = {}) {
-      await cartApi.add(product.id ?? product.productId, qty, extra.spec || product.spec || '')
+      await cartApi.add(
+        product.id ?? product.productId,
+        qty,
+        extra.spec || product.spec || '',
+        extra.skuId
+      )
       await this.load()
     },
 

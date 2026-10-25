@@ -8,9 +8,11 @@ export const cartApi = {
     return (list || []).map(toCartItem)
   },
 
-  /** 加入购物车（同商品同规格后端会自动累加） */
-  async add(productId, qty = 1, spec = '') {
-    return request.post('/cart/items', { productId, qty, spec })
+  /** 加入购物车（同商品同规格后端会自动累加）；多规格商品需传 skuId */
+  async add(productId, qty = 1, spec = '', skuId = null) {
+    const body = { productId, qty, spec }
+    if (skuId != null) body.skuId = skuId
+    return request.post('/cart/items', body)
   },
 
   async addBatch(items) {
