@@ -24,6 +24,32 @@ const num = (value, fallback = 0) => {
   return Number.isFinite(n) ? n : fallback
 }
 
+/** 规格维度：{ name, values: [{ value, image }] }，值兼容纯字符串写法 */
+function toSpecDimension(vo) {
+  if (!vo) return null
+  return {
+    name: vo.name || '',
+    values: Array.isArray(vo.values)
+      ? vo.values.map((v) =>
+          typeof v === 'string'
+            ? { value: v, image: '' }
+            : { value: v?.value || '', image: v?.image || '' }
+        )
+      : []
+  }
+}
+
+/** 规格 SKU：{ id, specDesc, price, stock }，specDesc 形如「黑色/XL」 */
+export function toSku(vo) {
+  if (!vo) return null
+  return {
+    id: vo.id,
+    specDesc: vo.specDesc || '',
+    price: num(vo.price),
+    stock: num(vo.stock)
+  }
+}
+
 /** 商品卡片 / 详情 */
 export function toProduct(vo) {
   if (!vo) return null
@@ -47,7 +73,12 @@ export function toProduct(vo) {
     description: vo.description || '',
     stock: num(vo.stock),
     categoryKey: vo.categoryKey || '',
-    parentKey: vo.parentKey || ''
+    parentKey: vo.parentKey || '',
+    // 多规格：specDimensions / skus 为空时视图降级为单规格展示
+    specDimensions: Array.isArray(vo.specDimensions)
+      ? vo.specDimensions.map(toSpecDimension).filter(Boolean)
+      : [],
+    skus: Array.isArray(vo.skus) ? vo.skus.map(toSku).filter(Boolean) : []
   }
 }
 
