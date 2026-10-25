@@ -1,10 +1,9 @@
 package com.geekmall.modules.merchant.vo;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.Data;
-
 import java.io.Serializable;
 import java.math.BigDecimal;
+import lombok.Data;
 
 /**
  * 订单内嵌的商品快照。
@@ -14,6 +13,9 @@ import java.math.BigDecimal;
 public class OrderProductVO implements Serializable {
 
     private Long id;
+
+    @Schema(description = "规格 SKU ID；0 = 无规格商品 / 历史明细")
+    private Long skuId;
 
     private String name;
 

@@ -15,7 +15,9 @@ import com.geekmall.modules.marketing.service.CouponService;
 import com.geekmall.modules.marketing.vo.UserCouponVO;
 import com.geekmall.modules.payment.service.PaymentRefundService;
 import com.geekmall.modules.product.entity.Product;
+import com.geekmall.modules.product.entity.Sku;
 import com.geekmall.modules.product.service.ProductStockService;
+import com.geekmall.modules.product.service.SkuStockService;
 import com.geekmall.modules.trade.dto.FixedPriceOrderCommand;
 import com.geekmall.modules.trade.dto.OrderRequestPair;
 import com.geekmall.modules.trade.dto.PreOrderDTO;
@@ -75,6 +77,8 @@ public class TradeServiceImpl implements TradeService {
     private final UserService userService;
     private final CouponService couponService;
     private final ProductStockService productStockService;
+    /** SKU 读取与库存：下单按 SKU 重新计价，扣减下沉到 SKU。 */
+    private final SkuStockService skuStockService;
 
     private final OrderMapper orderMapper;
     private final OrderStateMachine orderStateMachine;
@@ -191,10 +195,16 @@ public class TradeServiceImpl implements TradeService {
         }
         AddressVO address = userService.getAddress(userId, dto.getAddressId());
 
-        // 以商品当前价格为准重新计价；一次批量查回，消除逐条 selectById 的 N+1
+        // 以商品 / SKU 当前价格为准重新计价；一次批量查回，消除逐条 selectById 的 N+1
         List<Long> productIds =
                 items.stream().map(CartItemVO::getProductId).distinct().toList();
         Map<Long, Product> productMap = productStockService.findByIds(productIds);
+        List<Long> skuIds = items.stream()
+                .map(CartItemVO::getSkuId)
+                .filter(skuId -> skuId != null && skuId > 0)
+                .distinct()
+                .toList();
+        Map<Long, Sku> skuMap = skuIds.isEmpty() ? Map.of() : skuStockService.findByIds(skuIds);
 
         List<OrderItemDraft> drafts = new ArrayList<>();
         BigDecimal goodsAmount = BigDecimal.ZERO;
@@ -204,14 +214,28 @@ public class TradeServiceImpl implements TradeService {
                 throw new BizException(ResultCode.NOT_FOUND, "商品「" + item.getTitle() + "」已下架");
             }
             int qty = item.getQty() == null ? 1 : item.getQty();
-            BigDecimal price = product.getPrice() == null ? BigDecimal.ZERO : product.getPrice();
-            drafts.add(new OrderItemDraft(product, item.getSpec(), qty, price));
+            Sku sku = resolveSku(item, product, skuMap);
+            // 价格以 SKU 为准（购物车里的只是加购快照）；spec 语义 = 该 SKU 的 spec_desc 快照
+            BigDecimal price;
+            String spec;
+            Long skuId;
+            if (sku != null) {
+                price = sku.getPrice() == null ? BigDecimal.ZERO : sku.getPrice();
+                spec = sku.getSpecDesc();
+                skuId = sku.getId();
+            } else {
+                price = product.getPrice() == null ? BigDecimal.ZERO : product.getPrice();
+                spec = item.getSpec();
+                skuId = item.getSkuId() == null ? 0L : item.getSkuId();
+            }
+            drafts.add(new OrderItemDraft(product, skuId, spec, qty, price));
             goodsAmount = goodsAmount.add(price.multiply(BigDecimal.valueOf(qty)));
         }
         goodsAmount = goodsAmount.setScale(2, RoundingMode.HALF_UP);
 
-        // P0-3：按 productId 升序加锁，所有事务加锁顺序一致，从根上消除跨 SKU 死锁
-        drafts.sort(Comparator.comparing(d -> d.product().getId()));
+        // P0-3：按 (商品, SKU) 升序加锁，所有事务加锁顺序一致，从根上消除跨 SKU 死锁
+        drafts.sort(Comparator.comparing((OrderItemDraft d) -> d.product().getId())
+                .thenComparing(d -> d.skuId() == null ? 0L : d.skuId()));
 
         BigDecimal shippingFee = checkoutSupport.resolveShippingFee(dto.getShippingType());
         BigDecimal discount = BigDecimal.ZERO;
@@ -241,18 +265,19 @@ public class TradeServiceImpl implements TradeService {
                 dto.getRemark(),
                 dto.getRequestId());
 
-        // 2) 扣库存：同一商品可能出现在多个结算项，先按商品合并数量 —— 既避免分桶路径下
-        //    「同商品重复调用命中幂等」漏扣，也减少对同一行的锁获取次数
-        Map<Long, Integer> qtyByProduct = new LinkedHashMap<>();
-        Map<Long, String> titleByProduct = new LinkedHashMap<>();
+        // 2) 扣库存：同一 SKU 可能出现在多个结算项，先按 (商品, SKU) 合并数量 —— 既避免分桶路径下
+        //    「同 SKU 重复调用命中幂等」漏扣，也减少对同一行的锁获取次数
+        Map<StockKey, Integer> qtyByKey = new LinkedHashMap<>();
+        Map<StockKey, String> titleByKey = new LinkedHashMap<>();
         for (OrderItemDraft draft : drafts) {
-            qtyByProduct.merge(draft.product().getId(), draft.qty(), Integer::sum);
-            titleByProduct.putIfAbsent(draft.product().getId(), draft.product().getTitle());
+            StockKey key = new StockKey(draft.product().getId(), draft.skuId() == null ? 0L : draft.skuId());
+            qtyByKey.merge(key, draft.qty(), Integer::sum);
+            titleByKey.putIfAbsent(key, draft.product().getTitle());
         }
-        // 分桶商品走桶级 CAS（多行并行），未分桶商品保持单行扣减；任一失败整体回滚
-        for (Map.Entry<Long, Integer> entry : qtyByProduct.entrySet()) {
-            persistSupport.deductProductStock(
-                    entry.getKey(), entry.getValue(), titleByProduct.get(entry.getKey()), orderNo);
+        // 分桶 SKU 走桶级 CAS（多行并行），未分桶保持单行扣减；任一失败整体回滚
+        for (Map.Entry<StockKey, Integer> entry : qtyByKey.entrySet()) {
+            StockKey key = entry.getKey();
+            persistSupport.deductStock(key.skuId(), key.productId(), entry.getValue(), titleByKey.get(key), orderNo);
         }
 
         // 3) 核销优惠券
@@ -500,6 +525,22 @@ public class TradeServiceImpl implements TradeService {
         return persistSupport.persistSeckillOrdersBatch(commands);
     }
 
+    /**
+     * 取购物车行对应的 SKU：无规格（{@code skuId} 为空或 0）返回 {@code null}；
+     * SKU 不存在或不属于该商品视为规格已失效（可能被商家重建过），拒单让用户重新选择。
+     */
+    private Sku resolveSku(CartItemVO item, Product product, Map<Long, Sku> skuMap) {
+        Long skuId = item.getSkuId();
+        if (skuId == null || skuId <= 0) {
+            return null;
+        }
+        Sku sku = skuMap.get(skuId);
+        if (sku == null || !product.getId().equals(sku.getProductId())) {
+            throw new BizException(ResultCode.NOT_FOUND, "商品「" + item.getTitle() + "」的规格已失效，请重新选择");
+        }
+        return sku;
+    }
+
     private void sleepQuietly(long millis) {
         try {
             Thread.sleep(millis);
@@ -507,4 +548,7 @@ public class TradeServiceImpl implements TradeService {
             Thread.currentThread().interrupt();
         }
     }
+
+    /** 扣减合并键：同一 (商品, SKU) 的数量先合并，避免重复扣减与多余行锁。 */
+    private record StockKey(Long productId, Long skuId) {}
 }

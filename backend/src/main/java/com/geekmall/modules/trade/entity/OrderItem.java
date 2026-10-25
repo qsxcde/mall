@@ -5,11 +5,10 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
-
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import lombok.Data;
 
 /**
  * 订单明细 oms_order_item。商品信息为下单时的快照，保证历史订单不受商品变更影响。
@@ -26,6 +25,9 @@ public class OrderItem implements Serializable {
     private String orderNo;
 
     private Long productId;
+
+    /** 规格 SKU ID；0 = 无规格商品 / 历史订单明细 */
+    private Long skuId;
 
     private String title;
 

@@ -8,7 +8,6 @@ import com.geekmall.modules.merchant.vo.OrderProductVO;
 import com.geekmall.modules.trade.entity.Order;
 import com.geekmall.modules.trade.entity.OrderItem;
 import com.geekmall.modules.user.entity.SysUser;
-
 import java.util.Map;
 
 /**
@@ -16,8 +15,7 @@ import java.util.Map;
  */
 public final class MerchantOrderConverter {
 
-    private MerchantOrderConverter() {
-    }
+    private MerchantOrderConverter() {}
 
     /**
      * 订单 → 商家端 VO。
@@ -28,8 +26,8 @@ public final class MerchantOrderConverter {
      * @param address  解析后的地址快照，可为 null
      * @param afterSale 是否处于「售后中」
      */
-    public static MerchantOrderVO toVO(Order order, OrderItem item, SysUser buyer,
-                                       Map<String, Object> address, boolean afterSale) {
+    public static MerchantOrderVO toVO(
+            Order order, OrderItem item, SysUser buyer, Map<String, Object> address, boolean afterSale) {
         if (order == null) {
             return null;
         }
@@ -55,6 +53,7 @@ public final class MerchantOrderConverter {
         if (item != null) {
             OrderProductVO product = new OrderProductVO();
             product.setId(item.getProductId());
+            product.setSkuId(item.getSkuId() == null ? 0L : item.getSkuId());
             product.setName(item.getTitle());
             product.setCover(item.getCover());
             product.setSpec(item.getSpec());

@@ -11,7 +11,9 @@ import com.geekmall.modules.cart.service.CartService;
 import com.geekmall.modules.cart.vo.CartItemVO;
 import com.geekmall.modules.cart.vo.CartSummaryVO;
 import com.geekmall.modules.product.entity.Product;
+import com.geekmall.modules.product.entity.Sku;
 import com.geekmall.modules.product.service.ProductStockService;
+import com.geekmall.modules.product.service.SkuStockService;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +34,8 @@ public class CartServiceImpl implements CartService {
 
     private final CartItemMapper cartItemMapper;
     private final ProductStockService productStockService;
+    /** SKU 读取：多规格商品的价格快照取 SKU 价、规格文本取 SKU 的 spec_desc。 */
+    private final SkuStockService skuStockService;
 
     @Override
     public List<CartItemVO> list(Long userId) {
@@ -45,10 +49,30 @@ public class CartServiceImpl implements CartService {
         if (product == null || (product.getStatus() != null && product.getStatus() != ON_SHELF)) {
             throw BizException.of(ResultCode.NOT_FOUND);
         }
-        String spec = StringUtils.hasText(dto.getSpec()) ? dto.getSpec() : product.getSpec();
+        Long skuId = dto.getSkuId() == null || dto.getSkuId() <= 0 ? 0L : dto.getSkuId();
+        if (skuId == 0) {
+            // 未指定规格：商品有 SKU 时落到默认 SKU（首个），保证全链路按 SKU 记账、两层守恒不破；
+            // 无规格商品（历史 / 直建）保持 0 = 商品级
+            Long defaultSkuId = skuStockService.resolveSkuId(product.getId());
+            skuId = defaultSkuId == null ? 0L : defaultSkuId;
+        }
+        String spec;
+        BigDecimal price;
+        if (skuId > 0) {
+            // 多规格商品：价格快照取 SKU 价，规格文本取该 SKU 的 spec_desc
+            Sku sku = skuStockService.findByIds(List.of(skuId)).get(skuId);
+            if (sku == null || !product.getId().equals(sku.getProductId())) {
+                throw new BizException(ResultCode.PARAM_ERROR, "商品规格不存在");
+            }
+            spec = sku.getSpecDesc();
+            price = sku.getPrice();
+        } else {
+            spec = StringUtils.hasText(dto.getSpec()) ? dto.getSpec() : product.getSpec();
+            price = product.getPrice();
+        }
         int qty = dto.getQty() == null ? 1 : dto.getQty();
 
-        CartItem exist = findSameItem(userId, dto.getProductId(), spec);
+        CartItem exist = findSameItem(userId, dto.getProductId(), skuId, spec);
         if (exist != null) {
             CartItem update = new CartItem();
             update.setId(exist.getId());
@@ -61,9 +85,10 @@ public class CartServiceImpl implements CartService {
         CartItem item = new CartItem();
         item.setUserId(userId);
         item.setProductId(product.getId());
+        item.setSkuId(skuId);
         item.setTitle(product.getTitle());
         item.setCover(product.getCover());
-        item.setPrice(product.getPrice());
+        item.setPrice(price);
         item.setSpec(spec);
         item.setQty(qty);
         item.setChecked(1);
@@ -177,11 +202,15 @@ public class CartServiceImpl implements CartService {
                 .orderByDesc(CartItem::getId));
     }
 
-    private CartItem findSameItem(Long userId, Long productId, String spec) {
+    private CartItem findSameItem(Long userId, Long productId, Long skuId, String spec) {
         LambdaQueryWrapper<CartItem> wrapper = new LambdaQueryWrapper<CartItem>()
                 .eq(CartItem::getUserId, userId)
                 .eq(CartItem::getProductId, productId);
-        if (spec == null) {
+        if (skuId != null && skuId > 0) {
+            // 合并键 = (商品, SKU)：同商品不同规格各占一行
+            wrapper.eq(CartItem::getSkuId, skuId);
+        } else if (spec == null) {
+            // 无规格商品沿用历史语义：同款（同 spec 文本）合并
             wrapper.isNull(CartItem::getSpec);
         } else {
             wrapper.eq(CartItem::getSpec, spec);
@@ -201,6 +230,7 @@ public class CartServiceImpl implements CartService {
         CartItemVO vo = new CartItemVO();
         vo.setId(item.getId());
         vo.setProductId(item.getProductId());
+        vo.setSkuId(item.getSkuId() == null ? 0L : item.getSkuId());
         vo.setTitle(item.getTitle());
         vo.setCover(item.getCover());
         vo.setPrice(item.getPrice());
