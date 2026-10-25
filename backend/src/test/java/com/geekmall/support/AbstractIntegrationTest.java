@@ -192,7 +192,14 @@ public abstract class AbstractIntegrationTest {
         return loginBuyer(DEMO_BUYER, DEMO_PASSWORD);
     }
 
-    /** 商家登录，返回商家令牌。 */
+    /**
+     * 商家登录，返回商家令牌。
+     *
+     * <p><b>注意：商家端是「单用户单令牌」</b>（登录会覆盖 Redis 会话，旧令牌立即失效）。
+     * 同一用例内不要反复登录后继续使用旧令牌，辅助方法也不要自行登录 ——
+     * 应复用调用方传入的令牌，否则旧令牌会被顶下线，请求报 401「未登录或登录已过期」
+     * （同一秒内重复登录会因 JWT 秒级精度签出相同令牌而侥幸不炸，属偶发陷阱）。</p>
+     */
     protected String loginMerchant(String account, String password) {
         JsonNode data = assertSuccess(
                 post("/api/v1/merchant/auth/login", Map.of("account", account, "password", password), null));

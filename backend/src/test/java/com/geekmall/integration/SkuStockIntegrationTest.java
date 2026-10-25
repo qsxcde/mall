@@ -60,7 +60,7 @@ class SkuStockIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("多 SKU 独立扣减：A 见底不影响 B；B 超卖整体回滚（含已扣桶）")
     void multiSkuDeductsIndependentlyAndOversellRollsBack() {
         String merchantToken = loginMerchant(DEMO_MERCHANT, DEMO_PASSWORD);
-        long productId = saveTwoSkuProduct("多规格独立扣减商品", 5, "2999.00", 3, "3099.00");
+        long productId = saveTwoSkuProduct(merchantToken, "多规格独立扣减商品", 5, "2999.00", 3, "3099.00");
         Map<String, Long> skuIds = skuIdsBySpecDesc(productId);
         long skuBlack = skuIds.get("黑色/XL");
         long skuWhite = skuIds.get("白色/XL");
@@ -101,7 +101,7 @@ class SkuStockIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("同一订单买两个 SKU：各自扣减 / 回补一次，同单重放不重复扣补")
     void sameOrderTwoSkusDeductAndRestoreOnce() {
         String merchantToken = loginMerchant(DEMO_MERCHANT, DEMO_PASSWORD);
-        long productId = saveTwoSkuProduct("同单双规格商品", 6, "100.00", 4, "120.00");
+        long productId = saveTwoSkuProduct(merchantToken, "同单双规格商品", 6, "100.00", 4, "120.00");
         Map<String, Long> skuIds = skuIdsBySpecDesc(productId);
         long skuBlack = skuIds.get("黑色/XL");
         long skuWhite = skuIds.get("白色/XL");
@@ -151,7 +151,7 @@ class SkuStockIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("取消订单回补到原 SKU + 原桶（跨桶扣减后精确还原）")
     void cancelRestoresToOriginalSkuAndBuckets() {
         String merchantToken = loginMerchant(DEMO_MERCHANT, DEMO_PASSWORD);
-        long productId = saveTwoSkuProduct("回补原桶商品", 5, "88.00", 3, "99.00");
+        long productId = saveTwoSkuProduct(merchantToken, "回补原桶商品", 5, "88.00", 3, "99.00");
         Map<String, Long> skuIds = skuIdsBySpecDesc(productId);
         long skuBlack = skuIds.get("黑色/XL");
         long skuWhite = skuIds.get("白色/XL");
@@ -218,7 +218,7 @@ class SkuStockIntegrationTest extends AbstractIntegrationTest {
     @DisplayName("三层守恒：混合操作后两层对账查询（桶 vs SKU、SUM(SKU) vs 商品）均无差额")
     void reconcileQueriesReportNoDrift() {
         String merchantToken = loginMerchant(DEMO_MERCHANT, DEMO_PASSWORD);
-        long productId = saveTwoSkuProduct("两层对账商品", 5, "66.00", 3, "77.00");
+        long productId = saveTwoSkuProduct(merchantToken, "两层对账商品", 5, "66.00", 3, "77.00");
         Map<String, Long> skuIds = skuIdsBySpecDesc(productId);
         allocateSkuBuckets(merchantToken, productId, skuIds.get("黑色/XL"), buckets("黑-主仓", 3, "黑-备仓", 2));
         allocateSkuBuckets(merchantToken, productId, skuIds.get("白色/XL"), buckets("白-主仓", 3));
@@ -241,9 +241,20 @@ class SkuStockIntegrationTest extends AbstractIntegrationTest {
 
     /* ------------------------------ 辅助 ------------------------------ */
 
-    /** 保存一个两规格商品（黑色/XL、白色/XL），返回商品 ID。 */
-    private long saveTwoSkuProduct(String name, int blackStock, String blackPrice, int whiteStock, String whitePrice) {
-        String merchantToken = loginMerchant(DEMO_MERCHANT, DEMO_PASSWORD);
+    /**
+     * 保存一个两规格商品（黑色/XL、白色/XL），返回商品 ID。
+     *
+     * <p><b>必须复用调用方传入的商家令牌，禁止在本方法内重新登录</b>：商家端是
+     * 「单用户单令牌」（登录会覆盖 Redis 中的会话令牌，旧令牌立即失效，见
+     * {@code MerchantAuthServiceImpl#login}）。若这里再登录一次，调用方手里的令牌
+     * 就会被顶下线；之所以平时看着没事，是因为 JWT 的 iat/exp 只有秒级精度，
+     * 两次登录落在同一秒时签发出的令牌字节完全相同、恰好能继续通过校验 ——
+     * 一旦两次登录跨秒（CI 机器慢、首个用例冷启动时最容易发生），调用方令牌
+     * 立刻 401「未登录或登录已过期」。这曾导致 CI 上
+     * {@code multiSkuDeductsIndependentlyAndOversellRollsBack} 偶发失败。</p>
+     */
+    private long saveTwoSkuProduct(
+            String merchantToken, String name, int blackStock, String blackPrice, int whiteStock, String whitePrice) {
         Map<String, Object> body = new HashMap<>();
         body.put("name", name);
         body.put("cat", "集成测试分类");
