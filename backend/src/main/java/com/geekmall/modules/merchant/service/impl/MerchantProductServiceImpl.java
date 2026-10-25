@@ -7,6 +7,7 @@ import com.geekmall.common.cache.CacheNames;
 import com.geekmall.common.cache.RedisBloomFilter;
 import com.geekmall.common.exception.BizException;
 import com.geekmall.common.result.ResultCode;
+import com.geekmall.modules.marketing.service.SeckillService;
 import com.geekmall.modules.merchant.converter.MerchantProductConverter;
 import com.geekmall.modules.merchant.dto.MerchantProductQueryDTO;
 import com.geekmall.modules.merchant.dto.ProductBatchDTO;
@@ -16,8 +17,10 @@ import com.geekmall.modules.merchant.service.MerchantProductService;
 import com.geekmall.modules.merchant.support.Numbers;
 import com.geekmall.modules.merchant.vo.MerchantPageVO;
 import com.geekmall.modules.merchant.vo.MerchantProductVO;
+import com.geekmall.modules.product.dto.SkuSaveDTO;
 import com.geekmall.modules.product.entity.Product;
 import com.geekmall.modules.product.service.ProductStockService;
+import com.geekmall.modules.product.service.SkuService;
 import com.geekmall.security.MerchantSecurityUtils;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -46,6 +49,10 @@ public class MerchantProductServiceImpl implements MerchantProductService {
 
     private final ProductStockService productStockService;
     private final MerchantStatsMapper statsMapper;
+    /** 规格维度 / SKU 的落库与读取（商品域收口，商家域不得直连其 Mapper）。 */
+    private final SkuService skuService;
+    /** 秒杀商品保持单规格，配置多 SKU 前需据此拦截。 */
+    private final SeckillService seckillService;
     /** 商品上架后必须同步进布隆过滤器，否则新品详情会被防穿透机制误判为「不存在」。 */
     private final RedisBloomFilter productBloomFilter;
 
@@ -76,8 +83,12 @@ public class MerchantProductServiceImpl implements MerchantProductService {
 
         Page<Product> page = new Page<>(query.getPage(), query.getSize());
         IPage<Product> result = productStockService.pageByShop(shopId, wrapper, page.getCurrent(), page.getSize());
-        List<MerchantProductVO> list =
-                result.getRecords().stream().map(MerchantProductConverter::toVO).toList();
+        // 规格结构一次批量读齐（维度 / 取值 / SKU / 关联），供 SKU 矩阵编辑器回显
+        Map<Long, SkuService.SpecStructure> structures = skuService.specStructureByProductIds(
+                result.getRecords().stream().map(Product::getId).toList());
+        List<MerchantProductVO> list = result.getRecords().stream()
+                .map(product -> MerchantProductConverter.toVO(product, structures.get(product.getId())))
+                .toList();
 
         MerchantPageVO<MerchantProductVO> vo =
                 new MerchantPageVO<>(list, result.getTotal(), result.getCurrent(), result.getSize());
@@ -108,6 +119,11 @@ public class MerchantProductServiceImpl implements MerchantProductService {
             allEntries = true)
     public Long save(ProductSaveDTO dto) {
         Long shopId = MerchantSecurityUtils.getShopId();
+        List<SkuSaveDTO> skus = dto.getSkus() == null ? List.of() : dto.getSkus();
+        // 秒杀商品保持单规格（一套价格）：配多 SKU 会形成「秒杀价 + SKU 价」两套价格
+        if (skus.size() > 1 && dto.getId() != null && seckillService.isSeckillProduct(dto.getId())) {
+            throw new BizException(ResultCode.BIZ_ERROR, "秒杀商品不支持多规格 SKU，请先移除秒杀活动后再配置多规格");
+        }
         Product product = new Product();
         product.setShopId(shopId);
         product.setTitle(dto.getName());
@@ -152,7 +168,31 @@ public class MerchantProductServiceImpl implements MerchantProductService {
         if (product.getStatus() != null && product.getStatus() == 1) {
             productBloomFilter.add(String.valueOf(product.getId()));
         }
+        // 事务内落规格结构并按 SKU 汇总回写售价 / 总库存 / 规格文本
+        writeSkuAggregate(product.getId(), shopId, dto, skus);
         return product.getId();
+    }
+
+    /**
+     * 落规格结构并汇总回写商品主表（{@code price = MIN(sku.price)}、{@code stock = SUM(sku.stock)}、
+     * {@code spec = 默认 SKU 的 spec_desc}）——<b>不信任前端提交的商品级价格与库存</b>。
+     *
+     * <p>传了 SKU 就整单覆盖规格结构；没传但商品已有 SKU（旧客户端只改标题等）时，仍以既有 SKU
+     * 汇总为准，保持 {@code SUM(pms_sku.stock) == pms_product.stock} 的商品层守恒。</p>
+     */
+    private void writeSkuAggregate(Long productId, Long shopId, ProductSaveDTO dto, List<SkuSaveDTO> skus) {
+        SkuService.SkuAggregate aggregate = skus.isEmpty()
+                ? skuService.aggregateOf(productId)
+                : skuService.replaceSkus(productId, shopId, dto.getSpec(), dto.getSpecDimensions(), skus);
+        if (aggregate == null) {
+            return;
+        }
+        Product update = new Product();
+        update.setId(productId);
+        update.setPrice(aggregate.price());
+        update.setStock(aggregate.stock());
+        update.setSpec(aggregate.spec());
+        productStockService.updateProduct(update);
     }
 
     @Override

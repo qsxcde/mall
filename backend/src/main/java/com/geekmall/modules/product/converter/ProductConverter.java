@@ -4,7 +4,8 @@ import com.geekmall.modules.product.entity.Product;
 import com.geekmall.modules.product.vo.CategoryVO;
 import com.geekmall.modules.product.vo.ProductCardVO;
 import com.geekmall.modules.product.vo.ProductDetailVO;
-
+import com.geekmall.modules.product.vo.SkuEditVO;
+import com.geekmall.modules.product.vo.SkuVO;
 import java.util.Arrays;
 import java.util.List;
 
@@ -13,8 +14,7 @@ import java.util.List;
  */
 public final class ProductConverter {
 
-    private ProductConverter() {
-    }
+    private ProductConverter() {}
 
     public static ProductCardVO toCard(Product product) {
         if (product == null) {
@@ -41,6 +41,22 @@ public final class ProductConverter {
         vo.setDisplayPrice(product.getPrice());
         vo.setStock(product.getStock());
         vo.setImages(product.getCover() == null ? List.of() : List.of(product.getCover()));
+        // 规格结构由调用方按需补充（无规格商品保持空列表，前端可直接遍历）
+        vo.setSpecDimensions(List.of());
+        vo.setSkus(List.of());
+        return vo;
+    }
+
+    /** SKU 明细 → 买家侧 SKU（只留 id / specDesc / price / stock，成本等内部字段不出域）。 */
+    public static SkuVO toSku(SkuEditVO sku) {
+        if (sku == null) {
+            return null;
+        }
+        SkuVO vo = new SkuVO();
+        vo.setId(sku.getId());
+        vo.setSpecDesc(sku.getSpecDesc());
+        vo.setPrice(sku.getPrice());
+        vo.setStock(sku.getStock());
         return vo;
     }
 
