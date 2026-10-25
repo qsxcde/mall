@@ -199,6 +199,12 @@ async function confirmPrice() {
 const drawer = reactive({ visible: false, isNew: false, model: null })
 const formRef = ref(null)
 
+/** 规格规模控制：≤3 个维度、每维 ≤20 个值（笛卡尔积由前端生成，避免组合爆炸） */
+const MAX_DIMENSIONS = 3
+const MAX_VALUES_PER_DIM = 20
+/** 组合数软上限：超出只提示，不做硬拦截 */
+const MATRIX_SOFT_LIMIT = 300
+
 function emptyProduct() {
   return {
     id: null,
@@ -216,13 +222,181 @@ function emptyProduct() {
     views: 0,
     thumb: 'th1',
     tag: 'NEW',
-    skus: [{ spec: '标准版', price: 0, stock: 0, code: '' }]
+    specDimensions: [],
+    skus: []
   }
 }
+
+/* ---------- 规格维度 / SKU 矩阵 ---------- */
+
+/** 组合键 = 各维度值按维度顺序用 / 拼接，与后端生成的 spec_desc 快照一致 */
+function skuKeyOf(dims, specValues) {
+  return dims.map((d) => specValues[d.name] ?? '').join('/') || '默认规格'
+}
+
+function normalizeDimension(d) {
+  return {
+    name: d?.name || '',
+    values: (Array.isArray(d?.values) ? d.values : []).map((v, i) =>
+      typeof v === 'string'
+        ? { value: v, image: '', sort: i }
+        : { value: v?.value || '', image: v?.image || '', sort: v?.sort ?? i }
+    )
+  }
+}
+
+/** 各行 specValues 并集反推维度（后端只回 SKU 时也能还原出编辑器） */
+function dimsFromSkuRows(rows) {
+  const byName = new Map()
+  rows.forEach((s) => {
+    Object.entries(s.specValues || {}).forEach(([name, value]) => {
+      const list = byName.get(name) || []
+      if (!list.includes(value)) list.push(value)
+      byName.set(name, list)
+    })
+  })
+  return [...byName.entries()].map(([name, values]) => ({ name, values }))
+}
+
+function toMatrixRow(dims, specValues, src = {}) {
+  return {
+    key: skuKeyOf(dims, specValues),
+    specValues: { ...specValues },
+    price: Number(src.price) || 0,
+    stock: Number(src.stock) || 0,
+    cost: Number(src.cost) || 0
+  }
+}
+
+/**
+ * 列表行 → 矩阵编辑器。
+ * 新结构（skus[].specValues 映射）直接落位；旧扁平 skus（spec 文本）折算成单个「规格」维度，
+ * 无 SKU 数据时留空，由 rebuildSkuMatrix 生成一行默认 SKU。
+ */
+function normalizeSpecModel(model) {
+  const rows = Array.isArray(model.skus) ? model.skus : []
+  const mapRows = rows.filter((s) => s?.specValues && typeof s.specValues === 'object')
+  if (mapRows.length) {
+    const dims =
+      Array.isArray(model.specDimensions) && model.specDimensions.length
+        ? model.specDimensions
+        : dimsFromSkuRows(mapRows)
+    model.specDimensions = dims.map(normalizeDimension)
+    model.skus = mapRows.map((s) => toMatrixRow(model.specDimensions, s.specValues, s))
+    return
+  }
+  if (rows.length) {
+    const names = [...new Set(rows.map((s) => s.spec || '默认规格'))]
+    model.specDimensions = [normalizeDimension({ name: '规格', values: names })]
+    model.skus = rows.map((s) =>
+      toMatrixRow(model.specDimensions, { 规格: s.spec || '默认规格' }, s)
+    )
+    return
+  }
+  model.specDimensions = (Array.isArray(model.specDimensions) ? model.specDimensions : []).map(
+    normalizeDimension
+  )
+  model.skus = []
+}
+
+/** 参与生成组合的维度（已命名且有值），与矩阵的规格列一一对应 */
+const activeDimensions = computed(() =>
+  (drawer.model?.specDimensions || []).filter((d) => d.name && d.values.length)
+)
+
+/** 列表展开行的 SKU 名称：兼容旧 spec 文本与新 specValues 映射 */
+const skuLabel = (s) =>
+  s?.spec || s?.specDesc || Object.values(s?.specValues || {}).join('/') || '默认规格'
+
+/** SKU 行数 = 各维度值数量的笛卡尔积 */
+const skuCount = computed(() => activeDimensions.value.reduce((n, d) => n * d.values.length, 1))
+
+/** 维度 / 规格值变化后重建笛卡尔积矩阵，已填的价格 / 库存 / 成本按组合键保留 */
+function rebuildSkuMatrix() {
+  const model = drawer.model
+  if (!model) return
+  const dims = activeDimensions.value
+  let combos = [{}]
+  for (const d of dims) {
+    combos = combos.flatMap((c) => d.values.map((v) => ({ ...c, [d.name]: v.value })))
+  }
+  const drafts = new Map((model.skus || []).map((s) => [s.key, s]))
+  model.skus = combos.map((specValues) => {
+    const key = skuKeyOf(dims, specValues)
+    const prev = drafts.get(key)
+    return prev
+      ? { ...prev, key, specValues }
+      : { key, specValues, price: model.price, stock: 0, cost: model.cost }
+  })
+}
+
+/** 每个维度「待添加规格值」的输入框 */
+const valueDrafts = ref([])
+
+function initSpecEditor() {
+  valueDrafts.value = drawer.model.specDimensions.map(() => '')
+  rebuildSkuMatrix()
+}
+
+function addDimension() {
+  const dims = drawer.model.specDimensions
+  if (dims.length >= MAX_DIMENSIONS) {
+    ElMessage.warning(`最多支持 ${MAX_DIMENSIONS} 个规格维度`)
+    return
+  }
+  dims.push({ name: '', values: [] })
+  valueDrafts.value.push('')
+}
+
+function removeDimension(index) {
+  drawer.model.specDimensions.splice(index, 1)
+  valueDrafts.value.splice(index, 1)
+}
+
+function addValue(d, di) {
+  const text = String(valueDrafts.value[di] || '').trim()
+  if (!text) return
+  if (d.values.length >= MAX_VALUES_PER_DIM) {
+    ElMessage.warning(`每个维度最多 ${MAX_VALUES_PER_DIM} 个规格值`)
+    return
+  }
+  if (d.values.some((v) => v.value === text)) {
+    ElMessage.warning(`规格值「${text}」已存在`)
+    return
+  }
+  d.values.push({ value: text, image: '', sort: d.values.length })
+  valueDrafts.value[di] = ''
+  if (skuCount.value > MATRIX_SOFT_LIMIT) {
+    ElMessage.warning(`SKU 组合已达 ${skuCount.value} 行，编辑器可能卡顿，建议精简规格`)
+  }
+}
+
+function removeValue(d, index) {
+  d.values.splice(index, 1)
+}
+
+watch(
+  () => drawer.model?.specDimensions,
+  () => rebuildSkuMatrix(),
+  { deep: true }
+)
+
+/** 无维度时只有默认 SKU 一行，价格 / 库存 / 成本跟随上方商品字段，避免两处输入打架 */
+watch(
+  () => [drawer.model?.price, drawer.model?.stock, drawer.model?.cost],
+  () => {
+    const model = drawer.model
+    if (!model || activeDimensions.value.length || model.skus.length !== 1) return
+    model.skus[0].price = model.price
+    model.skus[0].stock = model.stock
+    model.skus[0].cost = model.cost
+  }
+)
 
 function openCreate() {
   drawer.isNew = true
   drawer.model = emptyProduct()
+  initSpecEditor()
   drawer.visible = true
 }
 
@@ -230,6 +404,8 @@ function openEdit(row) {
   drawer.isNew = false
   // 深拷贝，取消时不影响列表里的原对象
   drawer.model = JSON.parse(JSON.stringify(row))
+  normalizeSpecModel(drawer.model)
+  initSpecEditor()
   drawer.visible = true
 }
 
@@ -243,21 +419,78 @@ const rules = {
   ]
 }
 
-function addSku() {
-  drawer.model.skus.push({
-    spec: '',
-    price: drawer.model.price,
-    stock: 0,
-    code: ''
-  })
+/** 维度 / 规格值 / SKU 行校验，规则错误用消息提示（不挂在表单项上） */
+function validateSpec() {
+  const m = drawer.model
+  const seenNames = new Set()
+  for (const d of m.specDimensions) {
+    const name = String(d.name || '').trim()
+    if (!name) {
+      ElMessage.warning('请填写规格维度名称')
+      return false
+    }
+    if (seenNames.has(name)) {
+      ElMessage.warning(`规格维度「${name}」重复，请修改`)
+      return false
+    }
+    seenNames.add(name)
+    if (!d.values.length) {
+      ElMessage.warning(`维度「${name}」至少需要一个规格值`)
+      return false
+    }
+    const seenValues = new Set()
+    for (const v of d.values) {
+      const value = String(v.value || '').trim()
+      if (!value) {
+        ElMessage.warning(`维度「${name}」存在空的规格值`)
+        return false
+      }
+      if (seenValues.has(value)) {
+        ElMessage.warning(`维度「${name}」的规格值「${value}」重复`)
+        return false
+      }
+      seenValues.add(value)
+    }
+  }
+  if (m.skus.some((s) => !(Number(s.price) > 0))) {
+    ElMessage.warning('请为每个 SKU 填写大于 0 的售价')
+    return false
+  }
+  return true
 }
 
-function removeSku(index) {
-  if (drawer.model.skus.length <= 1) {
-    ElMessage.warning('至少保留一个规格')
-    return
+/**
+ * 提交 payload：specDimensions 落维度 / 值，skus[].specValues 是「维度名 → 值」映射，
+ * 由后端落关联并生成 spec_desc（如「黑色/XL」）；price / stock 由后端按 SKU 汇总回写。
+ */
+function buildPayload() {
+  const m = drawer.model
+  return {
+    id: m.id,
+    name: m.name,
+    cat: m.cat,
+    brand: m.brand,
+    price: m.price,
+    listPrice: m.listPrice,
+    cost: m.cost,
+    stock: m.stock,
+    safeStock: m.safeStock,
+    status: m.status,
+    tag: m.tag,
+    cover: m.cover || '',
+    spec: m.spec,
+    version: m.version ?? null,
+    specDimensions: m.specDimensions.map((d) => ({
+      name: d.name,
+      values: d.values.map((v, i) => ({ value: v.value, image: v.image || '', sort: v.sort ?? i }))
+    })),
+    skus: m.skus.map((s) => ({
+      specValues: s.specValues,
+      price: s.price,
+      stock: s.stock,
+      cost: s.cost
+    }))
   }
-  drawer.model.skus.splice(index, 1)
 }
 
 async function submit() {
@@ -266,7 +499,8 @@ async function submit() {
   } catch {
     return
   }
-  const payload = drawer.model
+  if (!validateSpec()) return
+  const payload = buildPayload()
   await saveProduct(payload)
   drawer.visible = false
   ElMessage.success(drawer.isNew ? `商品「${payload.name.slice(0, 10)}…」已发布` : '商品信息已保存')
@@ -488,8 +722,8 @@ async function syncStock() {
                 <span>规格</span><span>售价</span><span>库存</span><span>规格编码</span
                 ><span>占比</span>
               </div>
-              <div v-for="s in row.skus" :key="s.code" class="sku-row">
-                <span>{{ s.spec }}</span>
+              <div v-for="(s, i) in row.skus" :key="i" class="sku-row">
+                <span>{{ skuLabel(s) }}</span>
                 <span class="mono">¥{{ money(s.price) }}</span>
                 <span class="mono">{{ s.stock }}</span>
                 <span class="mono">{{ s.code }}</span>
@@ -702,6 +936,10 @@ async function syncStock() {
                 <div class="field-hint">低于该值时触发库存预警</div>
               </el-form-item>
             </div>
+            <div class="field-hint">
+              多规格商品的售价 / 总库存以 SKU 为准，保存后由后端按 SKU 汇总回写（起售价 = 最低 SKU
+              价）
+            </div>
           </section>
 
           <section class="form-sec">
@@ -723,21 +961,77 @@ async function syncStock() {
 
           <section class="form-sec">
             <h4>规格 SKU</h4>
-            <div class="sku-edit">
-              <div class="sku-edit__head">
-                <span>规格名称</span><span>价格</span><span>库存</span><span />
-              </div>
-              <div v-for="(s, i) in drawer.model.skus" :key="i" class="sku-edit__row">
-                <el-input v-model="s.spec" placeholder="如：黑色 · 512G" />
-                <el-input-number v-model="s.price" :min="0" :controls="false" />
-                <el-input-number v-model="s.stock" :min="0" :controls="false" />
-                <el-button text @click="removeSku(i)">
+            <!-- 规格维度：先定义维度（如「颜色」），再给每个维度加规格值 -->
+            <div v-for="(d, di) in drawer.model.specDimensions" :key="di" class="spec-dim">
+              <div class="spec-dim__head">
+                <el-input v-model="d.name" placeholder="维度名，如：颜色" />
+                <el-button text type="danger" @click="removeDimension(di)">
                   <el-icon><Close /></el-icon>
                 </el-button>
               </div>
-              <el-button text type="primary" @click="addSku">
-                <el-icon><Plus /></el-icon> 添加规格
-              </el-button>
+              <div class="spec-dim__values">
+                <el-tag
+                  v-for="(sv, vi) in d.values"
+                  :key="sv.value"
+                  closable
+                  @close="removeValue(d, vi)"
+                >
+                  {{ sv.value }}
+                </el-tag>
+                <el-input
+                  v-model="valueDrafts[di]"
+                  class="spec-dim__add"
+                  size="small"
+                  placeholder="+ 回车添加规格值"
+                  @keyup.enter="addValue(d, di)"
+                />
+              </div>
+            </div>
+            <el-button
+              text
+              type="primary"
+              :disabled="drawer.model.specDimensions.length >= MAX_DIMENSIONS"
+              @click="addDimension"
+            >
+              <el-icon><Plus /></el-icon> 添加规格维度
+            </el-button>
+            <div class="field-hint">
+              最多 {{ MAX_DIMENSIONS }} 个维度、每维 {{ MAX_VALUES_PER_DIM }} 个规格值； 下方 SKU
+              矩阵按维度值的笛卡尔积自动生成
+            </div>
+
+            <!-- SKU 矩阵：每行可独立填价格 / 库存 / 成本 -->
+            <el-table :data="drawer.model.skus" size="small" max-height="300" class="sku-matrix">
+              <el-table-column v-if="!activeDimensions.length" label="规格" min-width="96">
+                <template #default="{ row }">{{ row.key }}</template>
+              </el-table-column>
+              <el-table-column
+                v-for="d in activeDimensions"
+                :key="d.name"
+                :label="d.name"
+                min-width="88"
+              >
+                <template #default="{ row }">{{ row.specValues[d.name] }}</template>
+              </el-table-column>
+              <el-table-column label="价格" min-width="112">
+                <template #default="{ row }">
+                  <el-input-number v-model="row.price" :min="0" :controls="false" size="small" />
+                </template>
+              </el-table-column>
+              <el-table-column label="库存" min-width="112">
+                <template #default="{ row }">
+                  <el-input-number v-model="row.stock" :min="0" :controls="false" size="small" />
+                </template>
+              </el-table-column>
+              <el-table-column label="成本" min-width="112">
+                <template #default="{ row }">
+                  <el-input-number v-model="row.cost" :min="0" :controls="false" size="small" />
+                </template>
+              </el-table-column>
+            </el-table>
+            <div class="field-hint">
+              共 {{ skuCount }} 个 SKU，价格 / 库存 / 成本以 SKU
+              行为准；商品售价与总库存保存后由后端按 SKU 汇总回写（起售价 = 最低 SKU 价）
             </div>
           </section>
 
@@ -1113,25 +1407,35 @@ async function syncStock() {
   font-size: 18px;
 }
 
-.sku-edit__head,
-.sku-edit__row {
-  display: grid;
-  grid-template-columns: 1.8fr 1fr 1fr 40px;
-  gap: 10px;
+/* ============ 规格维度 / SKU 矩阵 ============ */
+.spec-dim {
+  border: 1px dashed var(--line);
+  border-radius: var(--r-m);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.spec-dim__head {
+  display: flex;
   align-items: center;
+  gap: 8px;
 }
-.sku-edit__head {
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-3);
-  font-weight: 800;
-  padding-bottom: 7px;
+.spec-dim__head .el-input {
+  max-width: 220px;
 }
-.sku-edit__row {
-  margin-bottom: 9px;
+.spec-dim__values {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
 }
-.sku-edit__row :deep(.el-input-number) {
+.spec-dim__add {
+  width: 150px;
+}
+.sku-matrix {
+  margin-top: 12px;
+}
+.sku-matrix :deep(.el-input-number) {
   width: 100%;
 }
 
