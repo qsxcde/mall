@@ -6,11 +6,10 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
-import lombok.Data;
-
 import java.io.Serializable;
 import java.time.LocalDate;
 import java.util.List;
+import lombok.Data;
 
 /**
  * 把商品现有库存分配到各桶的入参。
@@ -24,6 +23,9 @@ public class BucketAllocateDTO implements Serializable {
 
     @NotNull(message = "商品 ID 不能为空")
     private Long productId;
+
+    @Schema(description = "规格 SKU ID；为空时取商品的默认 SKU（无规格商品按商品级分配）")
+    private Long skuId;
 
     @Schema(description = "应用的分桶规则 ID，可为空")
     private Long ruleId;

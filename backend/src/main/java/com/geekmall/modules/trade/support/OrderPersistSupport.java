@@ -298,7 +298,7 @@ public class OrderPersistSupport {
      * 两条路径在库存不足时都抛 {@code OUT_OF_STOCK}，由外层事务统一回滚。</p>
      */
     public void deductProductStock(Long productId, int qty, String title, String orderNo) {
-        if (inventoryBucketService.isBucketed(productId)) {
+        if (inventoryBucketService.isBucketed(productId, null)) {
             BucketDeductDTO dto = new BucketDeductDTO();
             dto.setProductId(productId);
             dto.setQty(qty);
@@ -337,8 +337,8 @@ public class OrderPersistSupport {
         for (OrderItem item : items) {
             int qty = item.getQty() == null ? 0 : item.getQty();
             // 分桶商品：交回桶服务，把数量还回「原来那些桶」，幂等由桶审计流水保证
-            if (inventoryBucketService.hasOutbound(orderNo, item.getProductId())) {
-                inventoryBucketService.rollbackProduct(orderNo, item.getProductId());
+            if (inventoryBucketService.hasOutbound(orderNo, null, item.getProductId())) {
+                inventoryBucketService.rollbackSku(orderNo, null, item.getProductId());
                 continue;
             }
             int firstTime = rollbackLogMapper.tryInsert(orderNo, item.getProductId(), qty);

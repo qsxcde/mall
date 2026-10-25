@@ -21,6 +21,7 @@ import com.geekmall.modules.inventory.vo.BucketRuleVO;
 import com.geekmall.modules.inventory.vo.BucketVO;
 import com.geekmall.modules.product.entity.Product;
 import com.geekmall.modules.product.service.ProductStockService;
+import com.geekmall.modules.product.service.SkuStockService;
 import com.geekmall.security.MerchantSecurityUtils;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -53,12 +54,26 @@ public class BucketStore {
     private final InvBucketOperationMapper operationMapper;
     private final InvBucketRuleMapper ruleMapper;
     private final ProductStockService productStockService;
+    private final SkuStockService skuStockService;
 
     /* ============================== 桶读写原语 ============================== */
 
-    public InvBucket findBucket(Long productId, String dimension, String dimensionValue) {
+    /**
+     * 解析生效的 SKU 编号：显式指定优先（{@code 0} 表示「无规格商品」按商品级处理）；
+     * 未指定（{@code null}）时取商品的默认 SKU（首个），商品没有 SKU（历史 / 直建商品）取 0。
+     */
+    public Long resolveSkuId(Long productId, Long requestedSkuId) {
+        if (requestedSkuId != null) {
+            return requestedSkuId;
+        }
+        Long defaultSkuId = skuStockService.resolveSkuId(productId);
+        return defaultSkuId == null ? 0L : defaultSkuId;
+    }
+
+    public InvBucket findBucket(Long productId, Long skuId, String dimension, String dimensionValue) {
         return bucketMapper.selectOne(new LambdaQueryWrapper<InvBucket>()
                 .eq(InvBucket::getProductId, productId)
+                .eq(InvBucket::getSkuId, skuId)
                 .eq(InvBucket::getDimension, dimension)
                 .eq(InvBucket::getDimensionValue, dimensionValue)
                 .last("limit 1"));
@@ -67,6 +82,14 @@ public class BucketStore {
     public List<InvBucket> listBuckets(Long productId) {
         return bucketMapper.selectList(new LambdaQueryWrapper<InvBucket>()
                 .eq(InvBucket::getProductId, productId)
+                .orderByAsc(InvBucket::getDimension, InvBucket::getDimensionValue));
+    }
+
+    /** 某 SKU 的桶（分配 / 出库都只在自己的 SKU 内动余量）。 */
+    public List<InvBucket> listBuckets(Long productId, Long skuId) {
+        return bucketMapper.selectList(new LambdaQueryWrapper<InvBucket>()
+                .eq(InvBucket::getProductId, productId)
+                .eq(InvBucket::getSkuId, skuId)
                 .orderByAsc(InvBucket::getDimension, InvBucket::getDimensionValue));
     }
 
@@ -114,13 +137,14 @@ public class BucketStore {
     }
 
     public InvBucket findOrCreateBucket(
-            Long productId, Long shopId, String dimension, String value, InvBucket template) {
-        InvBucket exist = findBucket(productId, dimension, value);
+            Long productId, Long skuId, Long shopId, String dimension, String value, InvBucket template) {
+        InvBucket exist = findBucket(productId, skuId, dimension, value);
         if (exist != null) {
             return exist;
         }
         InvBucket bucket = new InvBucket();
         bucket.setProductId(productId);
+        bucket.setSkuId(skuId == null ? 0L : skuId);
         bucket.setShopId(shopId);
         bucket.setDimension(dimension);
         bucket.setDimensionValue(value);
@@ -142,6 +166,7 @@ public class BucketStore {
     public void log(
             Long bucketId,
             Long productId,
+            Long skuId,
             Long shopId,
             BucketBizType type,
             int changeQty,
@@ -155,6 +180,7 @@ public class BucketStore {
         InvBucketLog entity = new InvBucketLog();
         entity.setBucketId(bucketId);
         entity.setProductId(productId);
+        entity.setSkuId(skuId == null ? 0L : skuId);
         entity.setShopId(shopId == null ? 0L : shopId);
         entity.setBizType(type.name());
         entity.setChangeQty(changeQty);

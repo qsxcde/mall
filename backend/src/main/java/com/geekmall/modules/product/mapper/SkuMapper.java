@@ -41,4 +41,23 @@ public interface SkuMapper extends BaseMapper<Sku> {
     /** 覆盖式重建：整商品的旧 SKU 先退休（停售 + 逻辑删）。 */
     @Update("UPDATE pms_sku SET deleted = 1, status = 0 WHERE product_id = #{productId} AND deleted = 0")
     int retireByProduct(@Param("productId") Long productId);
+
+    /**
+     * SKU 扣减：一条语句同时扣 {@code pms_sku.stock} 与 {@code pms_product.stock}（含商品销量）。
+     *
+     * <p>两层放在同一句（多表 UPDATE 原子）而不是两条语句：即使调用方没开事务，
+     * 也不会出现「SKU 扣了、商品没扣」的撕裂，商品层守恒恒成立。
+     * 返回 0 表示库存不足。</p>
+     */
+    @Update("UPDATE pms_sku s JOIN pms_product p ON p.id = s.product_id "
+            + "SET s.stock = s.stock - #{qty}, p.stock = p.stock - #{qty}, p.sales = p.sales + #{qty} "
+            + "WHERE s.id = #{skuId} AND s.deleted = 0 AND p.deleted = 0 "
+            + "AND s.stock >= #{qty} AND p.stock >= #{qty}")
+    int deductStock(@Param("skuId") Long skuId, @Param("qty") int qty);
+
+    /** SKU 回补：一条语句同时补两层库存并回落商品销量。 */
+    @Update("UPDATE pms_sku s JOIN pms_product p ON p.id = s.product_id "
+            + "SET s.stock = s.stock + #{qty}, p.stock = p.stock + #{qty}, p.sales = GREATEST(p.sales - #{qty}, 0) "
+            + "WHERE s.id = #{skuId} AND s.deleted = 0 AND p.deleted = 0")
+    int restoreStock(@Param("skuId") Long skuId, @Param("qty") int qty);
 }

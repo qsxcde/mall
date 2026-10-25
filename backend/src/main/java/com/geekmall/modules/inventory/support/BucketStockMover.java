@@ -34,6 +34,10 @@ public class BucketStockMover {
         if (!from.getProductId().equals(to.getProductId())) {
             throw new BizException(ResultCode.PARAM_ERROR, "来源桶与目标桶必须属于同一商品");
         }
+        if (!skuOf(from).equals(skuOf(to))) {
+            // 跨 SKU 搬运会把 A 规格的库存记到 B 规格头上，破坏 SKU 层守恒
+            throw new BizException(ResultCode.PARAM_ERROR, "来源桶与目标桶必须属于同一规格 SKU");
+        }
         int qty = dto.getQty();
         if (!store.deductStock(from.getId(), qty)) {
             throw new BizException(ResultCode.OUT_OF_STOCK, "来源桶余量不足");
@@ -45,6 +49,7 @@ public class BucketStockMover {
         store.log(
                 from.getId(),
                 from.getProductId(),
+                skuOf(from),
                 shopId,
                 BucketBizType.TRANSFER_OUT,
                 -qty,
@@ -59,6 +64,7 @@ public class BucketStockMover {
         store.log(
                 to.getId(),
                 to.getProductId(),
+                skuOf(to),
                 shopId,
                 BucketBizType.TRANSFER_IN,
                 qty,
@@ -95,6 +101,7 @@ public class BucketStockMover {
             sources.add(bucket);
         }
         InvBucket first = sources.get(0);
+        Long skuId = skuOf(first);
         String dimension = first.getDimension();
         String targetValue = StringUtils.hasText(dto.getTargetDimensionValue())
                 ? dto.getTargetDimensionValue()
@@ -102,7 +109,10 @@ public class BucketStockMover {
 
         InvBucket target = dto.getTargetBucketId() != null
                 ? store.requireBucket(dto.getTargetBucketId(), shopId)
-                : store.findOrCreateBucket(product.getId(), shopId, dimension, targetValue, first);
+                : store.findOrCreateBucket(product.getId(), skuId, shopId, dimension, targetValue, first);
+        if (!skuOf(target).equals(skuId)) {
+            throw new BizException(ResultCode.PARAM_ERROR, "来源桶与目标桶必须属于同一规格 SKU");
+        }
 
         String opNo = store.newOpNo("MRG");
         int moved = 0;
@@ -111,6 +121,9 @@ public class BucketStockMover {
         for (InvBucket source : sources) {
             if (source.getId().equals(target.getId())) {
                 continue;
+            }
+            if (!skuOf(source).equals(skuId)) {
+                throw new BizException(ResultCode.PARAM_ERROR, "来源桶必须属于同一规格 SKU");
             }
             int amount = store.moveAll(source.getId());
             if (amount <= 0) {
@@ -121,6 +134,7 @@ public class BucketStockMover {
             store.log(
                     source.getId(),
                     product.getId(),
+                    skuId,
                     shopId,
                     BucketBizType.MERGE_OUT,
                     -amount,
@@ -140,6 +154,7 @@ public class BucketStockMover {
             store.log(
                     target.getId(),
                     product.getId(),
+                    skuId,
                     shopId,
                     BucketBizType.MERGE_IN,
                     moved,
@@ -162,5 +177,10 @@ public class BucketStockMover {
                 dto.getRemark(),
                 opNo);
         return opNo;
+    }
+
+    /** 桶的 SKU 归属（历史桶可能为 null，统一按 0 = 商品级处理）。 */
+    private Long skuOf(InvBucket bucket) {
+        return bucket.getSkuId() == null ? 0L : bucket.getSkuId();
     }
 }

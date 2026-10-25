@@ -486,7 +486,8 @@ class SeckillBatchPersistIntegrationTest extends AbstractIntegrationTest {
                             .eq(Order::getRequestId, requestId)
                             .last("limit 1"))
                     .getOrderNo();
-            assertThat(invBucketLogMapper.countByOrderProduct(BucketBizType.OUTBOUND.name(), orderNo, product.getId()))
+            // 幂等键已下沉为 (订单号, SKU)：该商品无规格 SKU，历史口径下 SKU ID = 0
+            assertThat(invBucketLogMapper.countByOrderSku(BucketBizType.OUTBOUND.name(), orderNo, 0L, product.getId()))
                     .as("订单 {} 应留下一条出库流水", orderNo)
                     .isEqualTo(1);
         }

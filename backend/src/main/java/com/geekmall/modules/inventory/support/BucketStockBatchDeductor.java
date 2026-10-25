@@ -11,8 +11,10 @@ import com.geekmall.modules.inventory.mapper.InvBucketLogMapper;
 import com.geekmall.modules.inventory.mapper.InvBucketMapper;
 import com.geekmall.modules.product.entity.Product;
 import com.geekmall.modules.product.service.ProductStockService;
+import com.geekmall.modules.product.service.SkuStockService;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -23,21 +25,20 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * 批量出库执行器：把一批订单按商品归并后扣减桶库存。
+ * 批量出库执行器：把一批订单按 SKU 归并后扣减桶库存。
  *
  * <p>与单条 {@link BucketStockDeductor} 的区别只在「并发单元」：</p>
  * <ul>
- *   <li>商品是否分桶、候选桶、商品信息都<b>每批每商品只查一次</b>；</li>
+ *   <li>该 SKU 是否分桶、候选桶、商品信息都<b>每批每 SKU 只查一次</b>；</li>
  *   <li>同一批次落在同一桶的 N 单合并成<b>一次 CAS</b>；</li>
- *   <li>商品总库存每批每商品只更新一次，而不是每单一次。</li>
+ *   <li>SKU 与商品两层库存每批每 SKU 只更新一次，而不是每单一次。</li>
  * </ul>
  *
  * <p><b>失败策略</b>：任意桶 CAS 失败或余量不足时直接抛异常，由外层批量事务整体回滚，
  * 再退回逐单路径。批量是吞吐优化，不是正确性机制 —— 不在批内做复杂的重分配，
  * 以免把「部分成功」的语义扩散到调用方。</p>
  *
- * <p><b>审计流水</b>：扣减成功后回查桶的最终余量，按分配顺序倒推每单的
- * {@code before/after}，一次批量写入；既保持审计可读，又避免逐单 SELECT。</p>
+ * <p><b>幂等键与单条路径一致 = (单号, SKU)</b>：同一订单的多个 SKU 各自扣减一次。</p>
  */
 @Slf4j
 @Component
@@ -47,6 +48,7 @@ public class BucketStockBatchDeductor {
     private final InvBucketMapper bucketMapper;
     private final InvBucketLogMapper logMapper;
     private final ProductStockService productStockService;
+    private final SkuStockService skuStockService;
     private final BucketStockDeductor singleDeductor;
     private final MeterRegistry meterRegistry;
 
@@ -54,38 +56,44 @@ public class BucketStockBatchDeductor {
         if (deductions == null || deductions.isEmpty()) {
             return;
         }
-        Map<Long, List<BucketDeductDTO>> byProduct = groupByProduct(deductions);
-        List<Long> productIds = new ArrayList<>(byProduct.keySet());
-        productIds.sort(Long::compareTo);
+        Map<SkuKey, List<BucketDeductDTO>> bySku = groupBySku(deductions);
+        List<Long> productIds = bySku.keySet().stream()
+                .map(SkuKey::productId)
+                .distinct()
+                .sorted()
+                .toList();
 
         Map<Long, Product> products = productStockService.findByIds(productIds);
         Map<Long, List<InvBucket>> bucketsByProduct = groupBuckets(productIds);
         Set<String> existed = existedOutbounds(deductions);
 
-        for (Long productId : productIds) {
-            List<BucketDeductDTO> productDeductions = byProduct.get(productId).stream()
-                    .filter(d -> !existed.contains(outboundKey(d.getOrderNo(), productId)))
+        for (Map.Entry<SkuKey, List<BucketDeductDTO>> entry : bySku.entrySet()) {
+            SkuKey key = entry.getKey();
+            List<BucketDeductDTO> skuDeductions = entry.getValue().stream()
+                    .filter(d -> !existed.contains(outboundKey(d.getOrderNo(), key.skuId(), key.productId())))
                     .toList();
-            if (productDeductions.isEmpty()) {
+            if (skuDeductions.isEmpty()) {
                 continue;
             }
-            Product product = products.get(productId);
+            Product product = products.get(key.productId());
             if (product == null) {
-                throw new BizException(ResultCode.NOT_FOUND, "商品不存在：" + productId);
+                throw new BizException(ResultCode.NOT_FOUND, "商品不存在：" + key.productId());
             }
-            List<InvBucket> productBuckets = bucketsByProduct.getOrDefault(productId, List.of());
-            if (productBuckets.isEmpty()) {
-                deductProductOnly(product, productDeductions);
+            List<InvBucket> skuBuckets = bucketsByProduct.getOrDefault(key.productId(), List.of()).stream()
+                    .filter(bucket -> key.skuId().equals(bucket.getSkuId() == null ? 0L : bucket.getSkuId()))
+                    .toList();
+            if (skuBuckets.isEmpty()) {
+                deductSkuOnly(key, product, skuDeductions);
             } else {
-                deductBuckets(product, productDeductions, productBuckets);
+                deductBuckets(key, product, skuDeductions, skuBuckets);
             }
         }
     }
 
-    /** 未分桶商品：整批合并成一次商品总库存 CAS，行为与旧链路一致。 */
-    private void deductProductOnly(Product product, List<BucketDeductDTO> deductions) {
+    /** 未分桶 SKU：整批合并成一次汇总层 CAS（SKU + 商品两层），行为与旧链路一致。 */
+    private void deductSkuOnly(SkuKey key, Product product, List<BucketDeductDTO> deductions) {
         int total = sumQty(deductions);
-        if (!productStockService.deductStock(product.getId(), total)) {
+        if (!deductAggregate(key, total)) {
             meterRegistry
                     .counter("mall_inventory_batch_product_cas_total", "result", "fail")
                     .increment();
@@ -96,8 +104,8 @@ public class BucketStockBatchDeductor {
                 .increment();
     }
 
-    /** 分桶商品：按策略分配 → 每桶一次 CAS → 回查最终值 → 批量写审计流水 → 商品总库存一次。 */
-    private void deductBuckets(Product product, List<BucketDeductDTO> deductions, List<InvBucket> buckets) {
+    /** 分桶 SKU：按策略分配 → 每桶一次 CAS → 回查最终值 → 批量写审计流水 → 汇总层一次。 */
+    private void deductBuckets(SkuKey key, Product product, List<BucketDeductDTO> deductions, List<InvBucket> buckets) {
         DeductPolicy policy = singleDeductor.resolvePolicy(product.getId(), product.getShopId(), null);
         // sortCandidates 会原地排序，这里必须给可变列表（stream().toList() 是不可变的）
         List<InvBucket> candidates = new ArrayList<>();
@@ -139,10 +147,10 @@ public class BucketStockBatchDeductor {
         }
 
         Map<Long, Integer> finalStocks = finalStocks(bucketIds);
-        logMapper.batchInsert(buildLogs(product, allocations, finalStocks));
+        logMapper.batchInsert(buildLogs(key, product, allocations, finalStocks));
 
         int total = sumQty(deductions);
-        if (!productStockService.deductStock(product.getId(), total)) {
+        if (!deductAggregate(key, total)) {
             meterRegistry
                     .counter("mall_inventory_batch_product_cas_total", "result", "fail")
                     .increment();
@@ -195,7 +203,7 @@ public class BucketStockBatchDeductor {
      * 因此最终值是准确的；倒推比逐单 SELECT 少 N-1 次查询。</p>
      */
     private List<InvBucketLog> buildLogs(
-            Product product, List<Allocation> allocations, Map<Long, Integer> finalStocks) {
+            SkuKey key, Product product, List<Allocation> allocations, Map<Long, Integer> finalStocks) {
         Map<Long, List<Allocation>> byBucket = new LinkedHashMap<>();
         for (Allocation allocation : allocations) {
             byBucket.computeIfAbsent(allocation.bucketId(), k -> new ArrayList<>())
@@ -212,6 +220,7 @@ public class BucketStockBatchDeductor {
                 InvBucketLog entity = new InvBucketLog();
                 entity.setBucketId(bucketId);
                 entity.setProductId(product.getId());
+                entity.setSkuId(key.skuId());
                 entity.setShopId(product.getShopId());
                 entity.setBizType(BucketBizType.OUTBOUND.name());
                 entity.setChangeQty(-allocation.qty());
@@ -237,14 +246,24 @@ public class BucketStockBatchDeductor {
         return stocks;
     }
 
-    private Map<Long, List<BucketDeductDTO>> groupByProduct(List<BucketDeductDTO> deductions) {
-        Map<Long, List<BucketDeductDTO>> byProduct = new LinkedHashMap<>();
+    /** 按 (SKU, 商品) 归并；未指定 SKU 的按商品默认 SKU（无 SKU 商品为 0）解析。 */
+    private Map<SkuKey, List<BucketDeductDTO>> groupBySku(List<BucketDeductDTO> deductions) {
+        Map<SkuKey, List<BucketDeductDTO>> bySku = new LinkedHashMap<>();
+        Map<Long, Long> skuIdByProduct = new HashMap<>();
         for (BucketDeductDTO deduction : deductions) {
-            byProduct
-                    .computeIfAbsent(deduction.getProductId(), k -> new ArrayList<>())
+            Long skuId = deduction.getSkuId();
+            if (skuId == null || skuId <= 0) {
+                skuId = skuIdByProduct.computeIfAbsent(deduction.getProductId(), this::defaultSkuId);
+            }
+            bySku.computeIfAbsent(new SkuKey(skuId, deduction.getProductId()), k -> new ArrayList<>())
                     .add(deduction);
         }
-        return byProduct;
+        return bySku;
+    }
+
+    private Long defaultSkuId(Long productId) {
+        Long skuId = skuStockService.resolveSkuId(productId);
+        return skuId == null ? 0L : skuId;
     }
 
     private Map<Long, List<InvBucket>> groupBuckets(List<Long> productIds) {
@@ -269,8 +288,15 @@ public class BucketStockBatchDeductor {
         return new HashSet<>(logMapper.selectOutboundKeys(orderNos));
     }
 
-    private String outboundKey(String orderNo, Long productId) {
-        return orderNo + ":" + productId;
+    private String outboundKey(String orderNo, Long skuId, Long productId) {
+        return orderNo + ":" + skuId + ":" + productId;
+    }
+
+    /** 汇总层扣减：SKU 与商品两层（{@code sku_id = 0} 的历史商品退化为商品级）。 */
+    private boolean deductAggregate(SkuKey key, int total) {
+        return key.skuId() > 0
+                ? skuStockService.deductSkuStock(key.skuId(), total)
+                : productStockService.deductStock(key.productId(), total);
     }
 
     private int sumQty(List<BucketDeductDTO> deductions) {
@@ -278,6 +304,9 @@ public class BucketStockBatchDeductor {
                 .mapToInt(d -> d.getQty() == null ? 0 : d.getQty())
                 .sum();
     }
+
+    /** 归并键：出库 / 幂等按 (SKU, 商品) 各自独立。 */
+    private record SkuKey(Long skuId, Long productId) {}
 
     /** 一批分配中的一条：某单从某桶扣了多少。 */
     private record Allocation(String orderNo, Long bucketId, String bucketKey, int qty) {}
