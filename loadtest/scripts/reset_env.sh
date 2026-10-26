@@ -16,7 +16,7 @@
 #   SECKILL_BATCH_ENABLED=false  批量落库开关：true=消费端一次拉 N 条、一个事务批量写入，
 #                                false=逐条事务（仅在 SECKILL_ASYNC_ENABLED=true 时生效）。
 #                                用于 A/B 验证「批量归并扣减 + 多值 INSERT」对落库 TPS 的收益
-#   CONSUMER_THREADS=4        削峰消费者线程数 —— 做 MQ 对比时**必须显式指定**：
+#   CONSUMER_THREADS=8        削峰消费者线程数 —— 做 MQ 对比时**必须显式指定**：
 #                             非MQ 侧是 seckillExecutor 的 64 线程并发落库，若异步侧只给 4 个
 #                             消费线程，比的是「配置」而不是「架构」，即文档里的缺陷 D1。
 #                             扫描建议：4 / 8 / 16 / 32 / 64（对齐同步侧的有效并行度）
@@ -44,6 +44,15 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$ROOT_DIR/backend"
+
+# 容器 Redis / MySQL 的口令写在 infra/.env（已 gitignore）。启动后端时 dev profile 会
+# 自己 import 该文件，但本脚本里的 redis-cli / mysql 清理命令跑在宿主机上，需要显式取。
+if [[ -f "$ROOT_DIR/infra/.env" ]]; then
+  if [[ -z "${REDIS_PASSWORD:-}" ]]; then
+    REDIS_PASSWORD="$(grep -E '^REDIS_PASSWORD=' "$ROOT_DIR/infra/.env" | cut -d= -f2- | tr -d '\r')"
+  fi
+fi
+
 PORT="${PORT:-8080}"
 MANAGE_BACKEND="${MANAGE_BACKEND:-1}"
 JAR="${JAR:-$BACKEND_DIR/target/geek-mall-server-1.0.0.jar}"
@@ -53,8 +62,8 @@ STORAGE_TYPE="${STORAGE_TYPE:-local}"
 RATE_LIMIT_ENABLED="${RATE_LIMIT_ENABLED:-false}"
 SECKILL_ASYNC_ENABLED="${SECKILL_ASYNC_ENABLED:-false}"
 SECKILL_BATCH_ENABLED="${SECKILL_BATCH_ENABLED:-false}"
-SECKILL_BATCH_SIZE="${SECKILL_BATCH_SIZE:-16}"
-CONSUMER_THREADS="${CONSUMER_THREADS:-4}"
+SECKILL_BATCH_SIZE="${SECKILL_BATCH_SIZE:-128}"
+CONSUMER_THREADS="${CONSUMER_THREADS:-8}"
 SECKILL_PROFILE="${SECKILL_PROFILE:-single}"
 SECKILL_STOCK="${SECKILL_STOCK:-}"
 SECKILL_ITEMS="${SECKILL_ITEMS:-}"
@@ -160,10 +169,13 @@ SCENARIO_ARGS+=(--buckets "$SECKILL_BUCKETS")
 python3 "$SCRIPT_DIR/prepare_seckill_scenario.py" "${SCENARIO_ARGS[@]}"
 
 echo "[3/5] 清理 Redis 状态（秒杀计数 / 一人一单 / 下单幂等键）..."
-docker exec geek-mall-redis sh -c "redis-cli --scan --pattern 'mall:seckill:*' | xargs -r redis-cli del" >/dev/null
+# REDISCLI_AUTH 让管道两侧都带上口令，且不会出现在 ps 的命令行里
+docker exec -e REDISCLI_AUTH="${REDIS_PASSWORD:-}" geek-mall-redis \
+  sh -c "redis-cli --scan --pattern 'mall:seckill:*' | xargs -r redis-cli del" >/dev/null
 # 关键：幂等键的 TTL 比订单数据长，若只删库不删键，下一次下单会「命中幂等」
 # 返回一个数据库里并不存在的悬空订单号。必须一起清掉。
-docker exec geek-mall-redis sh -c "redis-cli --scan --pattern 'mall:order:idempotent:*' | xargs -r redis-cli del" >/dev/null
+docker exec -e REDISCLI_AUTH="${REDIS_PASSWORD:-}" geek-mall-redis \
+  sh -c "redis-cli --scan --pattern 'mall:order:idempotent:*' | xargs -r redis-cli del" >/dev/null
 
 if [[ "$MANAGE_BACKEND" == "1" ]] && ! command -v lsof >/dev/null 2>&1; then
   # Windows / Git Bash 没有 lsof：停服分支必然退化——按端口找不到进程，
