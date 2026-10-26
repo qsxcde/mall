@@ -1,13 +1,12 @@
 package com.geekmall.common.resilience;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
-
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
  * 业务级熔断降级的统一入口：把「调用下游 → 记录成败 → 熔断判定 → 降级回退」
@@ -46,8 +45,8 @@ public class ResilienceGuard {
      */
     public CircuitBreaker breaker(String resource) {
         return breakers.computeIfAbsent(resource, name -> {
-            CircuitBreaker created = new CircuitBreaker(name, properties.forResource(name),
-                    () -> metrics.recordOpened(name));
+            CircuitBreaker created =
+                    new CircuitBreaker(name, properties.forResource(name), () -> metrics.recordOpened(name));
             metrics.registerStateGauge(name, created);
             return created;
         });
@@ -80,17 +79,22 @@ public class ResilienceGuard {
         boolean acquired = semaphore == null || semaphore.tryAcquire();
         if (!acquired) {
             metrics.recordRejected(resource);
-            return degrade(resource, fallback,
+            return degrade(
+                    resource,
+                    fallback,
                     "并发已达上限(" + properties.forResource(resource).getMaxConcurrentCalls() + ")");
         }
 
         long startNanos = System.nanoTime();
+        Duration elapsed = null;
         try {
             T result = action.run();
-            circuitBreaker.recordSuccess(Duration.ofNanos(System.nanoTime() - startNanos));
+            elapsed = Duration.ofNanos(System.nanoTime() - startNanos);
+            circuitBreaker.recordSuccess(elapsed);
             return result;
         } catch (Exception ex) {
-            circuitBreaker.recordFailure(Duration.ofNanos(System.nanoTime() - startNanos));
+            elapsed = Duration.ofNanos(System.nanoTime() - startNanos);
+            circuitBreaker.recordFailure(elapsed);
             metrics.recordFailure(resource, ex);
             log.warn("[熔断] {} 调用失败：{}", resource, ex.toString());
             if (fallback == null) {
@@ -98,10 +102,23 @@ public class ResilienceGuard {
             }
             return degrade(resource, fallback, "主路径失败：" + ex.getMessage());
         } finally {
+            // 与熔断器内部的慢调用判定同源（同一阈值），把「慢」暴露成指标而非只留在熔断状态里
+            if (elapsed != null && isSlow(resource, elapsed)) {
+                metrics.recordSlow(resource);
+            }
             if (acquired && semaphore != null) {
                 semaphore.release();
             }
         }
+    }
+
+    /** 是否超过该资源配置的慢调用阈值（与 {@link CircuitBreaker} 内部判定口径一致）。 */
+    private boolean isSlow(String resource, Duration elapsed) {
+        Duration threshold = properties.forResource(resource).getSlowCallDuration();
+        if (threshold == null || threshold.isZero() || threshold.isNegative()) {
+            return false;
+        }
+        return elapsed.compareTo(threshold) >= 0;
     }
 
     private <T> T degrade(String resource, Action<T> fallback, String reason) {
