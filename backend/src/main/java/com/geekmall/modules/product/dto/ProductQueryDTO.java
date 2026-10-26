@@ -1,12 +1,13 @@
 package com.geekmall.modules.product.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import lombok.Data;
-
 import java.io.Serializable;
 import java.math.BigDecimal;
+import lombok.Data;
 
 /**
  * 商品列表 / 搜索查询条件，对应前端 CategoryView 与 SearchView。
@@ -48,4 +49,19 @@ public class ProductQueryDTO implements Serializable {
 
     @Schema(description = "只看新品")
     private Boolean isNew;
+
+    /**
+     * 分页深度上限：{@code page × pageSize ≤ 10 万}。
+     *
+     * <p>MyBatis-Plus 只限制了单页条数（{@code maxLimit=200}），拦不住
+     * {@code page=100000} 这种超大 OFFSET 全表扫描。在参数绑定阶段直接拒绝，
+     * 避免深分页请求把数据库连接与磁盘 IO 拖满。</p>
+     */
+    @JsonIgnore
+    @AssertTrue(message = "分页过深，请缩小筛选条件后重试")
+    public boolean isPageDepthAllowed() {
+        int current = page == null ? 1 : page;
+        int size = pageSize == null ? 8 : pageSize;
+        return (long) current * size <= 100_000L;
+    }
 }
