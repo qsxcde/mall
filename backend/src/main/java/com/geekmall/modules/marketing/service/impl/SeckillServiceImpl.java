@@ -313,7 +313,24 @@ public class SeckillServiceImpl implements SeckillService {
                 .find(requestId)
                 // 校验归属：越权查询一律按「不存在」返回，不泄露该 requestId 是否存在
                 .filter(result -> Objects.equals(result.userId(), userId))
-                .orElseThrow(() -> new BizException(ResultCode.NOT_FOUND, "抢购记录不存在或已过期"));
+                .orElseGet(() -> loadResultFromOrder(userId, requestId));
+    }
+
+    /**
+     * 结果兜底：Redis 里的结果可能因写失败（异常被吞）或 TTL 到期而缺失，但订单可能已经落库。
+     *
+     * <p>按唯一索引 {@code uk_user_request} 回查订单表，命中即视为成功 —— 这是削峰模式下
+     * 「订单已建、用户却查不到」的最后一道保险。回源次数单独打点：正常应长期为 0，
+     * 持续大于 0 说明结果写入或 Redis 本身出了问题。</p>
+     */
+    private SeckillGrabResult loadResultFromOrder(Long userId, String requestId) {
+        String orderNo = tradeService.findOrderNoByRequestId(userId, requestId);
+        if (orderNo == null) {
+            throw new BizException(ResultCode.NOT_FOUND, "抢购记录不存在或已过期");
+        }
+        meterRegistry.counter("mall_seckill_result_fallback_total").increment();
+        log.warn("秒杀结果回源订单表命中（Redis 结果缺失）：userId={}, requestId={}, orderNo={}", userId, requestId, orderNo);
+        return SeckillGrabResult.success(requestId, userId, orderNo);
     }
 
     /**

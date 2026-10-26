@@ -6,6 +6,7 @@ import com.geekmall.modules.marketing.config.SeckillProperties;
 import com.geekmall.modules.marketing.service.impl.SeckillServiceImpl;
 import java.net.InetAddress;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
@@ -52,6 +53,9 @@ import org.springframework.stereotype.Component;
 public class SeckillOrderConsumer implements SmartLifecycle {
 
     private static final Duration ERROR_BACKOFF = Duration.ofSeconds(2);
+
+    /** 攒批时单次补拉的最长阻塞；过长会拖慢已经拿到的消息。 */
+    private static final long GATHER_SLICE_NANOS = Duration.ofMillis(2).toNanos();
 
     private final SeckillOrderQueue queue;
     private final SeckillResultStore resultStore;
@@ -122,9 +126,12 @@ public class SeckillOrderConsumer implements SmartLifecycle {
             try {
                 reclaimIfDue(consumer);
                 List<SeckillOrderQueue.Delivery> deliveries = queue.poll(consumer, batchSize, block);
-                if (properties.getAsync().isBatchEnabled() && deliveries.size() > 1) {
-                    processBatch(consumer, deliveries);
-                    continue;
+                if (properties.getAsync().isBatchEnabled()) {
+                    deliveries = gatherBatch(consumer, deliveries, batchSize);
+                    if (deliveries.size() > 1) {
+                        processBatch(consumer, deliveries);
+                        continue;
+                    }
                 }
                 for (SeckillOrderQueue.Delivery delivery : deliveries) {
                     if (!running.get()) {
@@ -138,6 +145,35 @@ public class SeckillOrderConsumer implements SmartLifecycle {
                 sleepQuietly();
             }
         }
+    }
+
+    /**
+     * 在短窗口内补拉，尽量把「一次 poll 只取到 1 条」的批次凑大。
+     *
+     * <p>只在批次非空时调用：队列已经空了还继续等没有意义，低流量下空轮询攒批
+     * 只会平白增加延迟。每轮补拉最多 2ms，窗口耗尽或补拉为空即返回。</p>
+     */
+    private List<SeckillOrderQueue.Delivery> gatherBatch(
+            String consumer, List<SeckillOrderQueue.Delivery> first, int batchSize) {
+        Duration window = properties.getAsync().getGatherWindow();
+        if (first.isEmpty() || first.size() >= batchSize || window == null || window.isZero() || window.isNegative()) {
+            return first;
+        }
+        List<SeckillOrderQueue.Delivery> all = new ArrayList<>(first);
+        long deadline = System.nanoTime() + window.toNanos();
+        while (all.size() < batchSize) {
+            long remainingNanos = deadline - System.nanoTime();
+            if (remainingNanos <= 0) {
+                break;
+            }
+            Duration slice = Duration.ofNanos(Math.min(remainingNanos, GATHER_SLICE_NANOS));
+            List<SeckillOrderQueue.Delivery> more = queue.poll(consumer, batchSize - all.size(), slice);
+            if (more.isEmpty()) {
+                break;
+            }
+            all.addAll(more);
+        }
+        return all;
     }
 
     /**
