@@ -1,18 +1,17 @@
 package com.geekmall.common.resilience;
 
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 /**
  * 熔断降级执行器单元测试。
@@ -28,12 +27,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ResilienceGuardTest {
 
     private ResilienceProperties properties;
+    private SimpleMeterRegistry registry;
     private ResilienceGuard guard;
 
     @BeforeEach
     void setUp() {
         properties = new ResilienceProperties();
-        guard = new ResilienceGuard(properties, new ResilienceMetrics(new SimpleMeterRegistry()));
+        registry = new SimpleMeterRegistry();
+        guard = new ResilienceGuard(properties, new ResilienceMetrics(registry));
     }
 
     /** 配置为「2 次调用 100% 失败即熔断」，便于快速进入 OPEN。 */
@@ -66,21 +67,21 @@ class ResilienceGuardTest {
 
         // 前两次失败把熔断器打到 OPEN（无降级路径，异常原样上抛）
         assertThatThrownBy(() -> guard.execute("demo", () -> {
-            boom();
-            return "never";
-        })).isInstanceOf(IllegalStateException.class);
+                    boom();
+                    return "never";
+                }))
+                .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> guard.execute("demo", () -> {
-            boom();
-            return "never";
-        })).isInstanceOf(IllegalStateException.class);
+                    boom();
+                    return "never";
+                }))
+                .isInstanceOf(IllegalStateException.class);
 
         assertThat(guard.breaker("demo").getState()).isEqualTo(CircuitBreaker.State.OPEN);
 
         String degraded = guard.execute("demo", () -> "primary", () -> "fallback");
 
-        assertThat(degraded)
-                .as("熔断打开后不应再请求下游，直接走降级")
-                .isEqualTo("fallback");
+        assertThat(degraded).as("熔断打开后不应再请求下游，直接走降级").isEqualTo("fallback");
     }
 
     @Test
@@ -88,13 +89,15 @@ class ResilienceGuardTest {
     void shouldThrowWhenNoFallbackConfigured() {
         fastBreakConfig();
         assertThatThrownBy(() -> guard.execute("strict", () -> {
-            boom();
-            return null;
-        })).isInstanceOf(IllegalStateException.class);
+                    boom();
+                    return null;
+                }))
+                .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> guard.execute("strict", () -> {
-            boom();
-            return null;
-        })).isInstanceOf(IllegalStateException.class);
+                    boom();
+                    return null;
+                }))
+                .isInstanceOf(IllegalStateException.class);
 
         assertThatThrownBy(() -> guard.execute("strict", () -> "primary"))
                 .isInstanceOf(CircuitOpenException.class)
@@ -104,7 +107,8 @@ class ResilienceGuardTest {
     @Test
     @DisplayName("主路径失败但配置了降级时，直接改走降级")
     void shouldFallBackOnActionFailure() {
-        String result = guard.execute("demo",
+        String result = guard.execute(
+                "demo",
                 () -> {
                     boom();
                     return "primary";
@@ -117,14 +121,15 @@ class ResilienceGuardTest {
     @Test
     @DisplayName("降级路径同样失败时，抛出可识别的熔断异常（而不是吞掉）")
     void shouldSurfaceFallbackFailure() {
-        assertThatThrownBy(() -> guard.execute("demo",
-                () -> {
-                    boom();
-                    return "primary";
-                },
-                () -> {
-                    throw new IllegalStateException("备用存储也挂了");
-                }))
+        assertThatThrownBy(() -> guard.execute(
+                        "demo",
+                        () -> {
+                            boom();
+                            return "primary";
+                        },
+                        () -> {
+                            throw new IllegalStateException("备用存储也挂了");
+                        }))
                 .isInstanceOf(CircuitOpenException.class)
                 .hasMessageContaining("降级路径同样失败");
     }
@@ -140,11 +145,14 @@ class ResilienceGuardTest {
         CountDownLatch release = new CountDownLatch(1);
         ExecutorService pool = Executors.newSingleThreadExecutor();
         try {
-            Future<String> first = pool.submit(() -> guard.execute("limited", () -> {
-                entered.countDown();
-                release.await();
-                return "primary";
-            }, () -> "fallback"));
+            Future<String> first = pool.submit(() -> guard.execute(
+                    "limited",
+                    () -> {
+                        entered.countDown();
+                        release.await();
+                        return "primary";
+                    },
+                    () -> "fallback"));
 
             assertThat(entered.await(2, TimeUnit.SECONDS)).as("第一个请求已进入").isTrue();
 
@@ -164,12 +172,13 @@ class ResilienceGuardTest {
     void shouldPassThroughWhenDisabled() {
         properties.setEnabled(false);
 
-        assertThatThrownBy(() -> guard.execute("demo",
-                () -> {
-                    boom();
-                    return "primary";
-                },
-                () -> "fallback"))
+        assertThatThrownBy(() -> guard.execute(
+                        "demo",
+                        () -> {
+                            boom();
+                            return "primary";
+                        },
+                        () -> "fallback"))
                 .as("关闭熔断后，降级逻辑不应生效，异常应原样抛出")
                 .isInstanceOf(IllegalStateException.class);
     }
@@ -179,5 +188,44 @@ class ResilienceGuardTest {
     void shouldShareBreakerPerResource() {
         assertThat(guard.breaker("shared")).isSameAs(guard.breaker("shared"));
         assertThat(guard.breaker("shared")).isNotSameAs(guard.breaker("other"));
+    }
+
+    @Test
+    @DisplayName("超过慢调用阈值时记录 mall_resilience_slow_total")
+    void shouldRecordSlowCallMetric() {
+        ResilienceProperties.Resource config = new ResilienceProperties.Resource();
+        config.setSlowCallDuration(java.time.Duration.ofMillis(10));
+        config.setSlowCallRateThreshold(0f);
+        config.setMinimumCalls(1000);
+        properties.setDefaults(config);
+
+        String result = guard.execute("slow-demo", () -> {
+            try {
+                Thread.sleep(30);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return "ok";
+        });
+
+        assertThat(result).isEqualTo("ok");
+        assertThat(registry.counter("mall_resilience_slow_total", "resource", "slow-demo")
+                        .count())
+                .as("慢调用必须被计数，否则 mall_resilience_slow_total 永远为 0")
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("未超过慢调用阈值时不计数")
+    void shouldNotRecordSlowCallWhenFast() {
+        ResilienceProperties.Resource config = new ResilienceProperties.Resource();
+        config.setSlowCallDuration(java.time.Duration.ofSeconds(3));
+        properties.setDefaults(config);
+
+        guard.execute("fast-demo", () -> "ok");
+
+        assertThat(registry.counter("mall_resilience_slow_total", "resource", "fast-demo")
+                        .count())
+                .isZero();
     }
 }
