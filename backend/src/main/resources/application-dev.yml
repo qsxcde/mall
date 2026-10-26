@@ -27,6 +27,8 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      # 容器 Redis 在 infra/.env 里设置了密码时必须带上，否则本地 dev 启动会报 NOAUTH
+      password: ${REDIS_PASSWORD:}
       database: 0
       timeout: 3s
       lettuce:
