@@ -1,0 +1,2 @@
+mq-bucket-batch	BEFORE	Innodb_row_lock_time=713492 Innodb_row_lock_time_avg=67 Innodb_row_lock_time_max=1704 Innodb_row_lock_waits=10552 Innodb_rows_inserted=3069096 Innodb_rows_updated=42820 
+mq-bucket-batch	AFTER	Innodb_row_lock_time=716205 Innodb_row_lock_time_avg=67 Innodb_row_lock_time_max=1704 Innodb_row_lock_waits=10560 Innodb_rows_inserted=3069696 Innodb_rows_updated=42893 
