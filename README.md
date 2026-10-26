@@ -340,8 +340,8 @@ SETBIT 命令，**直接 OOM 导致应用启动失败**（`RedisBloomFilter.addA
 
 - Grafana 通过 provisioning 自动装载数据源（Prometheus + Loki）与看板 `Geek Mall · 总览`
   （14 个面板：QPS、延迟分位、限流拒绝、缓存命中/回源、熔断状态、秒杀队列积压、HikariCP、慢 SQL/死信、JVM、正在触发的告警）；
-- Prometheus 加载 `infra/prometheus/rules/mall-alerts.yml`（**7 条 / 5 组**：秒杀队列积压、有积压但无消费者、
-  死信、熔断打开、缓存回源激增、限流拒绝激增、慢 SQL）；规则已求值并暴露 `ALERTS`，接 Alertmanager 即可发通知；
+- Prometheus 加载 `infra/prometheus/rules/mall-alerts.yml`（**11 条 / 6 组**：秒杀队列积压、有积压但无消费者、
+  死信、秒杀库存缺失、秒杀结果回源、熔断打开、缓存回源激增、缓存 Redis 异常、限流拒绝激增、慢 SQL、退款重试耗尽）；规则已求值并暴露 `ALERTS`，接 Alertmanager 即可发通知；
 - 补齐缺失指标：限流拒绝（`mall_rate_limit_rejected_total`）、秒杀队列积压（`mall_seckill_queue_*`）、
   死信（`mall_seckill_dead_letter_total`）；并新增自定义 `SeckillQueueHealthIndicator` 并入 `/actuator/health`。
 
@@ -392,5 +392,6 @@ SETBIT 命令，**直接 OOM 导致应用启动失败**（`RedisBloomFilter.addA
 | `docs/governance/` | `死代码清理报告.md` | 死代码排查与复核结论 |
 | `loadtest/results/` | `批量落库对比-2026-10-24.md` | 批量落库 A/B 实测：落库 TPS +98%、行锁时长 −98%，及由此判定 **Stage 2 总库存异步化不做** |
 | `loadtest/results/` | `秒杀分桶×MQ对比-2026-10-08.md` | 库存分桶 × 削峰 2×2 对比，及「收益远小于理论上界」的归因过程 |
+| `loadtest/results/` | `SKU后基线-2026-10-26.md` | SKU 改造后六组复测：读 P99 退化 2.7 倍、下单未退化、批量占比 100%、长稳无泄漏、商家端 3 个慢接口、prod 与限流验证 |
 
 各子工程另有自己的 README：`backend/README.md`（接口清单与配置项）、`infra/README.md`（编排与可观测性用法）、`frontend/README.md`、`frontendMerchant/README.md`、`loadtest/B机压测操作指南.md`（跨机压测操作）。

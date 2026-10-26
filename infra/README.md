@@ -62,7 +62,7 @@ docker compose -f infra/docker-compose.yml down -v
 3. **Grafana 无需手工配置**：数据源与看板都已由 provisioning 自动装载
    （`grafana/provisioning/`、`grafana/dashboards/mall-overview.json`）。
    打开 http://localhost:3000 （`admin/admin`）→ Dashboards → **Geek Mall · 总览**（14 面板）。
-4. **告警规则**：`prometheus/rules/mall-alerts.yml`（7 条）在 Prometheus 内求值，
+4. **告警规则**：`prometheus/rules/mall-alerts.yml`（11 条 / 6 组）在 Prometheus 内求值，
    见 http://localhost:9090/alerts ；要发通知需另接 Alertmanager（本项目未编排）。
 5. 常用查询：
    - 接口 QPS：`rate(http_server_requests_seconds_count{application="geek-mall-server"}[1m])`
