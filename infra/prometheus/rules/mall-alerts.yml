@@ -70,6 +70,20 @@ groups:
             ② 暂停该活动的新流量，等队列 pending 归零后再用 DB 值重新预热；
             ③ 预热后核对 DB 库存与订单数是否一致。
 
+      - alert: MallSeckillResultFallback
+        # 正常情况下结果只从 Redis 读；回源订单表说明 Redis 结果已丢失
+        expr: increase(mall_seckill_result_fallback_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          component: seckill-queue
+        annotations:
+          summary: "秒杀结果查询回源订单表（5 分钟内 {{ $value }} 次）"
+          description: >-
+            订单已建但 Redis 里的抢购结果不存在：可能是结果写入失败、TTL 提前丢失或 Redis 重启。
+            用户已被回源兜底接住（仍能查到订单号），但持续出现说明结果写入链路不可靠，
+            需排查 mall_cache_redis_error_total 与 Redis 内存淘汰策略。
+
   # ---------------- 熔断降级 ----------------
   - name: mall-resilience
     rules:
@@ -100,6 +114,19 @@ groups:
           description: >-
             持续回源说明热点 key 在反复失效。结合 mall_cache_lock_timeout_total 判断：
             超时数也上涨则说明重建本身很慢（下游变慢），否则可能是 TTL 配置过短或遭到了错峰穿透。
+
+      - alert: MallCacheRedisErrorSpike
+        expr: sum(rate(mall_cache_redis_error_total[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "缓存 Redis 访问异常持续发生（{{ $value }}/s）"
+          description: >-
+            覆盖读、写、失效三条路径（写路径刻意不接熔断：缓存是旁路，失败不应阻断业务）。
+            写/失效失败会让陈旧值留到 TTL 过期，读失败会退化为回源。
+            按 exception 标签区分超时、连接拒绝与脚本错误。
 
   # ---------------- 限流 ----------------
   - name: mall-ratelimit
