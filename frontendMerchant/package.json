@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
-    "axios": "^1.20.0",
+    "axios": "^1.21.0",
     "element-plus": "^2.9.1",
     "pinia": "^2.3.0",
     "vue": "^3.5.44",
@@ -30,7 +30,7 @@
     "@vue/test-utils": "^2.5.1",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-vue": "^10.11.1",
+    "eslint-plugin-vue": "^10.12.0",
     "globals": "^17.13.0",
     "jsdom": "^25.0.1",
     "prettier": "^3.9.10",
