@@ -36,6 +36,17 @@ loadtest/k6/data/
 # ---------- 临时打包产物（不入库）----------
 loadtest.zip
 
+# ---------- 压测原始产物与二进制归档（体积大，结论已在 .md/.json 汇总里）----------
+# .jtl / .log 是 JMeter 原始逐样本结果，k6 的 k6-mixed.csv 是 --out csv 逐秒原始样本
+# （12MB），都由脚本每次压测现场重新生成；只保留 .md 报告与 *.summary.json 等小体积汇总。
+# 注意：不要把 results 下所有 *.csv 都忽略——soak-*.csv / xm-queue-*.csv 是 KB 级汇总数据。
+loadtest/results/**/*.jtl
+loadtest/results/**/*.log
+loadtest/results/k6-mixed.csv
+# JMeter 发行包在 Dockerfile 构建期从 Apache 官方镜像下载（含 SHA512 校验），不入库
+loadtest/docker/*.tgz
+loadtest/docker/*.tar.gz
+
 # ---------- Python 字节码缓存（产物，不入库）----------
 # loadtest/scripts/__pycache__ 下的 .pyc 曾被误提交，已 git rm --cached 清理。
 __pycache__/
