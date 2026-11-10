@@ -226,6 +226,19 @@
 
     <build>
         <plugins>
+            <!--
+                从 JDK 23 起 javac 默认不再自动运行注解处理器（等价于隐式 -proc:none），
+                在 JDK 23+ 上构建时 Lombok 会整体失效：@Data/@Slf4j/@RequiredArgsConstructor
+                都不生成，表现为大批「找不到符号 getXxx()/log」而并非代码问题。
+                显式声明 proc=full，让 Lombok 在 JDK 21 与更高版本下行为一致。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <proc>full</proc>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
